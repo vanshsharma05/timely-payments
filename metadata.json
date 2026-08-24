@@ -1,0 +1,8 @@
+{
+  "name": "Timely Payment",
+  "description": "A proactive payment follow-up system using Google Sheets as a data source. Features role-based dashboards for CRM users and collection agents, task assignments, and integrated WhatsApp reminders to streamline the collection process.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
