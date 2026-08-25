@@ -828,7 +828,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">Due &gt;45 Days</th>
                                     <th className="px-2.5 py-2.5 text-center w-36">Follow-up / Status</th>
                                     <th className="px-2.5 py-2.5 text-left w-32">CRM Owner</th>
-                                    <th className="px-3 py-2.5 text-right w-44">Actions</th>
+                                    <th className="px-3 py-2.5 text-right w-44 z-20 bg-slate-100 dark:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -849,7 +849,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     return (
                                         <tr 
                                             key={item.id} 
-                                            className={`hover:bg-slate-50/90 dark:hover:bg-gray-800/60 transition-colors ${isChecked ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}`}
+                                            className={`group hover:bg-slate-50/90 dark:hover:bg-gray-800/60 transition-colors ${isChecked ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}`}
                                         >
                                             {canReassignCrm && (
                                                 <td className="px-2.5 py-2.5 text-center">
@@ -1039,8 +1039,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 )}
                                             </td>
 
-                                            {/* Actions */}
-                                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                            {/* Actions — pinned to the right edge. The ledger is ~1850px wide, so on a
+                                                laptop this column used to sit past the fold and Edit / Follow Up could
+                                                only be reached by scrolling sideways. */}
+                                            <td className="px-3 py-2.5 text-right whitespace-nowrap z-10 bg-card group-hover:bg-slate-50 dark:group-hover:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">
                                                 <div className="flex items-center justify-end space-x-1">
                                                     {/* WhatsApp Reminder */}
                                                     <button
