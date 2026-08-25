@@ -3,6 +3,8 @@ import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PE
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon } from './icons/Icons';
+import { AgeingBar } from './ui/Primitives';
+import { formatCompact, formatINR } from './ui/format';
 
 interface CustomerDashboardViewProps {
     data: Outstanding[];
@@ -320,70 +322,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         }
     };
 
-    // Table Horizontal Scrolling & Slider State
-    const tableScrollRef = React.useRef<HTMLDivElement>(null);
-    const [scrollPercent, setScrollPercent] = useState<number>(0);
-
-    const handleTableScroll = () => {
-        if (!tableScrollRef.current) return;
-        const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
-        const maxScroll = Math.max(0, scrollWidth - clientWidth);
-        if (maxScroll > 0) {
-            setScrollPercent(Math.min(100, Math.max(0, Math.round((scrollLeft / maxScroll) * 100))));
-        } else {
-            setScrollPercent(0);
-        }
-    };
-
-    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const percent = Number(e.target.value);
-        setScrollPercent(percent);
-        if (tableScrollRef.current) {
-            const { scrollWidth, clientWidth } = tableScrollRef.current;
-            const maxScroll = Math.max(0, scrollWidth - clientWidth);
-            tableScrollRef.current.scrollLeft = (percent / 100) * maxScroll;
-        }
-    };
-
-    const scrollTableBy = (delta: number) => {
-        if (tableScrollRef.current) {
-            tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
-        }
-    };
-
-    const scrollToPosition = (position: 'start' | 'end' | 'mid') => {
-        if (tableScrollRef.current) {
-            if (position === 'start') {
-                tableScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-            } else if (position === 'end') {
-                tableScrollRef.current.scrollTo({ left: tableScrollRef.current.scrollWidth, behavior: 'smooth' });
-            } else {
-                const { scrollWidth, clientWidth } = tableScrollRef.current;
-                tableScrollRef.current.scrollTo({ left: (scrollWidth - clientWidth) / 2, behavior: 'smooth' });
-            }
-        }
-    };
-
-    // Update scroll metrics on data/view changes or window resize
-    React.useEffect(() => {
-        const checkScroll = () => {
-            if (tableScrollRef.current) {
-                const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
-                const maxScroll = Math.max(0, scrollWidth - clientWidth);
-                if (maxScroll > 0) {
-                    setScrollPercent(Math.min(100, Math.max(0, Math.round((scrollLeft / maxScroll) * 100))));
-                } else {
-                    setScrollPercent(0);
-                }
-            }
-        };
-        const timer = setTimeout(checkScroll, 100);
-        window.addEventListener('resize', checkScroll);
-        return () => {
-            clearTimeout(timer);
-            window.removeEventListener('resize', checkScroll);
-        };
-    }, [filteredData, viewMode]);
+    /* The ledger fits the viewport now, so the slider, the First/Left/Right/Last
+       buttons and the scroll-percentage readout that used to compensate for a
+       1845px table are gone. The container keeps overflow-x for very narrow
+       windows; the browser scrolls it. */
 
     return (
         <div className="w-full space-y-3.5 pb-2">
@@ -786,22 +728,17 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             <span className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
                                                                 <span>Customer Ledger ({filteredData.length} accounts)</span>
                             </span>
-                            <span className="text-[11.5px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
-                                View: {scrollPercent <= 25 ? 'Customer & Contacts' : scrollPercent <= 65 ? 'Ageing Buckets (1-135d)' : 'Follow-ups & Actions'} ({scrollPercent}%)
-                            </span>
                         </div>
 
                     </div>
 
                     {/* Horizontal Scroll Container (Strict containment without triggering body scroll) */}
                     <div 
-                        ref={tableScrollRef}
                         id="customer-table-scroll-container"
-                        onScroll={handleTableScroll}
                         className="w-full max-w-full overflow-x-auto overflow-y-visible scrollbar-thin scrollbar-thumb-gray-400 hover:scrollbar-thumb-gray-500 dark:scrollbar-thumb-gray-600 dark:hover:scrollbar-thumb-gray-500 scrollbar-track-slate-100 dark:scrollbar-track-gray-800 focus:outline-none"
                         tabIndex={0}
                     >
-                        <table className="min-w-[1380px] w-full text-xs text-left border-collapse table-auto">
+                        <table className="min-w-[1040px] w-full text-xs text-left border-collapse table-auto">
                             <thead className="bg-slate-100/95 dark:bg-gray-800/95 text-gray-700 dark:text-gray-300 font-bold uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-[11.5px] sticky top-0 z-10 backdrop-blur-xs">
                                 <tr>
                                     {canReassignCrm && (
@@ -818,13 +755,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             </label>
                                         </th>
                                     )}
-                                    <th className="px-3.5 py-2.5 min-w-[320px]">Customer & Contact Details</th>
-                                    <th className="px-2.5 py-2.5 text-center w-32">Payment Rank</th>
-                                    <th className="px-3 py-2.5 text-right w-32">Total Balance</th>
-                                    <th className="px-2.5 py-2.5 text-right w-26">1-45 Days</th>
-                                    <th className="px-2.5 py-2.5 text-right w-26">46-90 Days</th>
-                                    <th className="px-2.5 py-2.5 text-right w-26 bg-amber-50/70 dark:bg-amber-950/30">91-135 Days</th>
-                                    <th className="px-2.5 py-2.5 text-right w-26 bg-red-50/70 dark:bg-red-950/30">&gt;135 Days</th>
+                                    <th className="px-3.5 py-2.5 min-w-[240px]">Customer & Contact Details</th>
+                                    <th className="px-3 py-2.5 text-right w-24">Balance</th>
+                                    <th className="px-2.5 py-2.5 text-left w-40">Ageing</th>
                                     <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">Due &gt;45 Days</th>
                                     <th className="px-2.5 py-2.5 text-center w-36">Follow-up / Status</th>
                                     <th className="px-2.5 py-2.5 text-left w-32">CRM Owner</th>
@@ -895,6 +828,22 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
                                                 {/* Compact Contact Line */}
                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[12.5px] text-gray-500 dark:text-gray-400">
+                                                    {/* Payment rank used to be its own 178px column; it is one pill,
+                                                        so it lives with the customer it describes. */}
+                                                    <span
+                                                        className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                                                            rank === 'Good'
+                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
+                                                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
+                                                        }`}
+                                                        title={item.paymentRank ? `Manually set: ${item.paymentRank} Payment` : `Auto-ranked on credit terms & ageing: ${rank} Payment`}
+                                                    >
+                                                        {rank}
+                                                    </span>
+                                                    <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                        {item.paymentTermsDays ? `${item.paymentTermsDays}d terms` : 'Std credit'}
+                                                        {item.creditLimit ? ` • ₹${(item.creditLimit / 100000).toFixed(1)}L` : ''}
+                                                    </span>
                                                     {item.city && (
                                                         <span className="font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                                                             {item.city}
@@ -921,78 +870,65 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 </div>
                                             </td>
 
-                                            {/* Rank Column */}
-                                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                                                <div className="flex flex-col items-center justify-center">
-                                                    <span 
-                                                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11.5px] font-extrabold ${
-                                                            rank === 'Good'
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                                                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
-                                                        }`}
-                                                        title={item.paymentRank ? `Manually set: ${item.paymentRank} Payment` : `Auto-ranked based on credit terms & ageing: ${rank} Payment`}
-                                                    >
-                                                        {rank === 'Good' ? 'Good' : 'Bad'}
-                                                    </span>
-                                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
-                                                        {item.paymentTermsDays ? `${item.paymentTermsDays}d Terms` : 'Std Credit'}
-                                                        {item.creditLimit ? ` • ₹${(item.creditLimit / 100000).toFixed(1)}L` : ''}
-                                                    </div>
-                                                </div>
-                                            </td>
-
-                                            {/* Total Balance */}
+                                            {/* Total Balance — compact by default, exact figure on hover.
+                                                A credit balance still gets the full CR (Excess) treatment. */}
                                             <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={item.total}
-                                                    type={item.totalType || 'Dr'}
-                                                    defaultClass="font-extrabold text-gray-900 dark:text-gray-100 text-xs"
-                                                />
+                                                {item.totalType === 'Cr' && item.total > 0 ? (
+                                                    /* One credit row anywhere in the book used to widen this column to
+                                                       171px for every row, because the full "CR (Excess)" chip never
+                                                       wraps. Same meaning, compact. */
+                                                    <span
+                                                        className="inline-flex items-center gap-1 num text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80"
+                                                        title={`Excess payment held with us (CR advance) of ${formatINR(item.total)}`}
+                                                    >
+                                                        {formatCompact(item.total)}
+                                                        <span className="uppercase font-black text-[10px] px-1 rounded bg-purple-200 text-purple-900 dark:bg-purple-800 dark:text-purple-100">
+                                                            CR
+                                                        </span>
+                                                    </span>
+                                                ) : (
+                                                    <span
+                                                        className="num text-xs font-extrabold text-gray-900 dark:text-gray-100"
+                                                        title={formatINR(item.total)}
+                                                    >
+                                                        {formatCompact(item.total)}
+                                                    </span>
+                                                )}
                                             </td>
 
-                                            {/* 1-45 */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={a1}
-                                                    type={item.ageingTypes?.['1-45'] || 'Dr'}
-                                                    defaultClass={`text-[12.5px] ${a1 > 0 ? 'text-gray-700 dark:text-gray-300 font-medium' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* 46-90 */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={a2}
-                                                    type={item.ageingTypes?.['46-90'] || 'Dr'}
-                                                    defaultClass={`text-[12.5px] ${a2 > 0 ? 'text-amber-700 dark:text-amber-300 font-semibold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* 91-135 */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-amber-50/40 dark:bg-amber-950/10">
-                                                <BalanceAmount
-                                                    amount={a3}
-                                                    type={item.ageingTypes?.['91-135'] || 'Dr'}
-                                                    defaultClass={`text-[12.5px] ${a3 > 0 ? 'text-amber-800 dark:text-amber-300 font-bold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* >135 */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-red-50/40 dark:bg-red-950/10">
-                                                <BalanceAmount
-                                                    amount={a4}
-                                                    type={item.ageingTypes?.['>135'] || 'Dr'}
-                                                    defaultClass={`text-[12.5px] ${a4 > 0 ? 'text-red-700 dark:text-red-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
+                                            {/* Ageing — the four buckets as one bar. Four number columns cost
+                                                ~420px, which is what pushed the actions off a laptop screen. The
+                                                shape reads faster anyway; exact figures are on hover. */}
+                                            <td
+                                                className="px-2.5 py-2.5 align-middle"
+                                                title={`1-45: ${formatINR(a1)}
+46-90: ${formatINR(a2)}
+91-135: ${formatINR(a3)}
+Over 135: ${formatINR(a4)}`}
+                                            >
+                                                <AgeingBar parts={{ a1, a2, a3, a4 }} height={7} />
+                                                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] font-bold whitespace-nowrap">
+                                                    <span className="text-gray-500 dark:text-gray-400">
+                                                        {item.total > 0 ? `${Math.round((due45 / item.total) * 100)}% >45d` : '—'}
+                                                    </span>
+                                                    {a4 > 0 ? (
+                                                        <span className="text-red-700 dark:text-red-400">&gt;135 {formatCompact(a4)}</span>
+                                                    ) : a3 > 0 ? (
+                                                        <span className="text-amber-700 dark:text-amber-300">91-135 {formatCompact(a3)}</span>
+                                                    ) : (
+                                                        <span className="text-emerald-700 dark:text-emerald-400">current</span>
+                                                    )}
+                                                </div>
                                             </td>
 
                                             {/* Due >45 */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10">
-                                                <BalanceAmount
-                                                    amount={due45}
-                                                    type="Dr"
-                                                    defaultClass={`text-[12.5px] ${due45 > 0 ? 'text-rose-700 dark:text-rose-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
+                                                <span
+                                                    className={`num text-[12.5px] ${due45 > 0 ? 'text-rose-700 dark:text-rose-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
+                                                    title={formatINR(due45)}
+                                                >
+                                                    {formatCompact(due45)}
+                                                </span>
                                             </td>
 
                                             {/* Follow-up Date & Status */}
@@ -1106,68 +1042,6 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </table>
                     </div>
 
-                    {/* Bottom Horizontal Scroll & Slider Control Bar */}
-                    <div className="px-3.5 py-2.5 bg-card-2 border-t border-separator flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5 whitespace-nowrap">
-                                                                <span>Table Scroller:</span>
-                            </span>
-                            {/* Interactive Bottom Slider */}
-                            <div className="flex-1 sm:w-64 flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-2xs">
-                                <span className="text-[11.5px] font-bold text-gray-500">0%</span>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    value={scrollPercent}
-                                    onChange={handleSliderChange}
-                                    aria-label="Scroll the table sideways"
-                                    className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-                                    title="Slide left and right to inspect all columns"
-                                />
-                                <span className="text-[11.5px] font-bold text-gray-500">100%</span>
-                            </div>
-                            <span className="text-[12.5px] font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
-                                {scrollPercent}%
-                            </span>
-                        </div>
-
-                        {/* Navigation Step Buttons */}
-                        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
-                            <button
-                                type="button"
-                                onClick={() => scrollToPosition('start')}
-                                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-2xs"
-                                title="Jump to start (Company & Details)"
-                            >
-                                First
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => scrollTableBy(-300)}
-                                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-2xs"
-                                title="Slide left"
-                            >
-                                Left
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => scrollTableBy(300)}
-                                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-2xs"
-                                title="Slide right"
-                            >
-                                Right
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => scrollToPosition('end')}
-                                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-2xs"
-                                title="Jump to end (Actions & Follow-up)"
-                            >
-                                Last
-                            </button>
-                        </div>
-                    </div>
                 </div>
             ) : (
                 /* Grid / Cards View */
