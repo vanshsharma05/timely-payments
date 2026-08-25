@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, DataVisibility } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
-import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon } from './icons/Icons';
-import { AgeingBar } from './ui/Primitives';
+import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
+import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatCompact, formatINR } from './ui/format';
 
 interface CustomerDashboardViewProps {
@@ -728,6 +728,8 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             <span className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
                                                                 <span>Customer Ledger ({filteredData.length} accounts)</span>
                             </span>
+                            {/* What the bar colours mean, said once instead of per row. */}
+                            <AgeingLegend className="gap-3" />
                         </div>
 
                     </div>
@@ -755,9 +757,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             </label>
                                         </th>
                                     )}
-                                    <th className="px-3.5 py-2.5 min-w-[240px]">Customer & Contact Details</th>
+                                    <th className="px-3.5 py-2.5 min-w-[210px]">Customer & Contact Details</th>
                                     <th className="px-3 py-2.5 text-right w-24">Balance</th>
-                                    <th className="px-2.5 py-2.5 text-left w-40">Ageing</th>
+                                    <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
                                     <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">Due &gt;45 Days</th>
                                     <th className="px-2.5 py-2.5 text-center w-36">Follow-up / Status</th>
                                     <th className="px-2.5 py-2.5 text-left w-32">CRM Owner</th>
@@ -881,7 +883,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                         className="inline-flex items-center gap-1 num text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80"
                                                         title={`Excess payment held with us (CR advance) of ${formatINR(item.total)}`}
                                                     >
-                                                        {formatCompact(item.total)}
+                                                        {formatINR(item.total)}
                                                         <span className="uppercase font-black text-[10px] px-1 rounded bg-purple-200 text-purple-900 dark:bg-purple-800 dark:text-purple-100">
                                                             CR
                                                         </span>
@@ -889,35 +891,38 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 ) : (
                                                     <span
                                                         className="num text-xs font-extrabold text-gray-900 dark:text-gray-100"
-                                                        title={formatINR(item.total)}
+                                                        title={formatCompact(item.total)}
                                                     >
-                                                        {formatCompact(item.total)}
+                                                        {formatINR(item.total)}
                                                     </span>
                                                 )}
                                             </td>
 
-                                            {/* Ageing — the four buckets as one bar. Four number columns cost
-                                                ~420px, which is what pushed the actions off a laptop screen. The
-                                                shape reads faster anyway; exact figures are on hover. */}
-                                            <td
-                                                className="px-2.5 py-2.5 align-middle"
-                                                title={`1-45: ${formatINR(a1)}
-46-90: ${formatINR(a2)}
-91-135: ${formatINR(a3)}
-Over 135: ${formatINR(a4)}`}
-                                            >
-                                                <AgeingBar parts={{ a1, a2, a3, a4 }} height={7} />
-                                                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] font-bold whitespace-nowrap">
-                                                    <span className="text-gray-500 dark:text-gray-400">
-                                                        {item.total > 0 ? `${Math.round((due45 / item.total) * 100)}% >45d` : '—'}
-                                                    </span>
-                                                    {a4 > 0 ? (
-                                                        <span className="text-red-700 dark:text-red-400">&gt;135 {formatCompact(a4)}</span>
-                                                    ) : a3 > 0 ? (
-                                                        <span className="text-amber-700 dark:text-amber-300">91-135 {formatCompact(a3)}</span>
-                                                    ) : (
-                                                        <span className="text-emerald-700 dark:text-emerald-400">current</span>
-                                                    )}
+                                            {/* Ageing — the bar for shape, then every bucket in full rupees,
+                                                colour-keyed to the bar above it. Four separate number columns
+                                                cost ~420px; this says the same in ~195px without a tooltip. */}
+                                            <td className="px-2.5 py-2 align-middle">
+                                                <AgeingBar parts={{ a1, a2, a3, a4 }} height={6} />
+                                                <div className="mt-1.5 grid grid-cols-2 gap-x-2.5 gap-y-0.5 text-[11px] leading-[1.35]">
+                                                    {AGE_BANDS.map((band, i) => {
+                                                        const v = [a1, a2, a3, a4][i];
+                                                        return (
+                                                            <span
+                                                                key={band.key}
+                                                                className="inline-flex items-center gap-1 whitespace-nowrap"
+                                                                title={`${band.label}: ${formatINR(v)}`}
+                                                            >
+                                                                <span
+                                                                    className="w-1.5 h-1.5 rounded-full flex-none"
+                                                                    style={{ background: band.varName, opacity: v > 0 ? 1 : 0.3 }}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <span className={`num ${v > 0 ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}`}>
+                                                                    {v > 0 ? formatINR(v) : '—'}
+                                                                </span>
+                                                            </span>
+                                                        );
+                                                    })}
                                                 </div>
                                             </td>
 
@@ -925,9 +930,9 @@ Over 135: ${formatINR(a4)}`}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10">
                                                 <span
                                                     className={`num text-[12.5px] ${due45 > 0 ? 'text-rose-700 dark:text-rose-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                    title={formatINR(due45)}
+                                                    title={formatCompact(due45)}
                                                 >
-                                                    {formatCompact(due45)}
+                                                    {formatINR(due45)}
                                                 </span>
                                             </td>
 
@@ -990,18 +995,20 @@ Over 135: ${formatINR(a4)}`}
                                                         <WhatsAppIcon className="w-4 h-4" />
                                                     </button>
 
-                                                    {/* Edit Customer Master Button */}
+                                                    {/* Edit — icon only. Follow Up is the primary action and keeps its
+                                                        label; this one buys back the width the ageing figures need. */}
                                                     <button
                                                         onClick={() => onEditCustomer(item)}
                                                         disabled={!canEditCustomer}
-                                                        className={`h-8 px-3 text-[12.5px] font-semibold rounded-full transition-all ${
+                                                        className={`w-8 h-8 grid place-items-center rounded-full transition-colors ${
                                                             canEditCustomer
-                                                                ? 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200'
-                                                                : 'bg-gray-100 dark:bg-gray-800 text-gray-400 opacity-50 cursor-not-allowed'
+                                                                ? 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                                                : 'text-gray-400 opacity-50 cursor-not-allowed'
                                                         }`}
                                                         title={canEditCustomer ? 'Edit customer master details & rank' : 'No rights to edit customer'}
+                                                        aria-label={`Edit ${item.company}`}
                                                     >
-                                                        Edit
+                                                        <EditIcon className="w-4 h-4" />
                                                     </button>
 
                                                     {/* Follow-up Button */}
