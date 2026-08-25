@@ -1,26 +1,30 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import * as XLSX from 'xlsx';
+import { isSupabaseConfigured } from './services/supabaseClient';
+import * as repo from './services/repository';
+import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory } from './types';
 import { 
     getOutstandingForUser, 
     USERS as INITIAL_USERS, 
     MOCK_DATA, 
     processStatuses,
-    parseGoogleSheetCsv,
     mergeWithExistingFollowUps,
     fetchGoogleSheetData,
     parseAmountAndType,
     fetchCustomerMasterSheetData,
     mergeCustomerMasterIntoAppData
 } from './services/googleSheetService';
-import Header from './components/Header';
-import SummaryCard from './components/SummaryCard';
-import OutstandingTable from './components/PaymentTable';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
 import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
-import { DollarSignIcon, CheckCircleIcon, ClockIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, FireIcon, ChartBarIcon, LinkIcon, DocumentTextIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, CalendarIcon, SyncIcon, WhatsAppIcon, ChequeIcon, BuildingOfficeIcon, SparklesIcon } from './components/icons/Icons';
+import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
+import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon } from './components/shell/NavIcons';
+import { formatCompact, formatINR } from './components/ui/format';
+import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Button } from './components/ui/Primitives';
+import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, WhatsAppIcon, ChequeIcon, BuildingOfficeIcon, SparklesIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import UserModal from './components/UserModal';
 import TemplateModal from './components/TemplateModal';
@@ -29,17 +33,10 @@ import ReportsView, { FollowUpCategoryFilter } from './components/ReportsView';
 import SyncReconciliationModal from './components/SyncReconciliationModal';
 import PdcChequesView from './components/PdcChequesView';
 import PdcModal from './components/PdcModal';
-import { CompanyBanner } from './components/CompanyBanner';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import { CompanyProfileModal } from './components/CompanyProfileModal';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
-// FIX: Add type declaration for SheetJS.
-declare global {
-    interface Window {
-      XLSX: any;
-    }
-}
 
 // Helper to get today's date at midnight
 const getToday = () => {
@@ -52,17 +49,9 @@ const OFFICIAL_TRANSACTIONS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/
 const OFFICIAL_CUSTOMER_MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pubhtml?gid=895778621&single=true';
 const OFFICIAL_SHEET_URL = OFFICIAL_TRANSACTIONS_SHEET_URL;
 
-const EXPECTED_HEADERS = [
-    "ID", "Company", "Contact Person", "Contact Number", "Total Due", 
-    "Ageing 1-45", "Ageing 46-90", "Ageing 91-135", "Ageing >135", 
-    "CRM Owner Name", "Assigned Collector Name", "Follow-up Date", "Notes", 
-    "Is Urgent", "Creation Date"
+const EXPECTED_HEADERS = ["ID","Company","Contact Person","Contact Number","Total Due","Ageing 1-45","Ageing 46-90","Ageing 91-135","Ageing >135","CRM Owner Name","Assigned Collector Name","Follow-up Date","Notes","Is Urgent","Creation Date"
 ];
 
-const CUSTOMER_MASTER_HEADERS = [
-    "Company Name", "Contact Person", "Designation", "Mobile Number", "Email Address",
-    "City", "State", "GSTIN", "Billing Address", "Credit Limit", "Payment Terms (Days)", "CRM Owner"
-];
 
 const DEFAULT_TEMPLATE: Template = {
     id: 'template_default',
@@ -85,16 +74,6 @@ Thank you!`
 };
 
 const INITIAL_PDC_CHEQUES: PdcCheque[] = [];
-
-const TabButton = ({ tabName, activeTab, setActiveTab, label, icon }: { tabName: string, activeTab: string, setActiveTab: (t: string) => void, label: string, icon: React.ReactNode }) => (
-    <button
-        onClick={() => setActiveTab(tabName)}
-        className={`flex items-center space-x-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${activeTab === tabName ? 'bg-green-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-    >
-        {icon}
-        <span>{label}</span>
-    </button>
-);
 
 const App = () => {
     const [users, setUsers] = useState<User[]>(() => {
@@ -139,7 +118,7 @@ const App = () => {
     const [adminTab, setAdminTab] = useState('overview');
     const [userTab, setUserTab] = useState('overview');
 
-    // This state holds the "Master" data for the application
+    // This state holds the"Master" data for the application
     const [appData, setAppData] = useState<Outstanding[]>([]);
     
     // This state holds the filtered data for the current view
@@ -283,7 +262,7 @@ const App = () => {
         setCustomerToEdit(null);
         setSyncMessage({
             type: 'success',
-            text: `Customer "${savedCustomer.company}" ${isExisting ? 'updated' : 'added'} successfully!`
+            text: `Customer"${savedCustomer.company}" ${isExisting ? 'updated' : 'added'} successfully!`
         });
         setTimeout(() => setSyncMessage(null), 4000);
     };
@@ -291,26 +270,22 @@ const App = () => {
     const handleDeleteCustomer = (customerId: string) => {
         const target = appData.find(c => c.id === customerId);
         if (!target) return;
-        if (window.confirm(`Are you sure you want to delete customer "${target.company}"?`)) {
+        if (window.confirm(`Are you sure you want to delete customer"${target.company}"?`)) {
             const updated = appData.filter(c => c.id !== customerId);
             const processed = processStatuses(updated);
             setAppData(processed);
             localStorage.setItem('timely_payment_data', JSON.stringify(processed));
             setSyncMessage({
                 type: 'success',
-                text: `Customer "${target.company}" deleted successfully.`
+                text: `Customer"${target.company}" deleted successfully.`
             });
             setTimeout(() => setSyncMessage(null), 4000);
         }
     };
 
     const handleExportCustomerExcel = () => {
-        if (window.XLSX) {
-            const headers = [
-                "ID", "Company", "Contact Person", "Designation", "Contact Number", 
-                "Email", "Total Outstanding", "Type", "1-45 Days", "46-90 Days", 
-                "91-135 Days", ">135 Days", "Due >45 Days", "Over 90 Days", 
-                "CRM Owner", "Status", "Follow-up Date", "Last Note"
+        if (XLSX) {
+            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
             ];
             const rows = appData.map(c => [
                 c.id,
@@ -332,10 +307,10 @@ const App = () => {
                 c.followUpDate ? new Date(c.followUpDate).toISOString().split('T')[0] : '',
                 (c.notes && c.notes.length > 0) ? c.notes[c.notes.length - 1] : ''
             ]);
-            const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
-            const wb = window.XLSX.utils.book_new();
-            window.XLSX.utils.book_append_sheet(wb, ws, "Customers");
-            window.XLSX.writeFile(wb, `Customer_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws,"Customers");
+            XLSX.writeFile(wb, `Customer_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`);
         } else {
             alert("Export functionality ready. Please try again.");
         }
@@ -494,10 +469,124 @@ const App = () => {
 
     // Whenever master appData changes, save to local storage (acts as cache for Google mode too)
     useEffect(() => {
-        if (appData.length > 0) {
-            localStorage.setItem('timely_payment_data', JSON.stringify(appData));
-        }
+        if (appData.length === 0) return;
+        // Serialising the whole dataset is synchronous and O(rows). Debounce it
+        // so it never lands inside the frame of a click or a filter change, and
+        // swallow quota errors rather than crashing the dashboard.
+        const id = setTimeout(() => {
+            try {
+                localStorage.setItem('timely_payment_data', JSON.stringify(appData));
+            } catch (e) {
+                console.warn('Could not cache dataset to localStorage:', e);
+            }
+        }, 500);
+        return () => clearTimeout(id);
     }, [appData]);
+
+    // =====================================================================
+    // Supabase backend
+    //
+    // With VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY set, Supabase is the
+    // master record: state is hydrated from it on sign-in and every change is
+    // written back, so the whole team shares one dataset. Without those keys
+    // the app falls back to the original localStorage behaviour.
+    // =====================================================================
+    const [serverLoaded, setServerLoaded] = useState(false);
+    const [restoringSession, setRestoringSession] = useState(isSupabaseConfigured);
+
+    // Restore an existing session on load so a refresh does not bounce you out.
+    useEffect(() => {
+        if (!isSupabaseConfigured) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const profile = await repo.fetchCurrentProfile();
+                if (!cancelled && profile) {
+                    setCurrentUser(profile);
+                    setIsAuthenticated(true);
+                }
+            } catch {
+                /* not signed in */
+            } finally {
+                if (!cancelled) setRestoringSession(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    // Hydrate every collection once, straight after sign-in.
+    useEffect(() => {
+        if (!isSupabaseConfigured || !isAuthenticated || serverLoaded) return;
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+            try {
+                const all = await repo.loadAll();
+                if (cancelled) return;
+                setAppData(processStatuses(all.customers));
+                setPdcCheques(all.pdcCheques);
+                if (all.users.length) setUsers(all.users);
+                if (all.templates.length) setTemplates(all.templates);
+                if (all.companyProfile) setCompanyProfile(all.companyProfile);
+                if (all.settings.dataSourceMode) setDataSourceMode(all.settings.dataSourceMode);
+                if (all.settings.googleSheetUrl) setGoogleSheetUrl(all.settings.googleSheetUrl);
+                if (all.settings.customerMasterSheetUrl) setCustomerMasterSheetUrl(all.settings.customerMasterSheetUrl);
+                if (all.settings.sheetUpdatedTillDate) setSheetUpdatedTillDate(all.settings.sheetUpdatedTillDate);
+                if (all.settings.lastSyncTime) setLastSyncTime(all.settings.lastSyncTime);
+                setServerLoaded(true);
+            } catch (e: any) {
+                if (!cancelled) setSyncMessage({ type: 'error', text: `Could not load data: ${e?.message || e}` });
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isAuthenticated, serverLoaded]);
+
+    const syncEnabled = isSupabaseConfigured && isAuthenticated && serverLoaded;
+    const reportSyncError = useCallback((text: string) => setSyncMessage({ type: 'error', text }), []);
+
+    // Stable adapters. These tables are small, so a sequential loop is fine.
+    const upsertPdcRows = useCallback(async (rows: PdcCheque[]) => {
+        for (const r of rows) await repo.upsertPdcCheque(r);
+    }, []);
+    const upsertTemplateRows = useCallback(async (rows: Template[]) => {
+        for (const r of rows) await repo.upsertTemplate(r);
+    }, []);
+    const customerSignature = useCallback((c: Outstanding) => JSON.stringify(repo.outstandingToRow(c)), []);
+    const jsonSignature = useCallback((r: unknown) => JSON.stringify(r), []);
+
+    useCollectionSync({
+        rows: appData, enabled: syncEnabled, label: 'customers',
+        toSignature: customerSignature,
+        upsert: repo.upsertCustomers, remove: repo.deleteCustomer,
+        onError: reportSyncError,
+    });
+    useCollectionSync({
+        rows: pdcCheques, enabled: syncEnabled, label: 'PDC cheques',
+        toSignature: jsonSignature,
+        upsert: upsertPdcRows, remove: repo.deletePdcCheque,
+        onError: reportSyncError,
+    });
+    useCollectionSync({
+        rows: templates, enabled: syncEnabled, label: 'templates',
+        toSignature: jsonSignature,
+        upsert: upsertTemplateRows, remove: repo.deleteTemplate,
+        onError: reportSyncError,
+    });
+    useValueSync({
+        value: companyProfile, enabled: syncEnabled, label: 'company profile',
+        save: repo.saveCompanyProfile, onError: reportSyncError,
+    });
+
+    const settingsValue = useMemo(
+        () => ({ dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime }),
+        [dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime]
+    );
+    useValueSync({
+        value: settingsValue, enabled: syncEnabled, label: 'settings',
+        save: repo.saveAppSettings, onError: reportSyncError,
+    });
 
     // Update the view when Current User changes or Master Data changes
     const updateViewData = useCallback(async () => {
@@ -539,7 +628,9 @@ const App = () => {
         setIsAuthenticated(true);
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try { await repo.signOut(); } catch { /* local sign-out is enough */ }
+        setServerLoaded(false);
         setIsAuthenticated(false);
         setCurrentUser(null);
         setOutstandingData([]);
@@ -588,16 +679,6 @@ const App = () => {
         localStorage.setItem('timely_payment_data', JSON.stringify(fullyProcessed));
     };
 
-    const handleCardClick = (filter: FollowUpStatus | null) => {
-        setPriorityFilter(false);
-        setUnattendedFilter(false);
-        setCategoryFilter('all');
-        if (filter === null) {
-            setStatusFilter(null);
-            return;
-        }
-        setStatusFilter(currentFilter => (currentFilter === filter ? null : filter));
-    };
 
     const handleCategoryBoxClick = (category: FollowUpCategoryFilter) => {
         setPriorityFilter(false);
@@ -699,8 +780,7 @@ const App = () => {
     // Factory Reset: Reset All Data & All Users to Fresh Start
     const handleResetAllDataAndUsers = async (skipConfirm = false) => {
         if (!skipConfirm) {
-            const confirmed = window.confirm(
-                "⚠️ COMPLETE FRESH START\n\nAre you sure you want to reset ALL data and ALL users?\n\nThis will:\n1. Reset all user accounts & restore default passwords (Admin: 'admin', Team: 'password123')\n2. Clear all follow-up notes, tags, forecast amounts, and custom contacts\n3. Clear all Post-Dated Cheques (PDC)\n4. Fetch a 100% clean, fresh dataset from the live Google Sheet\n5. Restore default message templates & company profile\n\nClick OK to proceed with fresh start."
+            const confirmed = window.confirm("COMPLETE FRESH START\n\nAre you sure you want to reset ALL data and ALL users?\n\nThis will:\n1. Reset all user accounts & restore default passwords (Admin: 'admin', Team: 'password123')\n2. Clear all follow-up notes, tags, forecast amounts, and custom contacts\n3. Clear all Post-Dated Cheques (PDC)\n4. Fetch a 100% clean, fresh dataset from the live Google Sheet\n5. Restore default message templates & company profile\n\nClick OK to proceed with fresh start."
             );
             if (!confirmed) return;
         }
@@ -895,7 +975,7 @@ const App = () => {
             }
 
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unknown error during sync";
+            const msg = err instanceof Error ? err.message :"Unknown error during sync";
             setSyncMessage({ type: 'error', text: msg });
         } finally {
             setIsSyncing(false);
@@ -935,7 +1015,7 @@ const App = () => {
             });
             setTimeout(() => setSyncMessage(null), 6000);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unknown error during customer master sync";
+            const msg = err instanceof Error ? err.message :"Unknown error during customer master sync";
             setSyncMessage({ type: 'error', text: msg });
         } finally {
             setIsSyncing(false);
@@ -994,7 +1074,7 @@ const App = () => {
             });
             setTimeout(() => setSyncMessage(null), 6000);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Error during combined sync";
+            const msg = err instanceof Error ? err.message :"Error during combined sync";
             setSyncMessage({ type: 'error', text: msg });
         } finally {
             setIsSyncing(false);
@@ -1064,6 +1144,29 @@ const App = () => {
     }, [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users]);
 
     // 4 Main Boxes Summary (For Admin Company-Wide View)
+
+    // Whole-book ageing. Credit balances are excluded: money sitting with us is
+    // not a receivable and must not inflate the outstanding figure.
+    const portfolioAgeing = useMemo(() => {
+        let a1 = 0, a2 = 0, a3 = 0, a4 = 0;
+        appData.forEach(item => {
+            if (item.totalType === 'Cr') return;
+            const t = item.ageingTypes || {};
+            if (t['1-45'] !== 'Cr') a1 += Math.abs(item.ageing?.['1-45'] || 0);
+            if (t['46-90'] !== 'Cr') a2 += Math.abs(item.ageing?.['46-90'] || 0);
+            if (t['91-135'] !== 'Cr') a3 += Math.abs(item.ageing?.['91-135'] || 0);
+            if (t['>135'] !== 'Cr') a4 += Math.abs(item.ageing?.['>135'] || 0);
+        });
+        const total = a1 + a2 + a3 + a4;
+        const over45 = a2 + a3 + a4;
+        const over90 = a3 + a4;
+        return {
+            a1, a2, a3, a4, total, over45, over90,
+            pct45: total > 0 ? Math.round((over45 / total) * 100) : 0,
+            pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
+        };
+    }, [appData]);
+
     const fourBoxesSummary = useMemo(() => {
         const today = getToday();
         let todayCount = 0;
@@ -1145,27 +1248,6 @@ const App = () => {
         };
     }, [outstandingData]);
 
-    const summaryData = useMemo(() => {
-        const today = getToday();
-        const activeData = outstandingData.filter(p => p.status !== FollowUpStatus.Completed);
-        
-        const totalOutstanding = activeData.reduce((sum, p) => sum + p.total, 0);
-        const overdueCount = outstandingData.filter(p => p.status === FollowUpStatus.Overdue).length;
-        const customerCount = outstandingData.length;
-
-        const collectedToday = outstandingData.reduce((sum, p) => {
-            if (p.status === FollowUpStatus.Completed && p.followUpDate) {
-                 const collectedDate = new Date(p.followUpDate);
-                 collectedDate.setHours(0,0,0,0);
-                 if (collectedDate.getTime() === today.getTime()) {
-                     return sum + p.total;
-                 }
-            }
-            return sum;
-        }, 0);
-
-        return { totalOutstanding, collectedToday, overdueCount, customerCount };
-    }, [outstandingData]);
 
     // Cash Flow Collection Forecast Metrics (Requirement 2)
     const cashFlowForecastMetrics = useMemo(() => {
@@ -1223,22 +1305,6 @@ const App = () => {
         return { urgentCount, overdueCount };
     }, [outstandingData]);
 
-    // User Specific Stats (CRM/Collector)
-    const userStats = useMemo(() => {
-        const today = getToday();
-        let todayCount = 0;
-        let futureCount = 0;
-        let unattendedCount = 0;
-
-        outstandingData.forEach(item => {
-            const cat = getFollowUpCategory(item, today);
-            if (cat === 'completed') return;
-            if (cat === 'today') todayCount++;
-            else if (cat === 'future') futureCount++;
-            else if (cat === 'overdue' || cat === 'no_follow_up') unattendedCount++;
-        });
-        return { todayCount, futureCount, unattendedCount };
-    }, [outstandingData]);
 
     // CRM Performance Statistics Calculation (Admin View)
     const crmPerformanceStats = useMemo(() => {
@@ -1262,7 +1328,7 @@ const App = () => {
             });
         });
 
-        // Add bucket for "Unassigned"
+        // Add bucket for"Unassigned"
         statsMap.set('Unassigned', {
             crmId: 'Unassigned',
             crmName: 'No CRM Assigned',
@@ -1320,15 +1386,6 @@ const App = () => {
     }, [outstandingData, users]);
 
 
-    const todayFollowUps = useMemo(() => {
-        const today = getToday();
-        return outstandingData.filter(item => {
-             if (!item.followUpDate) return false;
-             const followUpDate = new Date(item.followUpDate);
-             followUpDate.setHours(0,0,0,0);
-             return followUpDate.getTime() === today.getTime() && item.status !== FollowUpStatus.Completed;
-        });
-    }, [outstandingData]);
 
     // PDC Cheque Handlers & Calculations
     const todayPdcMetrics = useMemo(() => {
@@ -1426,7 +1483,7 @@ const App = () => {
 
     // Shared dashboard view for Admin
     const renderAdminOverviewCards = () => (
-        <>
+        <div className="flex flex-col gap-7">
             {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                 <NotificationBanner
                     urgentCount={notificationSummary.urgentCount}
@@ -1436,174 +1493,188 @@ const App = () => {
                 />
             )}
 
-            {/* Today PDC Cheques Bank Presentation Highlight Banner */}
-            <div className="mb-8 p-5 bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white rounded-2xl shadow-lg border border-emerald-600/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-                <div className="flex items-center gap-4">
-                    <div className="p-3.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner flex items-center justify-center">
-                        <ChequeIcon className="w-8 h-8 text-emerald-300" />
-                    </div>
+            {/* ---------- worklist ---------- */}
+            <section>
+                <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
                     <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">Bank Action Today</span>
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-400/30">
-                                {todayPdcMetrics.todayCount} Cheque{todayPdcMetrics.todayCount === 1 ? '' : 's'} Due
-                            </span>
-                        </div>
-                        <h3 className="text-xl font-bold mt-0.5 text-white">Today PDC Cheques To Present in Bank</h3>
-                        <p className="text-xs text-emerald-100/90 mt-1">
-                            Total amount to present today: <strong className="text-white text-sm font-extrabold">₹ {formatCurrency(todayPdcMetrics.todayAmount)}</strong> • Total active PDC portfolio: ₹ {formatCurrency(todayPdcMetrics.activeAmount)} ({todayPdcMetrics.activeCount} cheques)
-                        </p>
+                        <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">Worklist</h2>
+                        <p className="text-[13.5px] text-label-3 mt-1">Tap a card to open it in the customer book.</p>
                     </div>
-                </div>
-                <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
-                    <button
-                        onClick={handleOpenTodayPdc}
-                        className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-gray-950 font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
-                    >
-                        <span>View Today's Cheques ({todayPdcMetrics.todayCount})</span>
-                    </button>
-                    <button
-                        onClick={() => handleOpenAddPdc()}
-                        className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs border border-white/20 transition-all flex items-center justify-center gap-1.5"
-                    >
-                        <span>+ Add PDC</span>
-                    </button>
-                </div>
-            </div>
-
-            {/* REQUIREMENT 2: Daily Cash Flow Forecast & Committed Inflows Banner */}
-            <div className="mb-8 p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white rounded-2xl shadow-lg border border-indigo-500/30 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-                <div className="flex items-start sm:items-center gap-4">
-                    <div className="p-3.5 bg-indigo-500/20 backdrop-blur-md rounded-2xl border border-indigo-400/30 shadow-inner flex items-center justify-center flex-shrink-0">
-                        <SparklesIcon className="w-8 h-8 text-indigo-300" />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-300">Cash Flow Forecast Intelligence</span>
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
-                                {cashFlowForecastMetrics.totalCount} Account{cashFlowForecastMetrics.totalCount === 1 ? '' : 's'} with Target Forecast
-                            </span>
-                        </div>
-                        <h3 className="text-xl font-bold mt-0.5 text-white">Daily Cash Flow Forecast (Collection Purpose)</h3>
-                        <p className="text-xs text-indigo-200/90 mt-1">
-                            Live collection projections committed during CRM/Sales follow-up calls for daily financial planning.
-                        </p>
-                    </div>
-                </div>
-                
-                {/* Metric Badges */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full lg:w-auto">
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-center">
-                        <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">🎯 Today's Inflow</div>
-                        <div className="text-base sm:text-lg font-extrabold text-emerald-400 mt-0.5">₹ {formatCurrency(cashFlowForecastMetrics.todayForecast)}</div>
-                        <div className="text-[10px] text-gray-400">{cashFlowForecastMetrics.todayCount} commitment{cashFlowForecastMetrics.todayCount === 1 ? '' : 's'}</div>
-                    </div>
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-center">
-                        <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">📅 7-Day Inflow</div>
-                        <div className="text-base sm:text-lg font-extrabold text-blue-300 mt-0.5">₹ {formatCurrency(cashFlowForecastMetrics.weekForecast)}</div>
-                        <div className="text-[10px] text-gray-400">{cashFlowForecastMetrics.weekCount} commitment{cashFlowForecastMetrics.weekCount === 1 ? '' : 's'}</div>
-                    </div>
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-center col-span-2 sm:col-span-1">
-                        <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">💼 Total Forecast</div>
-                        <div className="text-base sm:text-lg font-extrabold text-amber-300 mt-0.5">₹ {formatCurrency(cashFlowForecastMetrics.totalForecast)}</div>
-                        <div className="text-[10px] text-gray-400">{cashFlowForecastMetrics.totalCount} account{cashFlowForecastMetrics.totalCount === 1 ? '' : 's'}</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* 4 Main Follow-up Performance Boxes */}
-            <div className="mb-8">
-                <div className="flex justify-between items-center mb-3">
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">Follow-up Categories</h2>
-                    {categoryFilter !== 'all' && (
-                        <button
-                            onClick={handleClearFilters}
-                            className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 flex items-center"
-                        >
-                            Reset Filter
-                        </button>
+                    {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
+                        <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
                     )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            handleCategoryBoxClick('today');
-                            setAdminTab('customers');
-                        }}
-                        className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'today' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-400' : 'border-blue-100 dark:border-blue-900 bg-white dark:bg-gray-800 hover:border-blue-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">📅 Today Follow Up</span>
-                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">{fourBoxesSummary.todayCount}</span>
-                        </div>
-                        <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{fourBoxesSummary.todayCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mt-1">₹ {formatCurrency(fourBoxesSummary.todayAmount)}</p>
-                    </button>
 
-                    <button
-                        type="button"
-                        onClick={() => {
-                            handleCategoryBoxClick('no_follow_up');
-                            setAdminTab('customers');
-                        }}
-                        className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'no_follow_up' ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 ring-2 ring-amber-400' : 'border-amber-100 dark:border-amber-900 bg-white dark:bg-gray-800 hover:border-amber-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">⚠️ No Follow Up Customer List</span>
-                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">{fourBoxesSummary.noFollowUpCount}</span>
-                        </div>
-                        <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{fourBoxesSummary.noFollowUpCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                        <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold mt-1">₹ {formatCurrency(fourBoxesSummary.noFollowUpAmount)}</p>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => {
-                            handleCategoryBoxClick('overdue');
-                            setAdminTab('customers');
-                        }}
-                        className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'overdue' ? 'border-red-500 bg-red-50 dark:bg-red-950/40 ring-2 ring-red-400' : 'border-red-100 dark:border-red-900 bg-white dark:bg-gray-800 hover:border-red-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">🚨 Overdue Follow Up</span>
-                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">{fourBoxesSummary.overdueCount}</span>
-                        </div>
-                        <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{fourBoxesSummary.overdueCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                        <p className="text-xs text-red-700 dark:text-red-300 font-semibold mt-1">₹ {formatCurrency(fourBoxesSummary.overdueAmount)}</p>
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => {
-                            handleCategoryBoxClick('future');
-                            setAdminTab('customers');
-                        }}
-                        className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'future' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 ring-2 ring-emerald-400' : 'border-emerald-100 dark:border-emerald-900 bg-white dark:bg-gray-800 hover:border-emerald-300'}`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">📆 Future Follow Up</span>
-                            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">{fourBoxesSummary.futureCount}</span>
-                        </div>
-                        <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{fourBoxesSummary.futureCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                        <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold mt-1">₹ {formatCurrency(fourBoxesSummary.futureAmount)}</p>
-                    </button>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <Stat
+                        label="Due today"
+                        tone="brand"
+                        active={categoryFilter === 'today'}
+                        onClick={() => { handleCategoryBoxClick('today'); setAdminTab('customers'); }}
+                        value={fourBoxesSummary.todayCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase</>}
+                    />
+                    <Stat
+                        label="Overdue"
+                        tone="dang"
+                        active={categoryFilter === 'overdue'}
+                        onClick={() => { handleCategoryBoxClick('overdue'); setAdminTab('customers'); }}
+                        value={fourBoxesSummary.overdueCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past promised date</>}
+                    />
+                    <Stat
+                        label="No follow-up"
+                        tone="warn"
+                        active={categoryFilter === 'no_follow_up'}
+                        onClick={() => { handleCategoryBoxClick('no_follow_up'); setAdminTab('customers'); }}
+                        value={fourBoxesSummary.noFollowUpCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> unattended</>}
+                    />
+                    <Stat
+                        label="Scheduled"
+                        tone="pos"
+                        active={categoryFilter === 'future'}
+                        onClick={() => { handleCategoryBoxClick('future'); setAdminTab('customers'); }}
+                        value={fourBoxesSummary.futureCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> committed</>}
+                    />
                 </div>
+            </section>
+
+            {/* ---------- portfolio ageing ---------- */}
+            <Card className="p-6">
+                <SectionHeader
+                    title="Portfolio ageing"
+                    subtitle="How much of the book is still healthy, and how much has gone cold."
+                    actions={<AgeingLegend />}
+                />
+
+                <div className="flex flex-wrap items-end gap-x-12 gap-y-5 mt-7">
+                    <div>
+                        <p className="label">Outstanding</p>
+                        <p className="num text-[40px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
+                            {formatCompact(portfolioAgeing.total)}
+                        </p>
+                        <p className="text-[13px] text-label-3 mt-2.5">{formatINR(portfolioAgeing.total)}</p>
+                    </div>
+                    <div>
+                        <p className="label">Past 45 days</p>
+                        <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
+                            {formatCompact(portfolioAgeing.over45)}
+                        </p>
+                        <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct45}% of the book</p>
+                    </div>
+                    <div>
+                        <p className="label">Past 90 days</p>
+                        <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
+                            {formatCompact(portfolioAgeing.over90)}
+                        </p>
+                        <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct90}% of the book</p>
+                    </div>
+                </div>
+
+                <AgeingBar parts={portfolioAgeing} height={12} className="mt-7" />
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                    {AGE_BANDS.map(band => {
+                        const amount = portfolioAgeing[band.key];
+                        const pct = portfolioAgeing.total > 0 ? Math.round((amount / portfolioAgeing.total) * 100) : 0;
+                        return (
+                            <div key={band.key} className="bg-card-2 rounded-[14px] px-4 py-3.5">
+                                <span className="flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: band.varName }} aria-hidden="true" />
+                                    <span className="text-[13px] font-medium text-label-2">{band.label}</span>
+                                </span>
+                                <p className="num text-[19px] font-semibold text-label mt-2">{formatCompact(amount)}</p>
+                                <p className="text-[12.5px] text-label-3 mt-1">{pct}% of book</p>
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
+
+            {/* ---------- cheques + commitments ---------- */}
+            <div className="grid lg:grid-cols-2 gap-3.5">
+                <Card className="p-6 flex flex-col">
+                    <SectionHeader
+                        title="Cheques to present today"
+                        subtitle="Post-dated cheques whose date has arrived."
+                    />
+                    <div className="flex items-end gap-10 mt-7">
+                        <div>
+                            <p className="label">Due today</p>
+                            <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
+                                {todayPdcMetrics.todayCount}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="label">Value</p>
+                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                {formatCompact(todayPdcMetrics.todayAmount)}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="label">Held in hand</p>
+                            <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
+                                {formatCompact(todayPdcMetrics.activeAmount)}
+                            </p>
+                            <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-2.5 mt-auto pt-7">
+                        <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
+                            {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => handleOpenAddPdc()}>Record a cheque</Button>
+                    </div>
+                </Card>
+
+                <Card className="p-6 flex flex-col">
+                    <SectionHeader
+                        title="Committed collections"
+                        subtitle="What customers have promised, and by when."
+                    />
+                    <div className="flex items-end gap-10 mt-7">
+                        <div>
+                            <p className="label">Today</p>
+                            <p className="num text-[32px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-1-ink)' }}>
+                                {formatCompact(cashFlowForecastMetrics.todayForecast)}
+                            </p>
+                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.todayCount} commitments</p>
+                        </div>
+                        <div>
+                            <p className="label">Next 7 days</p>
+                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                {formatCompact(cashFlowForecastMetrics.weekForecast)}
+                            </p>
+                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.weekCount} commitments</p>
+                        </div>
+                        <div>
+                            <p className="label">All open</p>
+                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                {formatCompact(cashFlowForecastMetrics.totalForecast)}
+                            </p>
+                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.totalCount} accounts</p>
+                        </div>
+                    </div>
+                    {cashFlowForecastMetrics.totalCount === 0 && (
+                        <p className="text-[13px] text-label-3 mt-auto pt-7 leading-relaxed">
+                            No commitments recorded yet. They appear here once a CRM logs an expected
+                            amount and date on a follow-up.
+                        </p>
+                    )}
+                </Card>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <SummaryCard title="Total Outstanding" value={formatCurrency(summaryData.totalOutstanding)} icon={<DollarSignIcon />} color="text-amber-500" onClick={() => handleCardClick(null)} />
-                <SummaryCard title="Total Overdue" value={summaryData.overdueCount.toString()} icon={<ClockIcon />} color="text-red-500" onClick={() => handleCardClick(FollowUpStatus.Overdue)} isActive={statusFilter === FollowUpStatus.Overdue} />
-                <SummaryCard title="Total Customers" value={summaryData.customerCount.toString()} icon={<UsersIcon />} color="text-slate-500" onClick={() => handleCardClick(null)} />
-                <SummaryCard title="Collected Today" value={formatCurrency(summaryData.collectedToday)} icon={<CheckCircleIcon />} color="text-green-500" onClick={() => handleCardClick(FollowUpStatus.Completed)} isActive={statusFilter === FollowUpStatus.Completed} />
-            </div>
+            {/* ---------- team ---------- */}
             <CrmPerformanceTable stats={crmPerformanceStats} />
-        </>
+        </div>
     );
 
     const renderCustomerListView = () => (
         <CustomerDashboardView
             data={appData}
+            globalSearch={searchTerm}
             currentUser={currentUser}
             users={users}
             onAddCustomer={handleOpenAddCustomer}
@@ -1615,7 +1686,7 @@ const App = () => {
             onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
             pdcCheques={pdcCheques}
-            onSyncSheet={() => syncData(true)}
+            onSyncSheet={handleCombinedSync}
             isSyncing={isSyncing}
             lastUpdatedTill={sheetUpdatedTillDate}
             onExportExcel={handleExportCustomerExcel}
@@ -1623,59 +1694,43 @@ const App = () => {
     );
 
     // Unified User Dashboard for CRM and Collector
-    const renderUserDashboard = (title: string) => {
+    const renderUserDashboard = () => {
         // Use lifted state
         const activeTab = userTab;
-        const setActiveTab = setUserTab;
 
         return (
             <>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-800 dark:text-white">{title}</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Logged in as: <span className="font-semibold text-gray-700 dark:text-gray-200">{currentUser?.name}</span> ({currentUser?.role})</p>
-                    </div>
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-100 dark:border-gray-800 p-1.5 flex items-center overflow-x-auto">
-                        <div className="flex space-x-1 min-w-max">
-                            <TabButton tabName="overview" activeTab={activeTab} setActiveTab={setActiveTab} label="Daily Follow-ups" icon={<ChartBarIcon />} />
-                            <TabButton tabName="pdc" activeTab={activeTab} setActiveTab={setActiveTab} label="PDC Cheques" icon={<ChequeIcon />} />
-                            <TabButton tabName="reports" activeTab={activeTab} setActiveTab={setActiveTab} label="Performance Report" icon={<ClipboardListIcon />} />
-                            <TabButton tabName="customers" activeTab={activeTab} setActiveTab={setActiveTab} label="Customer List" icon={<UsersIcon />} />
-                        </div>
-                    </div>
-                </div>
-                
                 {activeTab === 'overview' && (
                     <div className="space-y-6">
                         {/* Today PDC Cheques Focus Banner */}
                         {todayPdcMetrics.todayCount > 0 && (
-                            <div className="p-4 bg-gradient-to-r from-emerald-900 to-teal-900 text-white rounded-2xl shadow-md border border-emerald-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div className="p-4 bg-card-2 text-label rounded-[16px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="p-2.5 bg-white/10 rounded-xl border border-white/20">
-                                        <ChequeIcon className="w-6 h-6 text-emerald-300" />
+                                    <div className="p-2.5 bg-card rounded-[12px]">
+                                        <ChequeIcon className="w-6 h-6 text-pos" />
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">Bank Presentation</span>
-                                            <span className="px-2 py-0.2 text-xs font-bold rounded-full bg-emerald-500/30 text-emerald-200">
+                                            <span className="text-xs font-bold uppercase tracking-wider text-pos">Bank Presentation</span>
+                                            <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-pos-bg text-pos">
                                                 {todayPdcMetrics.todayCount} Cheque{todayPdcMetrics.todayCount === 1 ? '' : 's'} Due Today
                                             </span>
                                         </div>
                                         <p className="text-sm font-bold mt-0.5">
-                                            ₹ {formatCurrency(todayPdcMetrics.todayAmount)} due for presentation in bank today
+                                            {formatCurrency(todayPdcMetrics.todayAmount)} due for presentation in bank today
                                         </p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={handleOpenTodayPdc}
-                                        className="px-3.5 py-2 bg-emerald-400 hover:bg-emerald-300 text-gray-950 font-bold rounded-xl text-xs shadow transition-all"
+                                        className="h-9 px-4 bg-accent hover:bg-accent-press text-on-accent font-semibold rounded-full text-xs transition-colors"
                                     >
                                         View Today's Cheques
                                     </button>
                                     <button
                                         onClick={() => handleOpenAddPdc()}
-                                        className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs border border-white/20 transition-all"
+                                        className="h-9 px-4 bg-card hover:bg-hover text-label-2 hover:text-label font-semibold rounded-full text-xs border border-separator-strong transition-colors"
                                     >
                                         + Add PDC
                                     </button>
@@ -1684,25 +1739,25 @@ const App = () => {
                         )}
 
                         {/* Cash Flow Forecast Banner for CRM */}
-                        <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white rounded-2xl shadow-md border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="p-4 bg-card-2 text-label rounded-[16px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
                                 <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-400/30">
-                                    <SparklesIcon className="w-6 h-6 text-indigo-300" />
+                                    <SparklesIcon className="w-6 h-6 text-accent" />
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-indigo-300">Daily Cash Flow Forecast</span>
-                                        <span className="px-2 py-0.2 text-xs font-bold rounded-full bg-indigo-500/30 text-indigo-200">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-accent">Daily Cash Flow Forecast</span>
+                                        <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-accent-tint text-accent">
                                             {cashFlowForecastMetrics.todayCount} Expected Today
                                         </span>
                                     </div>
                                     <p className="text-sm font-bold mt-0.5">
-                                        Today's Inflow Forecast: <strong className="text-emerald-300 font-extrabold">₹ {formatCurrency(cashFlowForecastMetrics.todayForecast)}</strong> • 7-Day Target: ₹ {formatCurrency(cashFlowForecastMetrics.weekForecast)}
+                                        Today's Inflow Forecast: <strong className="text-emerald-300 font-extrabold">{formatCurrency(cashFlowForecastMetrics.todayForecast)}</strong> • 7-Day Target: {formatCurrency(cashFlowForecastMetrics.weekForecast)}
                                     </p>
                                 </div>
                             </div>
                             <div className="text-xs text-indigo-200 bg-white/10 px-3 py-1.5 rounded-lg border border-white/15">
-                                Total Portfolio Forecast: <strong className="text-amber-300 font-bold">₹ {formatCurrency(cashFlowForecastMetrics.totalForecast)}</strong> ({cashFlowForecastMetrics.totalCount} accounts)
+                                Total Portfolio Forecast: <strong className="text-amber-300 font-bold">{formatCurrency(cashFlowForecastMetrics.totalForecast)}</strong> ({cashFlowForecastMetrics.totalCount} accounts)
                             </div>
                         </div>
 
@@ -1729,11 +1784,11 @@ const App = () => {
                                     className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'today' ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-950/40 ring-2 ring-blue-400' : 'border-blue-100 dark:border-blue-900/50 bg-white dark:bg-gray-800 hover:border-blue-300'}`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">📅 Today Follow Up</span>
+                                        <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Today Follow Up</span>
                                         <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">{userBoxMetrics.todayCount}</span>
                                     </div>
                                     <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.todayCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mt-1">₹ {formatCurrency(userBoxMetrics.todayAmount)}</p>
+                                    <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.todayAmount)}</p>
                                 </button>
 
                                 <button
@@ -1742,11 +1797,11 @@ const App = () => {
                                     className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'overdue' ? 'border-red-500 bg-red-50/80 dark:bg-red-950/40 ring-2 ring-red-400' : 'border-red-100 dark:border-red-900/50 bg-white dark:bg-gray-800 hover:border-red-300'}`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">🚨 Overdue Follow Up</span>
+                                        <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Overdue Follow Up</span>
                                         <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">{userBoxMetrics.overdueCount}</span>
                                     </div>
                                     <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.overdueCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-red-700 dark:text-red-300 font-semibold mt-1">₹ {formatCurrency(userBoxMetrics.overdueAmount)}</p>
+                                    <p className="text-xs text-red-700 dark:text-red-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.overdueAmount)}</p>
                                 </button>
 
                                 <button
@@ -1755,11 +1810,11 @@ const App = () => {
                                     className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'no_follow_up' ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-400' : 'border-amber-100 dark:border-amber-900/50 bg-white dark:bg-gray-800 hover:border-amber-300'}`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">⚠️ No Follow Up List</span>
+                                        <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">No Follow Up List</span>
                                         <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">{userBoxMetrics.noFollowUpCount}</span>
                                     </div>
                                     <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.noFollowUpCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold mt-1">₹ {formatCurrency(userBoxMetrics.noFollowUpAmount)}</p>
+                                    <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.noFollowUpAmount)}</p>
                                 </button>
 
                                 <button
@@ -1768,11 +1823,11 @@ const App = () => {
                                     className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'future' ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-400' : 'border-emerald-100 dark:border-emerald-900/50 bg-white dark:bg-gray-800 hover:border-emerald-300'}`}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">📆 Future Follow Up</span>
+                                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Future Follow Up</span>
                                         <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">{userBoxMetrics.futureCount}</span>
                                     </div>
                                     <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.futureCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold mt-1">₹ {formatCurrency(userBoxMetrics.futureAmount)}</p>
+                                    <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.futureAmount)}</p>
                                 </button>
                             </div>
                         </div>
@@ -1782,11 +1837,10 @@ const App = () => {
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                                        {categoryFilter === 'today' ? "Today's Follow-up Schedule" :
-                                         categoryFilter === 'overdue' ? "Overdue Accounts Requiring Action" :
-                                         categoryFilter === 'no_follow_up' ? "Accounts Without Planned Follow-ups" :
-                                         categoryFilter === 'future' ? "Upcoming Future Follow-ups" :
-                                         "My Assigned Accounts"}
+                                        {categoryFilter === 'today' ?"Today's Follow-up Schedule" :
+                                         categoryFilter === 'overdue' ?"Overdue Accounts Requiring Action" :
+                                         categoryFilter === 'no_follow_up' ?"Accounts Without Planned Follow-ups" :
+                                         categoryFilter === 'future' ?"Upcoming Future Follow-ups" :"My Assigned Accounts"}
                                     </h2>
                                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Showing {filteredData.length} accounts</p>
                                 </div>
@@ -1809,7 +1863,7 @@ const App = () => {
                                     <p className="text-gray-500 dark:text-gray-400 font-medium">No accounts match the current filter.</p>
                                     <button
                                         onClick={handleClearFilters}
-                                        className="mt-2 text-sm text-green-600 hover:text-green-700 font-semibold"
+                                        className="mt-2 text-sm text-green-600 dark:text-green-400 hover:text-green-700 font-semibold"
                                     >
                                         View All Assigned Accounts
                                     </button>
@@ -1843,7 +1897,7 @@ const App = () => {
                                                         </button>
                                                         {customer.isUrgent && (
                                                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                                                🔥 Urgent
+                                                                Urgent
                                                             </span>
                                                         )}
                                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -1864,18 +1918,18 @@ const App = () => {
                                                         <div>
                                                             <span className="text-gray-400">Follow-up Date: </span>
                                                             <span className={`font-semibold ${isOverdue ? 'text-red-600' : isNoFollow ? 'text-amber-600' : 'text-gray-800 dark:text-gray-200'}`}>
-                                                                {customer.followUpDate ? new Date(customer.followUpDate).toLocaleDateString('en-GB') : '⚠️ Not Scheduled'}
+                                                                {customer.followUpDate ? new Date(customer.followUpDate).toLocaleDateString('en-GB') : 'Not Scheduled'}
                                                             </span>
                                                         </div>
                                                         <div>
                                                             <span className="text-gray-400">Balance: </span>
-                                                            <span className="font-bold text-gray-900 dark:text-white">₹ {formatCurrency(customer.total)}</span>
+                                                            <span className="font-bold text-gray-900 dark:text-white">{formatCurrency(customer.total)}</span>
                                                         </div>
                                                     </div>
 
                                                     {customer.notes && customer.notes.length > 0 && (
                                                         <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-800/60 px-2 py-1 rounded">
-                                                            Last Note: "{customer.notes[customer.notes.length - 1]}"
+                                                            Last Note:"{customer.notes[customer.notes.length - 1]}"
                                                         </p>
                                                     )}
                                                 </div>
@@ -1886,7 +1940,7 @@ const App = () => {
                                                         className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-semibold transition-colors shadow-2xs flex items-center gap-1 border border-gray-200 dark:border-gray-700"
                                                         title="Edit Customer Master Info & Name"
                                                     >
-                                                        ✏️ Edit
+                                                        Edit
                                                     </button>
                                                     <button
                                                         onClick={() => handleOpenFollowUp(customer)}
@@ -1947,115 +2001,11 @@ const App = () => {
         );
     };
 
-    const ReportCard = ({ title, value }: { title: string, value: string | number }) => (
-        <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{title}</p>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">{value}</p>
-        </div>
-    );
 
-    const ReportsDashboard = () => {
-        const [selectedUserId, setSelectedUserId] = useState<string>(users.filter(u => u.role !== UserRole.Admin)[0]?.id || '');
-        
-        const selectedUser = useMemo(() => users.find(u => u.id === selectedUserId), [selectedUserId, users]);
-        
-        const userReports = useMemo(() => {
-            if (!selectedUser) return [];
-            // For reports, we need to look at the full, unfiltered dataset
-            if (selectedUser.role === UserRole.CRM) {
-                return outstandingData.filter(d => d.crmOwnerId === selectedUserId);
-            }
-            if (selectedUser.role === UserRole.Collector) {
-                return outstandingData.filter(d => d.assignedCollectorId === selectedUserId);
-            }
-            return [];
-        }, [selectedUserId, outstandingData, selectedUser]);
-
-        const crmMetrics = useMemo(() => {
-            if (!selectedUser || selectedUser.role !== UserRole.CRM || userReports.length === 0) return null;
-            
-            const totalCustomers = userReports.length;
-            const totalOutstanding = userReports.reduce((sum, item) => item.status !== FollowUpStatus.Completed ? sum + item.total : sum, 0);
-            const followUpRate = (userReports.filter(c => !!c.followUpDate).length / totalCustomers) * 100;
-            const overdue = userReports.filter(c => c.status === FollowUpStatus.Overdue).length;
-            const urgent = userReports.filter(c => c.isUrgent).length;
-
-            const completedTasks = userReports.filter(c => c.status === FollowUpStatus.Completed && c.lastFollowUpOn);
-            const collectionTimes = completedTasks.map(c => (new Date(c.lastFollowUpOn!).getTime() - new Date(c.creationDate).getTime()) / (1000 * 3600 * 24));
-            const avgCollectionTime = collectionTimes.length > 0 ? collectionTimes.reduce((a, b) => a + b, 0) / collectionTimes.length : 0;
-
-            return { totalCustomers, totalOutstanding, followUpRate, overdue, urgent, avgCollectionTime };
-
-        }, [selectedUser, userReports]);
-
-        const collectorMetrics = useMemo(() => {
-            if (!selectedUser || selectedUser.role !== UserRole.Collector || userReports.length === 0) return null;
-
-            const totalAssigned = userReports.length;
-            const completed = userReports.filter(c => c.status === FollowUpStatus.Completed);
-            const completedToday = completed.filter(c => c.lastFollowUpOn && getToday().getTime() === new Date(c.lastFollowUpOn).setHours(0,0,0,0)).length;
-            const successRate = totalAssigned > 0 ? (completed.length / totalAssigned) * 100 : 0;
-            
-            const delayedTasks = userReports.filter(c => c.followUpDate && c.lastFollowUpOn && new Date(c.lastFollowUpOn) > new Date(c.followUpDate));
-            const delays = delayedTasks.map(c => (new Date(c.lastFollowUpOn!).getTime() - new Date(c.followUpDate!).getTime()) / (1000 * 3600 * 24));
-            const avgDelay = delays.length > 0 ? delays.reduce((a, b) => a + b, 0) / delays.length : 0;
-
-            return { totalAssigned, completedToday, successRate, avgDelay };
-
-        }, [selectedUser, userReports]);
-
-        return (
-            <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
-                    <label htmlFor="userSelect" className="text-lg font-semibold text-gray-700 dark:text-gray-300">Select User:</label>
-                    <select
-                        id="userSelect"
-                        value={selectedUserId}
-                        onChange={e => setSelectedUserId(e.target.value)}
-                        className="w-full sm:w-72 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-2 text-sm font-medium text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    >
-                        {users.filter(u => u.role !== UserRole.Admin).map(user => (
-                            <option key={user.id} value={user.id}>{user.name} ({user.role})</option>
-                        ))}
-                    </select>
-                </div>
-                
-                {selectedUser && userReports.length === 0 && (
-                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">No data available for this user.</div>
-                )}
-                
-                {crmMetrics && (
-                    <div>
-                        <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">CRM Performance</h3>
-                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            <ReportCard title="Total Customers" value={crmMetrics.totalCustomers} />
-                            <ReportCard title="Total Outstanding" value={formatCurrency(crmMetrics.totalOutstanding)} />
-                            <ReportCard title="Follow-up Rate" value={`${crmMetrics.followUpRate.toFixed(1)}%`} />
-                            <ReportCard title="Overdue Accounts" value={crmMetrics.overdue} />
-                            <ReportCard title="Avg. Collection Time" value={`${crmMetrics.avgCollectionTime.toFixed(1)} days`} />
-                             <ReportCard title="Urgent Tasks" value={crmMetrics.urgent} />
-                        </div>
-                    </div>
-                )}
-                {collectorMetrics && (
-                    <div>
-                        <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">Collector Performance</h3>
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <ReportCard title="Total Assigned Visits" value={collectorMetrics.totalAssigned} />
-                            <ReportCard title="Completed Today" value={collectorMetrics.completedToday} />
-                            <ReportCard title="Success Rate" value={`${collectorMetrics.successRate.toFixed(1)}%`} />
-                            <ReportCard title="Avg. Follow-up Delay" value={`${collectorMetrics.avgDelay.toFixed(1)} days`} />
-                        </div>
-                    </div>
-                )}
-            </div>
-        );
-    }
 
     const renderAdminDashboard = () => {
         // Use lifted state
         const activeTab = adminTab;
-        const setActiveTab = setAdminTab;
 
         const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0];
@@ -2068,10 +2018,10 @@ const App = () => {
             reader.onload = (e) => {
                 try {
                     const data = e.target?.result;
-                    const workbook = window.XLSX.read(data, { type: 'binary', cellDates: true });
+                    const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
-                    const json: any[][] = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                    const json: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval:"" });
                     
                     if (json.length < 1) {
                          throw new Error("Excel sheet is empty or invalid.");
@@ -2115,39 +2065,19 @@ const App = () => {
         };
 
         const downloadTemplate = () => {
-            if (window.XLSX) {
-                const ws = window.XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]);
-                const wb = window.XLSX.utils.book_new();
-                window.XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-                window.XLSX.writeFile(wb, "TimelyPayment_Template.xlsx");
+            if (XLSX) {
+                const ws = XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws,"Sheet1");
+                XLSX.writeFile(wb,"TimelyPayment_Template.xlsx");
             } else {
                 alert("Export functionality not ready yet. Please try again in a moment.");
             }
         };
 
-        const resetData = () => {
-            if(window.confirm("Are you sure? This will delete all uploaded data and restore the sample mock data.")) {
-                localStorage.removeItem('timely_payment_data');
-                setAppData(processStatuses(MOCK_DATA));
-                setSyncMessage({ type: 'success', text: "Data reset to default."});
-            }
-        }
 
         return (
              <>
-                <h1 className="text-3xl font-bold mb-6 text-gray-800 dark:text-white">Admin Dashboard</h1>
-                <div className="mb-6 bg-white dark:bg-gray-900 rounded-lg shadow-md p-2 flex items-center justify-between overflow-x-auto">
-                     <div className="flex space-x-2 min-w-max">
-                        <TabButton tabName="overview" activeTab={activeTab} setActiveTab={setActiveTab} label="Overview" icon={<ChartBarIcon />} />
-                        <TabButton tabName="pdc" activeTab={activeTab} setActiveTab={setActiveTab} label="PDC Cheques" icon={<ChequeIcon />} />
-                        <TabButton tabName="customers" activeTab={activeTab} setActiveTab={setActiveTab} label="Customer List" icon={<ClipboardListIcon />} />
-                        <TabButton tabName="users" activeTab={activeTab} setActiveTab={setActiveTab} label="User Management" icon={<UsersIcon />} />
-                        <TabButton tabName="reports" activeTab={activeTab} setActiveTab={setActiveTab} label="Reports" icon={<ChartBarIcon />} />
-                        <TabButton tabName="templates" activeTab={activeTab} setActiveTab={setActiveTab} label="Templates" icon={<DocumentTextIcon />} />
-                        <TabButton tabName="source" activeTab={activeTab} setActiveTab={setActiveTab} label="Data Source" icon={<LinkIcon />} />
-                    </div>
-                </div>
-                
                 {activeTab === 'overview' && renderAdminOverviewCards()}
                 
                 {activeTab === 'customers' && renderCustomerListView()}
@@ -2212,7 +2142,7 @@ const App = () => {
                                                     className="flex items-center px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 transition-colors"
                                                     title="Reset user list and passwords to default roster"
                                                 >
-                                                    <span>🔄 Reset Users to Default</span>
+                                                    <span>Reset Users to Default</span>
                                                 </button>
                                                 <button 
                                                     onClick={() => handleOpenUserModal(null)}
@@ -2256,13 +2186,13 @@ const App = () => {
                                                                 </td>
                                                                 <td className="px-4 py-3">
                                                                     {user.role === UserRole.Admin || user.dataVisibility === DataVisibility.All ? (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                                                            🌐 All Accounts
+                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                                            All Accounts
                                                                         </span>
                                                                     ) : (
                                                                         <div className="flex flex-wrap gap-1">
                                                                             {(user.assignedCrms && user.assignedCrms.length > 0 ? user.assignedCrms : [user.id]).map(c => (
-                                                                                <span key={c} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                                                                <span key={c} className="inline-flex items-center px-2 py-0.5 rounded text-[12.5px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                                                                                     {c}
                                                                                 </span>
                                                                             ))}
@@ -2270,7 +2200,7 @@ const App = () => {
                                                                     )}
                                                                 </td>
                                                                 <td className="px-4 py-3">
-                                                                    <div className="flex flex-wrap gap-1 text-[10px]">
+                                                                    <div className="flex flex-wrap gap-1 text-[11.5px]">
                                                                         {user.role === UserRole.Admin ? (
                                                                             <span className="font-bold text-purple-600 dark:text-purple-400">Full System Control (All Rights)</span>
                                                                         ) : (
@@ -2299,7 +2229,7 @@ const App = () => {
                                                                         {user.role !== UserRole.Admin && (
                                                                             <button 
                                                                                 onClick={() => handleDeleteUser(user.id)} 
-                                                                                className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors" 
+                                                                                className="p-1.5 text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors" 
                                                                                 title="Delete user"
                                                                             >
                                                                                 <TrashIcon className="w-4 h-4" />
@@ -2360,8 +2290,8 @@ const App = () => {
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{template.name}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                         <div className="flex justify-end items-center space-x-2">
-                                                            <button onClick={() => handleOpenTemplateModal(template)} className="p-2 text-green-600 hover:text-green-800"><EditIcon /></button>
-                                                            <button onClick={() => handleDeleteTemplate(template.id)} className="p-2 text-red-600 hover:text-red-800"><TrashIcon /></button>
+                                                            <button onClick={() => handleOpenTemplateModal(template)} className="w-9 h-9 grid place-items-center rounded-full text-green-600 dark:text-green-400 hover:text-green-800 hover:bg-hover" aria-label={`Edit template ${template.name}`}><EditIcon /></button>
+                                                            <button onClick={() => handleDeleteTemplate(template.id)} className="w-9 h-9 grid place-items-center rounded-full text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-hover" aria-label={`Delete template ${template.name}`}><TrashIcon /></button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -2446,7 +2376,7 @@ const App = () => {
                                                         value="excel" 
                                                         checked={dataSourceMode === 'excel'} 
                                                         onChange={() => setDataSourceMode('excel')}
-                                                        className="h-4 w-4 text-green-600 focus:ring-green-500"
+                                                        className="h-4 w-4 text-green-600 dark:text-green-400 focus:ring-green-500"
                                                     />
                                                     <span className="ml-3 font-semibold text-gray-900 dark:text-white">Excel Upload (Offline)</span>
                                                 </div>
@@ -2463,7 +2393,7 @@ const App = () => {
                                                         value="google" 
                                                         checked={dataSourceMode === 'google'} 
                                                         onChange={() => setDataSourceMode('google')}
-                                                        className="h-4 w-4 text-green-600 focus:ring-green-500"
+                                                        className="h-4 w-4 text-green-600 dark:text-green-400 focus:ring-green-500"
                                                     />
                                                     <span className="ml-3 font-semibold text-gray-900 dark:text-white">Live Google Sheet (Team)</span>
                                                 </div>
@@ -2487,11 +2417,11 @@ const App = () => {
                                         ) : (
                                             <div className="space-y-6">
                                                 {/* Top Action: Dual Sync */}
-                                                <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-emerald-500/10 dark:from-emerald-950/40 dark:to-blue-950/40 border border-emerald-300 dark:border-emerald-700 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                                                <div className="p-4 bg-card-2 dark:from-emerald-950/40 dark:to-blue-950/40 border border-emerald-300 dark:border-emerald-700 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3">
                                                     <div>
                                                         <h4 className="text-sm font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5">
-                                                            <span>⚡ One-Click Dual Sync</span>
-                                                            <span className="px-2 py-0.5 text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded font-bold">Recommended</span>
+                                                            <span>One-Click Dual Sync</span>
+                                                            <span className="px-2 py-0.5 text-[11.5px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded font-bold">Recommended</span>
                                                         </h4>
                                                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                                                             Synchronizes both Outstanding Invoices and Customer Master details (GSTIN, credit terms, contacts) in a single run.
@@ -2511,9 +2441,9 @@ const App = () => {
                                                 <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
                                                     <div className="flex justify-between items-center">
                                                         <label className="block text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">
-                                                            📊 1. Outstanding Invoices & Ageing Sheet
+                                                            1. Outstanding Invoices & Ageing Sheet
                                                         </label>
-                                                        <span className="text-[11px] text-gray-500">Live transaction balances</span>
+                                                        <span className="text-[12.5px] text-gray-500">Live transaction balances</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2532,7 +2462,7 @@ const App = () => {
                                                             <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Invoices'}</span>
                                                         </button>
                                                     </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-gray-500">
                                                         <span>ID, Company, Contact, Total Due, Ageing columns</span>
                                                         <button
                                                             type="button"
@@ -2540,7 +2470,7 @@ const App = () => {
                                                                 setGoogleSheetUrl(OFFICIAL_TRANSACTIONS_SHEET_URL);
                                                                 localStorage.setItem('googleSheetUrl', OFFICIAL_TRANSACTIONS_SHEET_URL);
                                                             }}
-                                                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline"
+                                                            className="inline-flex items-center min-h-[28px] text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline"
                                                         >
                                                             Restore Default Invoices URL
                                                         </button>
@@ -2551,9 +2481,9 @@ const App = () => {
                                                 <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
                                                     <div className="flex justify-between items-center">
                                                         <label className="block text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">
-                                                            🏛️ 2. Customer Master Directory & Credit Terms Sheet
+                                                            2. Customer Master Directory & Credit Terms Sheet
                                                         </label>
-                                                        <span className="text-[11px] text-gray-500">GSTIN, addresses, multiple contacts, limits</span>
+                                                        <span className="text-[12.5px] text-gray-500">GSTIN, addresses, multiple contacts, limits</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2572,7 +2502,7 @@ const App = () => {
                                                             <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Master'}</span>
                                                         </button>
                                                     </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-gray-500">
                                                         <span>Company Name, Contact Person, Designation, Mobile, City, State, GSTIN, Credit Limit</span>
                                                         <button
                                                             type="button"
@@ -2607,7 +2537,7 @@ const App = () => {
                                                 </button>
                                             </div>
                                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                                Use "Reset All Data & Users" to wipe custom notes, passwords, and PDC cheques to begin cleanly from scratch.
+                                                Use"Reset All Data & Users" to wipe custom notes, passwords, and PDC cheques to begin cleanly from scratch.
                                             </p>
                                         </div>
                                     </div>
@@ -2637,90 +2567,163 @@ const App = () => {
             case UserRole.Admin:
                 return renderAdminDashboard();
             case UserRole.CRM:
-                return renderUserDashboard("CRM Dashboard");
+                return renderUserDashboard();
             case UserRole.Collector:
-                return renderUserDashboard("Collection Agent Dashboard");
+                return renderUserDashboard();
             default:
                 return <div className="text-center py-12 text-red-500"><p className="text-lg">Invalid user role.</p></div>;
         }
     };
 
+    // Don't flash the login screen while an existing session is being restored.
+    if (restoringSession) {
+        return (
+            <div className="min-h-screen bg-bg grid place-items-center">
+                <div className="flex items-center gap-3 text-label-2">
+                    <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                    <span className="text-[14px] font-semibold">Restoring your session…</span>
+                </div>
+            </div>
+        );
+    }
+
     if (!isAuthenticated) {
         return (
-            <LoginScreen 
-                users={users} 
-                onLogin={handleLogin} 
+            <LoginScreen
+                users={users}
+                onLogin={handleLogin}
                 onResetPassword={handleResetUserPassword}
-                onResetAll={() => handleResetAllDataAndUsers(false)} 
+                onResetAll={() => handleResetAllDataAndUsers(false)}
             />
         );
     }
 
     if (!currentUser) return null;
 
-    return (
-        <div className="min-h-screen bg-slate-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-            <Header 
-                currentUser={currentUser} 
-                onUserChange={handleUserChange} 
-                users={users} 
-                onLogout={handleLogout} 
-                sheetUpdatedTillDate={sheetUpdatedTillDate}
-                lastSyncTime={lastSyncTime}
-                onSync={() => handleCombinedSync()}
-                onResetAll={() => handleResetAllDataAndUsers(false)}
-                isSyncing={isSyncing}
-                dataSourceMode={dataSourceMode}
-                companyName={companyProfile.name}
-            />
 
-            {syncMessage && (
-                <div className="w-full max-w-[1750px] mx-auto px-2 sm:px-4 lg:px-6 pt-4">
-                    <div className={`p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-md border ${
-                        syncMessage.type === 'success'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
-                            : 'bg-red-50 dark:bg-red-950/50 border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
-                    }`}>
-                        <div className="flex items-center gap-3 text-sm font-medium flex-1">
-                            {syncMessage.type === 'success' ? (
-                                <CheckCircleIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                            ) : (
-                                <ExclamationTriangleIcon className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                            )}
-                            <span>{syncMessage.text}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {syncMessage.type === 'error' && (
-                                <button
-                                    onClick={() => handleGoogleSync(OFFICIAL_SHEET_URL)}
-                                    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow transition-colors flex items-center gap-1.5"
-                                >
-                                    <SyncIcon />
-                                    <span>Sync Official Sheet</span>
-                                </button>
-                            )}
-                            <button
-                                onClick={() => setSyncMessage(null)}
-                                className="text-current opacity-60 hover:opacity-100 p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                                aria-label="Dismiss notification"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    </div>
+    const isAdmin = currentUser.role === UserRole.Admin;
+    const activeKey = isAdmin ? adminTab : userTab;
+    const setActiveKey = isAdmin ? setAdminTab : setUserTab;
+    const boxes = isAdmin ? fourBoxesSummary : userBoxMetrics;
+
+    // Needs-attention count drives the badge on"Today" - overdue first,
+    // because that is what actually costs the company money.
+    const attentionCount = boxes.todayCount + boxes.overdueCount;
+
+    const workItems: NavItem[] = [
+        { key: 'overview', label: 'Today', icon: <TodayIcon />, badge: attentionCount, badgeTone: boxes.overdueCount > 0 ? 'dang' : 'neutral' },
+        { key: 'customers', label: isAdmin ? 'Customers' : 'My customers', icon: <BookIcon /> },
+        { key: 'pdc', label: 'PDC cheques', icon: <ChequeNavIcon />, badge: todayPdcMetrics.todayCount, badgeTone: 'warn' },
+        { key: 'reports', label: isAdmin ? 'Reports' : 'My performance', icon: <ChartIcon /> },
+    ];
+
+    const navGroups: NavGroup[] = isAdmin
+        ? [
+            { items: workItems },
+            {
+                heading: 'Setup',
+                items: [
+                    { key: 'users', label: 'Team & access', icon: <TeamIcon /> },
+                    { key: 'templates', label: 'Message templates', icon: <MessageIcon /> },
+                    { key: 'source', label: 'Data source', icon: <PlugIcon /> },
+                ],
+            },
+        ]
+        : [{ items: workItems }];
+
+    const PAGE_TITLE: Record<string, string> = {
+        overview: isAdmin ? 'Collections overview' : 'Today\u2019s follow-ups',
+        customers: isAdmin ? 'Customer book' : 'My customers',
+        pdc: 'Post-dated cheques',
+        reports: isAdmin ? 'Reports' : 'My performance',
+        users: 'Team & access',
+        templates: 'Message templates',
+        source: 'Data source',
+    };
+
+    const scopeLabel = isAdmin
+        ? `${appData.length} accounts company-wide`
+        : `${outstandingData.length} accounts assigned to you`;
+
+    const totalBook = (isAdmin ? appData : outstandingData)
+        .reduce((s, r) => s + (r.totalType === 'Cr' ? 0 : (r.total || 0)), 0);
+
+    const shellBanner = syncMessage ? (
+        <div className="px-3 sm:px-5 lg:px-7 pt-4">
+            <div
+                role="status"
+                className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${
+                    syncMessage.type === 'success'
+                        ? 'bg-pos-bg border-pos text-pos'
+                        : 'bg-dang-bg border-dang text-dang'
+                }`}
+            >
+                <span className="mt-0.5 flex-none">
+                    {syncMessage.type === 'success'
+                        ? <CheckCircleIcon className="w-[18px] h-[18px]" />
+                        : <ExclamationTriangleIcon className="w-[18px] h-[18px]" />}
+                </span>
+                <p className="text-[14px] font-medium flex-1 leading-snug">{syncMessage.text}</p>
+                {syncMessage.type === 'error' && (
+                    <button
+                        onClick={() => handleGoogleSync(OFFICIAL_SHEET_URL)}
+                        className="text-[13px] font-bold underline underline-offset-2 whitespace-nowrap flex-none"
+                    >
+                        Retry official sheet
+                    </button>
+                )}
+                <button
+                    onClick={() => setSyncMessage(null)}
+                    className="opacity-55 hover:opacity-100 flex-none leading-none text-lg"
+                >
+                    &times;
+                </button>
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <>
+        <AppShell
+            currentUser={currentUser}
+            users={users}
+            groups={navGroups}
+            activeKey={activeKey}
+            onNavigate={setActiveKey}
+            onUserChange={handleUserChange}
+            onLogout={handleLogout}
+            title={PAGE_TITLE[activeKey] || 'Timely Payment'}
+            subtitle={
+                <span className="inline-flex items-center gap-2 flex-wrap">
+                    <span>{scopeLabel}</span>
+                    <span className="text-label-3">&middot;</span>
+                    <span className="num font-semibold text-label-2">{formatCompact(totalBook)}</span>
+                    <span>outstanding</span>
+                </span>
+            }
+            searchTerm={searchTerm}
+            onSearch={setSearchTerm}
+            onSync={() => handleCombinedSync()}
+            isSyncing={isSyncing}
+            dataAsOf={sheetUpdatedTillDate}
+            lastSyncTime={lastSyncTime}
+            banner={shellBanner}
+        >
+            {loading ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-3">
+                    <Spinner className="w-6 h-6 text-label" />
+                    <p className="text-[14.5px] text-label-3">Loading the collections book\u2026</p>
                 </div>
+            ) : error ? (
+                <div className="bg-dang-bg border border-dang text-dang rounded-xl px-5 py-4">
+                    <p className="text-[15px] font-bold">Something went wrong</p>
+                    <p className="text-[14px] mt-1 opacity-90">{error}</p>
+                </div>
+            ) : (
+                renderDashboard()
             )}
-            <main className="p-2 sm:p-4 lg:p-6">
-                <div className="w-full max-w-[1750px] mx-auto">
-                    {loading ? (
-                         <div className="text-center py-12"><p className="text-lg">Loading data...</p></div>
-                    ) : error ? (
-                        <div className="text-center py-12 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 p-4 rounded-lg"><p className="text-lg font-semibold">An Error Occurred</p><p className="text-sm">{error}</p></div>
-                    ) : (
-                       renderDashboard()
-                    )}
-                </div>
-            </main>
+        </AppShell>
+
             {isModalOpen && selectedCustomer && (
                 <FollowUpModal
                     customer={selectedCustomer}
@@ -2755,7 +2758,6 @@ const App = () => {
                     onClose={() => setIsPdcModalOpen(false)}
                     onSave={handleSavePdc}
                     customers={appData}
-                    users={users}
                     currentUser={currentUser!}
                     chequeToEdit={editingPdcCheque}
                     preselectedCustomerId={pdcPreselectedCustomerId}
@@ -2763,8 +2765,9 @@ const App = () => {
             )}
             {pendingSync && (
                 <SyncReconciliationModal
-                    existingCustomers={appData}
-                    incomingCustomers={pendingSync.records}
+                    existingRecords={appData}
+                    incomingRecords={pendingSync.records}
+                    updatedTillDate={pendingSync.updatedTillDate}
                     users={users}
                     sourceName={pendingSync.sourceName}
                     onConfirm={handleConfirmSyncReconciliation}
@@ -2801,7 +2804,7 @@ const App = () => {
                     users={users}
                 />
             )}
-        </div>
+        </>
     );
 };
 

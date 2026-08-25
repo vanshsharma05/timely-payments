@@ -139,12 +139,12 @@ async function startServer() {
         }
     });
 
-    app.get('/api/health', (req, res) => {
+    app.get('/api/health', (_req, res) => {
         res.json({ status: 'ok', time: new Date().toISOString() });
     });
 
     // Check if Gemini API Key is configured
-    app.get('/api/ai-status', (req, res) => {
+    app.get('/api/ai-status', (_req, res) => {
         const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
         res.json({ ok: true, hasApiKey: hasKey, model: 'gemini-3.7-flash' });
     });
@@ -333,7 +333,7 @@ Formatting Guidelines:
         const distPath = path.join(process.cwd(), 'dist');
         app.use(express.static(distPath));
         // In Express v5, catch-all is '*all'
-        app.get('*all', (req, res) => {
+        app.get('*all', (_req, res) => {
             res.sendFile(path.join(distPath, 'index.html'));
         });
     }

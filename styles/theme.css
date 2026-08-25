@@ -1,0 +1,389 @@
+@import "tailwindcss";
+
+/* the AI report renders markdown; prose-* comes from this plugin */
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ============================================================================
+   TIMELY PAYMENT — design system
+
+   Apple's structure, Google's affordances.
+
+   From Apple (HIG):  grouped content on a tinted background, soft continuous
+                      corners, generous padding, big clear titles, restraint.
+   From Google (M3):  one confident accent colour, tonal containers, filter
+                      chips, filled / tonal / text button hierarchy.
+
+   The governing idea: anything you can touch is obviously touchable. Accent
+   blue means "interactive". The ageing ramp means "how old the money is".
+   Those are the only two colour languages in the product.
+   ============================================================================ */
+
+:root {
+  /* Apple grouped background: content sits in white cards on a tinted ground */
+  --bg:        #F1F3F7;
+  --card:      #FFFFFF;
+  --card-2:    #F6F7FA;
+  --card-3:    #EDEFF4;
+  --separator: #E3E5EC;
+  --separator-strong: #CFD2DC;
+
+  /* no wash in light — the ground is already tinted */
+  --bg-wash: transparent;
+
+  --label:   #15171C;
+  --label-2: #5D616B;
+  --label-3: #5D5F66;
+  --label-4: #83878F;
+
+  /* Shori navy, straight from the logo */
+  --accent:       #183C6C;
+  --accent-press: #0F2949;
+  --accent-tint:  #E9EEF6;
+  --accent-tint-2:#CFDBEA;
+  --on-accent:    #FFFFFF;
+
+  /* the yellow from the logo — a fill only, always with navy on top */
+  --brand-yellow:      #FCF000;
+  --brand-yellow-deep: #E4D800;
+  --brand-yellow-ink:  #183C6C;
+
+  --hover:  #F2F4F8;
+  --press:  #E8EBF1;
+
+  /* ---- the ageing ramp: how old the money is ---- */
+  --age-1: #12996A;   --age-1-bg: #E3F5EE;   --age-1-ink: #0F7D57;
+  --age-2: #C07C0C;   --age-2-bg: #FCF1DA;   --age-2-ink: #865609;
+  --age-3: #DD5630;   --age-3-bg: #FCEAE2;   --age-3-ink: #A33F24;
+  --age-4: #CE2B41;   --age-4-bg: #FBE7EA;   --age-4-ink: #B6263A;
+
+  /* pos / warn / dang are the text-safe tones */
+  --pos:  #0D6F4D;  --pos-bg:  #E3F5EE;
+  --warn: #865609;  --warn-bg: #FCF1DA;
+  --dang: #B6263A;  --dang-bg: #FBE7EA;
+
+/* text-bearing palette steps, light theme */
+  --p-n400: #6E737F;  --p-n500: #5D5F66;  --p-n600: #4C505A;
+  --p-accent600: #183C6C;  --p-accent700: #0F2949;
+  --p-green600:  #0D6F4D;  --p-green700:  #0B5D41;
+  --p-amber600:  #865609;  --p-amber700:  #6F4707;
+  --p-red600:    #A33F24;  --p-red700:    #8C361E;
+  --p-rose600:   #B6263A;  --p-rose700:   #971F30;
+
+  --r-card: 16px;
+  --r-control: 11px;
+  --r-inner: 10px;
+
+  --e1: 0 1px 2px rgb(21 23 28 / .04), 0 1px 3px rgb(21 23 28 / .05);
+  --e2: 0 2px 6px rgb(21 23 28 / .06), 0 8px 20px -8px rgb(21 23 28 / .10);
+  --e3: 0 12px 34px -10px rgb(21 23 28 / .22), 0 2px 8px rgb(21 23 28 / .08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #101A2C;
+    --card:      #17233A;
+    --card-2:    #1D2B45;
+    --card-3:    #24344F;
+    --separator: #27354C;
+    --separator-strong: #3A4B68;
+
+    /* soft brand wash so the dark ground is navy, not a flat slab */
+    --bg-wash: rgb(127 168 224 / 0.07);
+
+    --label:   #F2F3F6;
+    --label-2: #A2A7B2;
+    --label-3: #8A9099;
+    --label-4: #565B65;
+
+    --accent:       #7FA8E0;
+    --accent-press: #9BBCEA;
+    --accent-tint:  #16233A;
+    --accent-tint-2:#1F3355;
+    --on-accent:    #0B1A2E;
+
+    --brand-yellow:      #FCF000;
+    --brand-yellow-deep: #E4D800;
+    --brand-yellow-ink:  #10233F;
+
+    --hover: #1C1F26;
+    --press: #232730;
+
+    --age-1: #35C495;   --age-1-bg: #10281F;   --age-1-ink: #35C495;
+    --age-2: #E0A83E;   --age-2-bg: #2A2113;   --age-2-ink: #E0A83E;
+    --age-3: #F27B54;   --age-3-bg: #2E1A13;   --age-3-ink: #F27B54;
+    --age-4: #F05A72;   --age-4-bg: #2C1419;   --age-4-ink: #F05A72;
+
+    /* the same steps, inverted for a dark ground */
+    --p-n400: #9AA0AC;  --p-n500: #AEB4BF;  --p-n600: #C3C8D1;
+    /* fills keep their saturation so white text on them stays legible */
+    --p-accent600: #24518F;  --p-accent700: #1A3D6E;
+    --p-green600:  #12855C;  --p-green700:  #0D6B4A;
+    --p-amber600:  #9E6810;  --p-amber700:  #82550C;
+    --p-red600:    #BE4A28;  --p-red700:    #9E3C20;
+    --p-rose600:   #C42D45;  --p-rose700:   #A32338;
+
+    --pos:  #35C495;  --pos-bg:  #10281F;
+    --warn: #E0A83E;  --warn-bg: #2A2113;
+    --dang: #F05A72;  --dang-bg: #2C1419;
+
+    --e1: 0 1px 2px rgb(0 0 0 / .5);
+    --e2: 0 2px 6px rgb(0 0 0 / .5), 0 8px 20px -8px rgb(0 0 0 / .6);
+    --e3: 0 12px 34px -10px rgb(0 0 0 / .8), 0 2px 8px rgb(0 0 0 / .5);
+  }
+}
+
+[data-theme="dark"] {
+  --bg:        #101A2C;
+  --card:      #17233A;
+  --card-2:    #1D2B45;
+  --card-3:    #24344F;
+  --separator: #27354C;
+  --separator-strong: #3A4B68;
+
+  /* soft brand wash so the dark ground is navy, not a flat slab */
+  --bg-wash: rgb(127 168 224 / 0.07);
+
+  --label:   #F2F3F6;
+  --label-2: #A2A7B2;
+  --label-3: #8A9099;
+  --label-4: #565B65;
+
+  --accent:       #7FA8E0;
+  --accent-press: #9BBCEA;
+  --accent-tint:  #16233A;
+  --accent-tint-2:#1F3355;
+  --on-accent:    #0B1A2E;
+
+  --brand-yellow:      #FCF000;
+  --brand-yellow-deep: #E4D800;
+  --brand-yellow-ink:  #10233F;
+
+  --hover: #1C1F26;
+  --press: #232730;
+
+  --age-1: #35C495;   --age-1-bg: #10281F;   --age-1-ink: #35C495;
+  --age-2: #E0A83E;   --age-2-bg: #2A2113;   --age-2-ink: #E0A83E;
+  --age-3: #F27B54;   --age-3-bg: #2E1A13;   --age-3-ink: #F27B54;
+  --age-4: #F05A72;   --age-4-bg: #2C1419;   --age-4-ink: #F05A72;
+
+  /* the same steps, inverted for a dark ground */
+  --p-n400: #9AA0AC;  --p-n500: #AEB4BF;  --p-n600: #C3C8D1;
+  /* fills keep their saturation so white text on them stays legible */
+  --p-accent600: #24518F;  --p-accent700: #1A3D6E;
+  --p-green600:  #12855C;  --p-green700:  #0D6B4A;
+  --p-amber600:  #9E6810;  --p-amber700:  #82550C;
+  --p-red600:    #BE4A28;  --p-red700:    #9E3C20;
+  --p-rose600:   #C42D45;  --p-rose700:   #A32338;
+
+  --pos:  #35C495;  --pos-bg:  #10281F;
+  --warn: #E0A83E;  --warn-bg: #2A2113;
+  --dang: #F05A72;  --dang-bg: #2C1419;
+
+  --e1: 0 1px 2px rgb(0 0 0 / .5);
+  --e2: 0 2px 6px rgb(0 0 0 / .5), 0 8px 20px -8px rgb(0 0 0 / .6);
+  --e3: 0 12px 34px -10px rgb(0 0 0 / .8), 0 2px 8px rgb(0 0 0 / .5);
+}
+
+@theme inline {
+  --color-bg:        var(--bg);
+  --color-card:      var(--card);
+  --color-card-2:    var(--card-2);
+  --color-card-3:    var(--card-3);
+  --color-separator: var(--separator);
+  --color-separator-strong: var(--separator-strong);
+
+  --color-label:   var(--label);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-label-4: var(--label-4);
+
+  --color-brand-yellow:      var(--brand-yellow);
+  --color-brand-yellow-deep: var(--brand-yellow-deep);
+  --color-brand-yellow-ink:  var(--brand-yellow-ink);
+
+  --color-accent:       var(--accent);
+  --color-accent-press: var(--accent-press);
+  --color-accent-tint:  var(--accent-tint);
+  --color-accent-tint-2:var(--accent-tint-2);
+  --color-on-accent:    var(--on-accent);
+
+  --color-hover: var(--hover);
+  --color-press: var(--press);
+
+  --color-age-1: var(--age-1);  --color-age-1-bg: var(--age-1-bg);  --color-age-1-ink: var(--age-1-ink);
+  --color-age-2: var(--age-2);  --color-age-2-bg: var(--age-2-bg);  --color-age-2-ink: var(--age-2-ink);
+  --color-age-3: var(--age-3);  --color-age-3-bg: var(--age-3-bg);  --color-age-3-ink: var(--age-3-ink);
+  --color-age-4: var(--age-4);  --color-age-4-bg: var(--age-4-bg);  --color-age-4-ink: var(--age-4-ink);
+
+  --color-pos:  var(--pos);   --color-pos-bg:  var(--pos-bg);
+  --color-warn: var(--warn);  --color-warn-bg: var(--warn-bg);
+  --color-dang: var(--dang);  --color-dang-bg: var(--dang-bg);
+
+  --radius-card:    var(--r-card);
+  --radius-control: var(--r-control);
+  --radius-inner:   var(--r-inner);
+
+  --shadow-e1: var(--e1);
+  --shadow-e2: var(--e2);
+  --shadow-e3: var(--e3);
+
+  --color-gray-300: #CFD2DC;  --color-gray-400: var(--p-n400);  --color-gray-500: var(--p-n500);
+  --color-gray-600: var(--p-n600);  --color-gray-700: #3A4762;  --color-gray-800: #24344F;
+  --color-slate-300: #CFD2DC;  --color-slate-400: var(--p-n400);  --color-slate-500: var(--p-n500);
+  --color-slate-600: var(--p-n600);  --color-slate-700: #3A4762;  --color-slate-800: #24344F;
+  --color-zinc-300: #CFD2DC;  --color-zinc-400: var(--p-n400);  --color-zinc-500: var(--p-n500);
+  --color-zinc-600: var(--p-n600);  --color-zinc-700: #3A4762;  --color-zinc-800: #24344F;
+  --color-green-600: var(--p-accent600);  --color-green-700: var(--p-accent700);  --color-green-800: #08479C;
+  --color-blue-600: var(--p-accent600);  --color-blue-700: var(--p-accent700);  --color-blue-800: #08479C;
+  --color-indigo-600: var(--p-accent600);  --color-indigo-700: var(--p-accent700);  --color-indigo-800: #08479C;
+  --color-purple-600: var(--p-accent600);  --color-purple-700: var(--p-accent700);  --color-purple-800: #08479C;
+  --color-emerald-600: var(--p-green600);  --color-emerald-700: #0E7C56;  --color-emerald-800: #0B6244;
+  --color-teal-600: var(--p-green600);  --color-teal-700: #0E7C56;  --color-teal-800: #0B6244;
+  --color-amber-600: var(--p-amber600);  --color-amber-700: var(--p-amber700);  --color-amber-800: #7C5008;
+  --color-yellow-600: var(--p-amber600);  --color-yellow-700: var(--p-amber700);  --color-yellow-800: #7C5008;
+  --color-orange-600: var(--p-red600);  --color-orange-700: var(--p-red700);  --color-orange-800: #8E371E;
+  --color-red-600: var(--p-red600);  --color-red-700: var(--p-red700);  --color-red-800: #8E371E;
+  --color-rose-600: var(--p-rose600);  --color-rose-700: var(--p-rose700);  --color-rose-800: #861C2A;
+
+  --font-sans: Figtree, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 0.8125rem;   --text-xs--line-height: 1.2rem;
+  --text-sm: 0.875rem;    --text-sm--line-height: 1.35rem;
+  --text-base: 0.9375rem; --text-base--line-height: 1.5rem;
+}
+
+/* ============================================================================
+   Palette remap — the original 13k lines were written against stock Tailwind.
+
+     gray / slate / zinc          -> neutral ramp
+     green / blue / indigo / purple -> accent blue (these were the actions)
+     emerald / teal               -> current (green)
+     amber / yellow / orange      -> watch
+     red                          -> risk
+     rose                         -> critical
+   ============================================================================ */
+
+@theme {
+  --color-gray-50:  #F6F7FA;  --color-gray-100: #EDEFF4;  --color-gray-200: #E3E5EC;
+  --color-gray-850: #1D2B45;  --color-gray-900: #17233A;  --color-gray-950: #101A2C;
+
+  --color-slate-50:  #F6F7FA;  --color-slate-100: #EDEFF4;  --color-slate-200: #E3E5EC;
+  --color-slate-850: #1D2B45;  --color-slate-900: #17233A;  --color-slate-950: #101A2C;
+
+  --color-zinc-50:  #F6F7FA;  --color-zinc-100: #EDEFF4;  --color-zinc-200: #E3E5EC;
+  --color-zinc-850: #1D2B45;  --color-zinc-900: #17233A;  --color-zinc-950: #101A2C;
+
+  --color-green-50:  #E7F0FE;  --color-green-100: #D3E3FD;  --color-green-200: #AFCCFA;
+  --color-green-300: #7FADF6;  --color-green-400: #4A8DF3;  --color-green-500: #1C79F0;
+  --color-green-900: #14243A;  --color-green-950: #0B1626;
+
+  --color-blue-50:  #E7F0FE;  --color-blue-100: #D3E3FD;  --color-blue-200: #AFCCFA;
+  --color-blue-300: #7FADF6;  --color-blue-400: #4A8DF3;  --color-blue-500: #1C79F0;
+  --color-blue-900: #14243A;  --color-blue-950: #0B1626;
+
+  --color-indigo-50:  #E7F0FE;  --color-indigo-100: #D3E3FD;  --color-indigo-200: #AFCCFA;
+  --color-indigo-300: #7FADF6;  --color-indigo-400: #4A8DF3;  --color-indigo-500: #1C79F0;
+  --color-indigo-900: #14243A;  --color-indigo-950: #0B1626;
+
+  --color-purple-50:  #E7F0FE;  --color-purple-100: #D3E3FD;  --color-purple-200: #AFCCFA;
+  --color-purple-300: #7FADF6;  --color-purple-400: #4A8DF3;  --color-purple-500: #1C79F0;
+  --color-purple-900: #14243A;  --color-purple-950: #0B1626;
+
+  --color-emerald-50:  #E3F5EE;  --color-emerald-100: #C9EBDF;  --color-emerald-200: #9BD9C2;
+  --color-emerald-300: #63C2A0;  --color-emerald-400: #2FAC81;  --color-emerald-500: #17A071;
+  --color-emerald-900: #10281F;  --color-emerald-950: #081814;
+
+  --color-teal-50:  #E3F5EE;  --color-teal-100: #C9EBDF;  --color-teal-200: #9BD9C2;
+  --color-teal-300: #63C2A0;  --color-teal-400: #2FAC81;  --color-teal-500: #17A071;
+  --color-teal-900: #10281F;  --color-teal-950: #081814;
+
+  --color-amber-50:  #FCF1DA;  --color-amber-100: #F8E3B8;  --color-amber-200: #F0C97F;
+  --color-amber-300: #E5AC45;  --color-amber-400: #D6941F;  --color-amber-500: #C88611;
+  --color-amber-900: #2A2113;  --color-amber-950: #1A150C;
+
+  --color-yellow-50:  #FCF1DA;  --color-yellow-100: #F8E3B8;  --color-yellow-200: #F0C97F;
+  --color-yellow-300: #E5AC45;  --color-yellow-400: #D6941F;  --color-yellow-500: #C88611;
+  --color-yellow-900: #2A2113;  --color-yellow-950: #1A150C;
+
+  --color-orange-50:  #FCEAE2;  --color-orange-100: #F8D5C6;  --color-orange-200: #F1B096;
+  --color-orange-300: #E98A64;  --color-orange-400: #E36B41;  --color-orange-500: #DF5C34;
+  --color-orange-900: #2E1A13;  --color-orange-950: #1D110C;
+
+  --color-red-50:  #FCEAE2;  --color-red-100: #F8D5C6;  --color-red-200: #F1B096;
+  --color-red-300: #E98A64;  --color-red-400: #E36B41;  --color-red-500: #DF5C34;
+  --color-red-900: #2E1A13;  --color-red-950: #1D110C;
+
+  --color-rose-50:  #FBE7EA;  --color-rose-100: #F6CFD5;  --color-rose-200: #EDA2AE;
+  --color-rose-300: #E27186;  --color-rose-400: #D94B65;  --color-rose-500: #D13350;
+  --color-rose-900: #2C1419;  --color-rose-950: #1C0D10;
+}
+
+/* ---------------------------------- base --------------------------------- */
+
+/* This must live in a layer. Unlayered CSS outranks everything Tailwind
+   emits, so an unlayered universal border-color silently overrode every
+   border-{colour} utility in the app. */
+@layer base {
+  *, *::before, *::after { border-color: var(--separator); }
+}
+
+html { color-scheme: light dark; }
+
+body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1100px 560px at 10% -12%, var(--bg-wash), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--bg-wash), transparent 55%);
+  background-attachment: fixed;
+  color: var(--label);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Apple and Google both set figures in the UI face with tabular numerals —
+   a monospace here reads as a developer tool, not a finance app. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
+table { font-variant-numeric: tabular-nums; }
+
+/* Apple-style grouped-list section header */
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+/* Focus ring: Google's clear 2px halo */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection { background: var(--brand-yellow); color: var(--brand-yellow-ink); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--separator-strong) transparent; }
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--separator-strong);
+  border-radius: 10px;
+  border: 3.5px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--label-4); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

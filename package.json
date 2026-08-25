@@ -5,24 +5,40 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs"
+    "build": "tsc --noEmit && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.cjs .smoke-shots",
+    "contrast": "node scripts/contrast.cjs .smoke-shots",
+    "audit": "node scripts/audit.cjs .smoke-shots light",
+    "audit:dark": "node scripts/audit.cjs .smoke-shots dark",
+    "check:classes": "node scripts/deadclasses.cjs",
+    "check:empty": "node scripts/emptycontrols.cjs",
+    "build:web": "tsc --noEmit && vite build"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",
+    "@supabase/supabase-js": "^2.112.4",
     "express": "^5.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^5.0.6",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
+    "@vercel/node": "^7.0.0",
     "@vitejs/plugin-react": "^4.2.1",
     "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.8.0",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "^5.2.2",
+    "vercel": "^59.5.0",
     "vite": "^5.2.0"
   }
 }

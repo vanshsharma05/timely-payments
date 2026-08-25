@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# environment - never commit real keys
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# smoke-test screenshots
+.smoke-shots/
+
+# deployment tokens - local only, never committed
+.deploy.local
+
+.vercel
+.env*
