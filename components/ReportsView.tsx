@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, PdcStatus, CompanyProfile, DataVisibility, getFollowUpCategory, DEFAULT_COMPANY_PROFILE } from '../types';
 import StatusBadge from './StatusBadge';
-import BalanceAmount from './BalanceAmount';
 import AiReportModal from './AiReportModal';
 import { 
     ClockIcon, 
@@ -14,6 +13,8 @@ import {
     ChequeIcon,
     SparklesIcon
 } from './icons/Icons';
+import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
+import { formatINR } from './ui/format';
 
 export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
@@ -614,6 +615,7 @@ export const ReportsView = ({
                             <span className="px-2.5 py-0.5 bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300 text-xs font-bold rounded-full">
                                 {filteredReportData.length} Records
                             </span>
+                            <AgeingLegend className="gap-3 ml-1" />
                         </div>
 
                         {/* Category Filter Tabs */}
@@ -745,21 +747,14 @@ export const ReportsView = ({
 
                 {/* Table with Live 1-45d, 46-90d, 91-135d, >135d on Screen */}
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs min-w-[980px]">
+                    <table className="w-full text-left border-collapse text-xs min-w-[900px]">
                         <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                             <tr>
                                 <th className="px-3 py-2.5 text-left min-w-[180px]">Company / Contact</th>
                                 <th className="px-2.5 py-2.5 text-right">Total Due</th>
                                 
-                                {/* Live 4 Ageing Columns */}
-                                <th className="px-2 py-2.5 text-right text-gray-600 dark:text-gray-400">1-45d</th>
-                                <th className="px-2 py-2.5 text-right text-gray-700 dark:text-gray-300">46-90d</th>
-                                <th className="px-2.5 py-2.5 text-right bg-amber-50/70 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-l border-amber-200 dark:border-amber-900">
-                                    91-135d
-                                </th>
-                                <th className="px-2.5 py-2.5 text-right bg-red-50/70 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-l border-r border-red-200 dark:border-red-900">
-                                    &gt;135D
-                                </th>
+                                {/* The four buckets, as one column - same as the customer ledger */}
+                                <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
                                 <th className="px-2.5 py-2.5 text-right text-red-600 dark:text-red-400">
                                     &gt;90d Total
                                 </th>
@@ -790,16 +785,18 @@ export const ReportsView = ({
                                     
                                     // Row status visual border
                                     let rowBorder = '';
+                                    // A 3px status edge is enough. The tinted row backgrounds that came with
+                                    // it fought the ageing colours and repeated what the status pill says.
                                     if (item.status === FollowUpStatus.Completed) {
-                                        rowBorder = 'border-l-4 border-green-500';
+                                        rowBorder = 'border-l-[3px] border-l-green-500';
                                     } else if (isTodayFollowUp(item)) {
-                                        rowBorder = 'border-l-4 border-blue-500 bg-blue-50/40 dark:bg-blue-950/20';
+                                        rowBorder = 'border-l-[3px] border-l-blue-500';
                                     } else if (isOverdueFollowUp(item)) {
-                                        rowBorder = 'border-l-4 border-red-500 bg-red-50/40 dark:bg-red-950/20';
+                                        rowBorder = 'border-l-[3px] border-l-red-500';
                                     } else if (isNoFollowUp(item)) {
-                                        rowBorder = 'border-l-4 border-amber-400 bg-amber-50/30 dark:bg-amber-950/20';
+                                        rowBorder = 'border-l-[3px] border-l-amber-400';
                                     } else if (isFutureFollowUp(item)) {
-                                        rowBorder = 'border-l-4 border-emerald-500';
+                                        rowBorder = 'border-l-[3px] border-l-emerald-500';
                                     }
 
                                     // Customer PDC Summary
@@ -851,56 +848,52 @@ export const ReportsView = ({
 
                                             {/* Total Due */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={item.total}
-                                                    type={item.totalType || 'Dr'}
-                                                    defaultClass="font-extrabold text-gray-900 dark:text-white"
-                                                />
+                                                {item.totalType === 'Cr' && item.total > 0 ? (
+                                                    <span
+                                                        className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80"
+                                                        title={`Excess payment held with us (CR advance) of ${formatINR(item.total)}`}
+                                                    >
+                                                        {formatINR(item.total)}
+                                                        <span className="uppercase font-black text-[10px] px-1 rounded bg-purple-200 text-purple-900 dark:bg-purple-800 dark:text-purple-100">CR</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="font-extrabold text-gray-900 dark:text-white">{formatINR(item.total)}</span>
+                                                )}
                                             </td>
 
-                                            {/* 1-45d Column */}
-                                            <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={a1}
-                                                    type={item.ageingTypes?.['1-45'] || 'Dr'}
-                                                    defaultClass={`text-xs ${a1 > 0 ? 'text-gray-700 dark:text-gray-300 font-medium' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* 46-90d Column */}
-                                            <td className="px-2 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={a2}
-                                                    type={item.ageingTypes?.['46-90'] || 'Dr'}
-                                                    defaultClass={`text-xs ${a2 > 0 ? 'text-amber-700 dark:text-amber-300 font-medium' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* 91-135d Column (Highlighted Amber/Orange) */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-amber-50/50 dark:bg-amber-950/20 border-l border-amber-100 dark:border-amber-900/40">
-                                                <BalanceAmount
-                                                    amount={a3}
-                                                    type={item.ageingTypes?.['91-135'] || 'Dr'}
-                                                    defaultClass={`text-xs ${a3 > 0 ? 'text-amber-800 dark:text-amber-300 font-bold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
-                                            </td>
-
-                                            {/* >135D Column (Highlighted Bold Red) */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-red-50/50 dark:bg-red-950/20 border-l border-r border-red-100 dark:border-red-900/40">
-                                                <BalanceAmount
-                                                    amount={a4}
-                                                    type={item.ageingTypes?.['>135'] || 'Dr'}
-                                                    defaultClass={`text-xs ${a4 > 0 ? 'text-red-700 dark:text-red-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
+                                            {/* Ageing - bar for shape, then every bucket in full rupees keyed to
+                                                its colour. Four number columns cost ~650px here, which is what
+                                                pushed Status, Follow-up, CRM and Actions off the screen. */}
+                                            <td className="px-2.5 py-2 align-middle">
+                                                <AgeingBar parts={{ a1, a2, a3, a4 }} height={6} />
+                                                <div className="mt-1.5 grid grid-cols-2 gap-x-2.5 gap-y-0.5 text-[11px] leading-[1.35]">
+                                                    {AGE_BANDS.map((band, i) => {
+                                                        const v = [a1, a2, a3, a4][i];
+                                                        return (
+                                                            <span
+                                                                key={band.key}
+                                                                className="inline-flex items-center gap-1 whitespace-nowrap"
+                                                                title={`${band.label}: ${formatINR(v)}`}
+                                                            >
+                                                                <span
+                                                                    className="w-1.5 h-1.5 rounded-full flex-none"
+                                                                    style={{ background: band.varName, opacity: v > 0 ? 1 : 0.3 }}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <span className={v > 0 ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>
+                                                                    {v > 0 ? formatINR(v) : '—'}
+                                                                </span>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
                                             </td>
 
                                             {/* >90d Total Column */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <BalanceAmount
-                                                    amount={over90Total}
-                                                    type={item.over90Type || 'Dr'}
-                                                    defaultClass={`text-xs ${over90Total > 0 ? 'text-red-600 dark:text-red-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
-                                                />
+                                                <span className={`text-xs ${over90Total > 0 ? 'text-red-600 dark:text-red-400 font-extrabold' : 'text-gray-400 dark:text-gray-600'}`}>
+                                                    {over90Total > 0 ? formatINR(over90Total) : '—'}
+                                                </span>
                                             </td>
 
                                             {/* Status Badge */}
