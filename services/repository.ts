@@ -1,5 +1,7 @@
 import { requireSupabase, supabase } from './supabaseClient';
 import {
+    AlertLogEntry,
+    AlertSettings,
     Outstanding,
     PdcCheque,
     PdcStatus,
@@ -416,6 +418,84 @@ export async function changeOwnPassword(newPassword: string): Promise<void> {
     if (error) throw new Error(error.message);
 }
 
+
+// ---------------------------------------------------------------------------
+// alerts and reminders
+// ---------------------------------------------------------------------------
+
+export async function fetchAlertSettings(): Promise<AlertSettings> {
+    const { data, error } = await requireSupabase()
+        .from('alert_settings')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+    fail('Could not load the reminder settings', error);
+    return {
+        dailyEmail: Boolean(data?.daily_email),
+        recipientRoles: (data?.recipient_roles || []) as UserRole[],
+        skipWhenEmpty: data?.skip_when_empty !== false,
+        extraRecipients: data?.extra_recipients || [],
+    };
+}
+
+export async function saveAlertSettings(s: AlertSettings): Promise<void> {
+    const { error } = await requireSupabase().from('alert_settings').upsert({
+        id: 1,
+        daily_email: s.dailyEmail,
+        recipient_roles: s.recipientRoles,
+        skip_when_empty: s.skipWhenEmpty,
+        extra_recipients: s.extraRecipients,
+    });
+    fail('Could not save the reminder settings', error);
+}
+
+export async function fetchAlertLog(limit = 12): Promise<AlertLogEntry[]> {
+    const { data, error } = await requireSupabase()
+        .from('alert_log')
+        .select('*')
+        .order('sent_at', { ascending: false })
+        .limit(limit);
+    fail('Could not load the reminder history', error);
+    return (data || []).map((r: any) => ({
+        id: r.id,
+        sentAt: r.sent_at,
+        kind: r.kind,
+        recipients: r.recipients,
+        delivered: r.delivered,
+        failed: r.failed,
+        provider: r.provider,
+        detail: r.detail,
+        triggeredBy: r.triggered_by,
+    }));
+}
+
+/** Which email provider the server has, so the panel can say so plainly. */
+export async function fetchAlertStatus(): Promise<{ provider: string }> {
+    try {
+        const res = await fetch('/api/alert-status', { headers: await authHeaders() });
+        if (!res.ok) return { provider: 'none' };
+        const json = await res.json();
+        return { provider: json.provider || 'none' };
+    } catch {
+        return { provider: 'none' };
+    }
+}
+
+/** Sends the reminder to the signed-in person only, switch or no switch. */
+export async function sendTestReminder(): Promise<{ delivered: number; to: string; detail?: string }> {
+    const db = requireSupabase();
+    const { data: auth } = await db.auth.getUser();
+    const to = auth?.user?.email || '';
+
+    const res = await fetch('/api/daily-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ test: true, to }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!json) throw new Error('The server did not answer. Is the deployment up to date?');
+    return { delivered: json.delivered || 0, to, detail: json.detail || json.error };
+}
 
 // ---------------------------------------------------------------------------
 // templates

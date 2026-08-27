@@ -59,6 +59,14 @@ export const MessageIcon = ({ className }: IconProps) => (
   </svg>
 );
 
+/** Alerts and reminders. */
+export const BellIcon = ({ className }: { className?: string }) => (
+  <svg {...base(className)}>
+    <path d="M18 9a6 6 0 1 0-12 0c0 4.5-1.5 5.8-2 6.4-.3.4 0 1.1.6 1.1h14.8c.6 0 .9-.7.6-1.1-.5-.6-2-1.9-2-6.4Z" />
+    <path d="M10.5 20.2a2 2 0 0 0 3 0" />
+  </svg>
+);
+
 export const PlugIcon = ({ className }: IconProps) => (
   <svg {...base(className)}>
     <path d="M9 3v5M15 3v5" />

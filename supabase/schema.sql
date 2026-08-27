@@ -350,3 +350,59 @@ create policy settings_write on public.app_settings
     for all to authenticated
     using (public.current_role() in ('Admin','Manager'))
     with check (public.current_role() in ('Admin','Manager'));
+
+-- ---------------------------------------------------------------------------
+-- Daily reminders
+--
+-- One row of settings, and a log of what actually went out. The log is what
+-- makes the panel honest: it shows the last run and its result rather than
+-- claiming the reminder is "on".
+-- ---------------------------------------------------------------------------
+create table if not exists public.alert_settings (
+    id                smallint primary key default 1 check (id = 1),
+    daily_email       boolean not null default false,
+    -- which roles receive their own digest
+    recipient_roles   text[] not null default array['Admin','Manager','CRM','Collector'],
+    -- skip the send for someone with nothing to chase
+    skip_when_empty   boolean not null default true,
+    -- extra addresses that always get the company summary
+    extra_recipients  text[] not null default '{}',
+    updated_at        timestamptz not null default now()
+);
+
+insert into public.alert_settings (id) values (1) on conflict (id) do nothing;
+
+create table if not exists public.alert_log (
+    id          bigserial primary key,
+    sent_at     timestamptz not null default now(),
+    kind        text not null default 'daily_email',
+    recipients  integer not null default 0,
+    delivered   integer not null default 0,
+    failed      integer not null default 0,
+    provider    text,
+    detail      text,
+    triggered_by text
+);
+
+create index if not exists alert_log_sent_idx on public.alert_log (sent_at desc);
+
+alter table public.alert_settings enable row level security;
+alter table public.alert_log      enable row level security;
+
+drop policy if exists alert_settings_read on public.alert_settings;
+drop policy if exists alert_settings_write on public.alert_settings;
+create policy alert_settings_read on public.alert_settings
+    for select to authenticated using (true);
+create policy alert_settings_write on public.alert_settings
+    for all to authenticated
+    using (public.current_role() in ('Admin','Manager'))
+    with check (public.current_role() in ('Admin','Manager'));
+
+drop policy if exists alert_log_read on public.alert_log;
+create policy alert_log_read on public.alert_log
+    for select to authenticated using (true);
+-- Only the server writes the log, with the service role.
+
+drop trigger if exists touch_alert_settings on public.alert_settings;
+create trigger touch_alert_settings before update on public.alert_settings
+    for each row execute function public.touch_updated_at();

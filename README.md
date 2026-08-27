@@ -52,6 +52,30 @@ and the database refuses it as well — the two are kept in step deliberately.
 Everyone, including Viewers, can change their own password from the account
 menu. Only an Admin can change somebody else's, in **Team & access**.
 
+## Daily reminder email
+
+Every morning at 9:00 India time, each person gets one email listing only what
+they have to chase: follow-ups due today, promises already past their date,
+cheques ready to present, money promised for today, and how much is sitting
+with no follow-up planned. Whoever reads the whole book also gets a line per
+CRM. Somebody with nothing to chase is skipped.
+
+An Admin turns it on and picks who receives it under **Settings → Alerts &
+reminders**, and can send themselves a test at any time. That screen also shows
+the last few runs — what was actually delivered, not what was scheduled.
+
+Delivery needs one provider on the deployment:
+
+| Variable | What it is |
+|---|---|
+| `RESEND_API_KEY` | a key from resend.com, with your sending domain verified there |
+| `SMTP_URL` | any SMTP server, e.g. `smtps://you@company.com:APP_PASSWORD@smtp.gmail.com:465` |
+| `ALERT_FROM` | the From address; must belong to that domain or account |
+| `CRON_SECRET` | proves a request to `/api/daily-report` came from Vercel's scheduler |
+
+Without one, the reminder still runs on schedule and records that it could not
+send. The time is set by the schedule in [vercel.json](vercel.json).
+
 ## Signing in
 
 Email and password, held by Supabase Auth. **Forgot password** emails a link

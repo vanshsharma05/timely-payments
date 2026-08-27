@@ -4,6 +4,8 @@ import { createServer as createViteServer, loadEnv } from 'vite';
 import { fetchGoogleSheetCsv } from './api/_lib/sheet';
 import { buildReport } from './api/_lib/report';
 import { handleTeamRequest } from './api/_lib/team';
+import { runDailyReminders } from './api/_lib/reminders';
+import { mailProvider } from './api/_lib/mailer';
 import { bearerToken, currentProfile, isBackendConfigured } from './api/_lib/supabase';
 
 /**
@@ -59,6 +61,32 @@ async function startServer() {
                 error: err?.message || 'Could not complete the request.',
             });
         }
+    });
+
+    /** Mirrors api/daily-report.ts — the daily reminder email. */
+    app.post('/api/daily-report', async (req, res) => {
+        try {
+            const caller = await currentProfile(bearerToken(req.headers.authorization));
+            if (!caller) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+            if (caller.role !== 'Admin' && caller.role !== 'Manager') {
+                return res.status(403).json({ ok: false, error: 'Only an Admin or Manager can send this.' });
+            }
+            const body = req.body || {};
+            const result = await runDailyReminders({
+                onlyEmail: body.test ? body.to || undefined : undefined,
+                triggeredBy: caller.legacyId,
+            });
+            res.status(result.status).json(result.body);
+        } catch (err: any) {
+            res.status(500).json({ ok: false, error: err?.message || 'Could not send the reminder.' });
+        }
+    });
+
+    /** Mirrors api/alert-status.ts — can this deployment send email? */
+    app.get('/api/alert-status', async (req, res) => {
+        const caller = await currentProfile(bearerToken(req.headers.authorization));
+        if (!caller) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+        res.json({ ok: true, provider: mailProvider(), scheduled: Boolean(process.env.CRON_SECRET?.trim()) });
     });
 
     app.get('/api/health', (_req, res) => {

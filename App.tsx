@@ -19,11 +19,12 @@ import { CustomerEditModal } from './components/CustomerEditModal';
 import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
-import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon } from './components/shell/NavIcons';
+import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 import { formatCompact, formatDateShort, formatINR, relativeDays } from './components/ui/format';
 import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState } from './components/ui/Primitives';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
+import AlertsView from './components/AlertsView';
 import UserModal from './components/UserModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import TemplateModal from './components/TemplateModal';
@@ -2035,6 +2036,9 @@ const App = () => {
                                 )}
                             </div>
                         )}
+                        {activeTab === 'alerts' && rights.canSyncSheets && (
+                            <AlertsView canEdit={rights.canSyncSheets} />
+                        )}
                         {activeTab === 'reports' && (
                             <ReportsView
                                 data={appData}
@@ -2391,6 +2395,7 @@ const App = () => {
         ...(rights.isAdmin ? [{ key: 'users', label: 'Team & access', icon: <TeamIcon /> }] : []),
         ...(rights.canSyncSheets
             ? [
+                  { key: 'alerts', label: 'Alerts & reminders', icon: <BellIcon /> },
                   { key: 'templates', label: 'Message templates', icon: <MessageIcon /> },
                   { key: 'source', label: 'Data source', icon: <PlugIcon /> },
               ]
@@ -2412,6 +2417,7 @@ const App = () => {
         pdc: 'Post-dated cheques',
         reports: wholeBook ? 'Reports' : 'My performance',
         users: 'Team & access',
+        alerts: 'Alerts & reminders',
         templates: 'Message templates',
         source: 'Data source',
     };

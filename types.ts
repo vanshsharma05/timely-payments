@@ -268,6 +268,29 @@ export interface AiReportResponse {
     hasApiKey?: boolean;
 }
 
+/** Settings for the daily reminder email. */
+export interface AlertSettings {
+    dailyEmail: boolean;
+    recipientRoles: UserRole[];
+    /** Do not mail somebody who has nothing to chase today. */
+    skipWhenEmpty: boolean;
+    /** Addresses outside the roster that always get the company summary. */
+    extraRecipients: string[];
+}
+
+/** One line of what the reminder actually did. */
+export interface AlertLogEntry {
+    id: number;
+    sentAt: string;
+    kind: string;
+    recipients: number;
+    delivered: number;
+    failed: number;
+    provider: string | null;
+    detail: string | null;
+    triggeredBy: string | null;
+}
+
 export interface Template {
     id: string;
     name: string;
