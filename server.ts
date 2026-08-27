@@ -1,140 +1,62 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { createServer as createViteServer, loadEnv } from 'vite';
+import { fetchGoogleSheetCsv } from './api/_lib/sheet';
+import { buildReport } from './api/_lib/report';
+import { handleTeamRequest } from './api/_lib/team';
+import { bearerToken, currentProfile, isBackendConfigured } from './api/_lib/supabase';
 
-const DEFAULT_OFFICIAL_SHEET_ID = '1DoBq1UVK53Z_029eIGUQzZ6g3sN2ytVVFCF0tFoYu_4';
-
-function getCandidateCsvUrls(inputUrl: string): string[] {
-    const urls: string[] = [];
-    let trimmed = (inputUrl || '').trim();
-
-    if (!trimmed) {
-        trimmed = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pubhtml?gid=895778621&single=true';
-    }
-
-    // If input is just the Sheet ID
-    if (/^[a-zA-Z0-9-_]{25,}$/.test(trimmed) && !trimmed.startsWith('http')) {
-        trimmed = `https://docs.google.com/spreadsheets/d/${trimmed}/edit`;
-    }
-
-    // Direct CSV export link
-    if (trimmed.includes('output=csv') || trimmed.includes('format=csv')) {
-        urls.push(trimmed);
-    }
-
-    // Published to Web URLs (e.g. https://docs.google.com/spreadsheets/d/e/2PACX-.../pubhtml?gid=... or /pub)
-    if (trimmed.includes('/spreadsheets/d/e/')) {
-        const gidMatch = trimmed.match(/gid=([0-9]+)/);
-        const gid = gidMatch ? gidMatch[1] : null;
-
-        const baseMatch = trimmed.match(/(https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[a-zA-Z0-9-_]+)/);
-        const basePath = baseMatch ? baseMatch[1] : trimmed.split('?')[0].replace(/\/pubhtml|\/pub|\/edit.*/, '');
-
-        if (gid) {
-            urls.push(`${basePath}/pub?gid=${gid}&single=true&output=csv`);
-            urls.push(`${basePath}/pub?output=csv&gid=${gid}`);
-        }
-        urls.push(`${basePath}/pub?output=csv`);
-        urls.push(`${basePath}/pub?gid=0&single=true&output=csv`);
-    }
-
-    // Standard Google Sheet URLs (e.g. https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={GID})
-    const sheetIdMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (sheetIdMatch && sheetIdMatch[1] && sheetIdMatch[1] !== 'e') {
-        const sheetId = sheetIdMatch[1];
-        const gidMatch = trimmed.match(/gid=([0-9]+)/);
-        const gid = gidMatch ? gidMatch[1] : '0';
-
-        urls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`);
-        urls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`);
-        urls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/pub?output=csv&gid=${gid}`);
-    }
-
-    // Fallback: Always try the official published and standard sheets
-    urls.push('https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pub?gid=895778621&single=true&output=csv');
-    urls.push('https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pub?output=csv');
-    urls.push(`https://docs.google.com/spreadsheets/d/${DEFAULT_OFFICIAL_SHEET_ID}/export?format=csv`);
-    urls.push(`https://docs.google.com/spreadsheets/d/${DEFAULT_OFFICIAL_SHEET_ID}/gviz/tq?tqx=out:csv`);
-
-    return Array.from(new Set(urls));
-}
-
-async function fetchGoogleSheetCsv(inputUrl: string): Promise<{ csv: string; sourceUrl: string }> {
-    const candidateUrls = getCandidateCsvUrls(inputUrl);
-    let lastError: Error | null = null;
-
-    for (const url of candidateUrls) {
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/csv,text/plain,*/*'
-                },
-                redirect: 'follow'
-            });
-
-            if (!response.ok) {
-                lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
-                continue;
-            }
-
-            const text = await response.text();
-            
-            // Check if response looks like HTML (login or error page) instead of CSV
-            if (text.includes('<!DOCTYPE html>') || text.includes('<html') || text.includes('accounts.google.com')) {
-                lastError = new Error('Google returned a login page. Please ensure the Google Sheet sharing setting is "Anyone with the link can view" or File > Share > Publish to web.');
-                continue;
-            }
-
-            if (text.trim().length > 0) {
-                return { csv: text, sourceUrl: url };
-            }
-        } catch (e: any) {
-            lastError = e;
-        }
-    }
-
-    throw lastError || new Error('Failed to fetch data from the provided Google Sheet URL.');
-}
-
+/**
+ * Local development server.
+ *
+ * Every route here is a thin wrapper over the same module the matching Vercel
+ * function in api/ calls, so what you test locally is what runs in production.
+ * Adding a route means adding it in both places — never re-implementing it.
+ */
 async function startServer() {
     const app = express();
     const PORT = 3000;
 
+    // Vite only injects VITE_-prefixed values into the browser bundle. The API
+    // routes below need the server-only ones from .env.local too (the Supabase
+    // service role key, the Gemini key), so load the whole file here.
+    Object.assign(process.env, loadEnv(process.env.NODE_ENV || 'development', process.cwd(), ''));
+
     app.use(express.json({ limit: '10mb' }));
 
-    // API Route for server-side Google Sheet proxying (Bypasses CORS restrictions)
-    app.post('/api/fetch-sheet', async (req, res) => {
+    /** Mirrors api/fetch-sheet.ts — server-side proxy for Google Sheet CSV. */
+    const sheetHandler = async (url: unknown, res: express.Response) => {
+        if (!url || typeof url !== 'string') {
+            return res
+                .status(400)
+                .json({ ok: false, error: 'Missing "url" (POST body or query parameter).' });
+        }
         try {
-            const { url } = req.body;
-            if (!url || typeof url !== 'string') {
-                return res.status(400).json({ ok: false, error: 'Missing or invalid "url" in request body.' });
-            }
-
             const { csv, sourceUrl } = await fetchGoogleSheetCsv(url);
             res.json({ ok: true, csv, sourceUrl });
         } catch (err: any) {
-            res.status(500).json({ 
-                ok: false, 
-                error: err.message || 'Failed to fetch Google Sheet data.' 
+            res.status(500).json({
+                ok: false,
+                error: err?.message || 'Failed to fetch Google Sheet data.',
             });
         }
-    });
+    };
 
-    app.get('/api/fetch-sheet', async (req, res) => {
+    app.post('/api/fetch-sheet', (req, res) => sheetHandler(req.body?.url, res));
+    app.get('/api/fetch-sheet', (req, res) => sheetHandler(req.query?.url, res));
+
+    /** Mirrors api/team.ts — create / update / remove a teammate's login. */
+    app.post('/api/team', async (req, res) => {
         try {
-            const url = req.query.url as string;
-            if (!url) {
-                return res.status(400).json({ ok: false, error: 'Missing "url" query parameter.' });
-            }
-
-            const { csv, sourceUrl } = await fetchGoogleSheetCsv(url);
-            res.json({ ok: true, csv, sourceUrl });
+            const { status, body } = await handleTeamRequest(
+                req.body || {},
+                bearerToken(req.headers.authorization)
+            );
+            res.status(status).json(body);
         } catch (err: any) {
-            res.status(500).json({ 
-                ok: false, 
-                error: err.message || 'Failed to fetch Google Sheet data.' 
+            res.status(500).json({
+                ok: false,
+                error: err?.message || 'Could not complete the request.',
             });
         }
     });
@@ -143,181 +65,28 @@ async function startServer() {
         res.json({ status: 'ok', time: new Date().toISOString() });
     });
 
-    // Check if Gemini API Key is configured
+    /** Mirrors api/ai-status.ts — is the AI report backed by a real key? */
     app.get('/api/ai-status', (_req, res) => {
         const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
         res.json({ ok: true, hasApiKey: hasKey, model: 'gemini-3.7-flash' });
     });
 
-    // AI Intelligent Report Generation using Google GenAI SDK (gemini-3.7-flash)
+    /** Mirrors api/gemini-report.ts — AI collection report, signed-in users only. */
     app.post('/api/gemini-report', async (req, res) => {
         try {
-            const {
-                mode = 'credit_reduction',
-                customPrompt,
-                companyProfile,
-                targetCrm = 'ALL',
-                metricsSummary,
-                criticalAccounts = []
-            } = req.body;
-
-            const apiKey = process.env.GEMINI_API_KEY?.trim();
-            const companyName = companyProfile?.name || 'Shori Chemicals Pvt. Ltd.';
-
-            // Format numbers helper
-            const formatInr = (n: number = 0) => '₹' + Math.round(n).toLocaleString('en-IN');
-
-            const totalOutstanding = formatInr(metricsSummary?.totalOutstanding);
-            const due45 = formatInr(metricsSummary?.dueOver45);
-            const over90 = formatInr(metricsSummary?.over90);
-            const over135 = formatInr(metricsSummary?.over135);
-            const pdcInHand = formatInr(metricsSummary?.totalPdcInHand);
-            const avgDays = metricsSummary?.averageCollectionDays || 0;
-            const accountsCount = metricsSummary?.totalAccounts || 0;
-
-            const accountsListText = criticalAccounts.slice(0, 15).map((acc: any, idx: number) => {
-                return `${idx + 1}. **${acc.company}** (CRM: ${acc.crm || 'Unassigned'})
-   - Total Due: ${formatInr(acc.totalDue)} | >45d Due: ${formatInr(acc.dueOver45)} | >90d: ${formatInr(acc.over90)} | >135d: ${formatInr(acc.over135)}
-   - Estimated Collection/Ageing Days: ${acc.avgDays || 0} days | Status: ${acc.status || 'Active'}
-   - PDC in Hand: ${formatInr(acc.activePdc || 0)}
-   - Last Follow-up Note: "${acc.lastNote || 'No recent note'}"`;
-            }).join('\n\n');
-
-            let modeInstruction = '';
-            let modeTitle = '';
-
-            if (mode === 'credit_reduction') {
-                modeTitle = 'Credit Days Reduction & Working Capital Optimization Report';
-                modeInstruction = `Focus primarily on reducing the number of credit days across customer accounts.
-1. Identify high-risk customers with excessive average collection days (>60-90 days).
-2. Recommend specific, tighter credit terms (e.g. reduce from 60 to 30 days, or mandate 50% advance / PDC before next dispatch).
-3. Provide tactical talking points and scripts for CRMs to negotiate reduced credit periods without losing business.
-4. Establish concrete milestones to bring overall company average collection days down to <45 days.`;
-            } else if (mode === 'overdue_recovery') {
-                modeTitle = 'High-Risk Overdue (>90d & >135d) Bad Debt Recovery Action Plan';
-                modeInstruction = `Focus on aggressive recovery of stuck and delayed payments.
-1. Segment accounts into >135 days (Critical / Legal Alert) and 91-135 days (High Risk).
-2. Detail an escalation matrix (formal notice, senior management intervention, halting order dispatch, requiring upfront clearance).
-3. Propose realistic payment installment schedules and security PDC acquisition targets.`;
-            } else if (mode === 'crm_performance') {
-                modeTitle = 'CRM Follow-up Velocity & Accountability Audit';
-                modeInstruction = `Evaluate collection performance and follow-up discipline.
-1. Highlight accounts with 'No Follow-up Scheduled' or 'Overdue Follow-up'.
-2. Provide a daily call cadence roster for CRMs with measurable targets.
-3. Recommend incentive/discipline benchmarks to ensure 100% follow-up coverage.`;
-            } else if (mode === 'cash_forecast') {
-                modeTitle = '15-Day Cash Inflow & Liquidity Forecast';
-                modeInstruction = `Project expected cash inflows and PDC realizations over the next 15 to 30 days.
-1. Calculate expected realization from active PDCs in hand.
-2. Forecast collectible amounts from Today and Upcoming follow-up commitments.
-3. Highlight liquidity bottlenecks and high-impact accounts that move the needle.`;
-            } else {
-                modeTitle = 'Custom Strategic Executive Briefing';
-                modeInstruction = `Address the user's specific request: "${customPrompt || 'Comprehensive financial collection analysis'}". Provide deep actionable insights based on the provided portfolio metrics.`;
-            }
-
-            if (!apiKey) {
-                // Return high-quality algorithmic intelligence report when API key is not yet set
-                const generatedReport = `### 📊 ${modeTitle}
-**Company:** ${companyName} | **Scope:** ${targetCrm === 'ALL' ? 'Company-Wide Portfolio' : `CRM: ${targetCrm}`}
-**Generated On:** ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-
----
-
-#### 1. 🎯 Executive Portfolio & Credit Days Health
-- **Total Accounts Analyzed:** ${accountsCount} accounts
-- **Total Outstanding Portfolio:** ${totalOutstanding}
-- **Overdue > 45 Days (Working Capital Drag):** ${due45} (${metricsSummary?.totalOutstanding ? Math.round(((metricsSummary.dueOver45 || 0) / metricsSummary.totalOutstanding) * 100) : 0}% of portfolio)
-- **High-Risk Overdue (>90 Days):** ${over90}
-- **Critical Aging (>135 Days):** ${over135}
-- **Active PDC Cheques in Hand:** ${pdcInHand} (Security buffer)
-- **Company Average Collection Days (DSO Index):** **${avgDays} days** *(Target: ≤ 45 days | Excess: ${Math.max(0, avgDays - 45)} days)*
-
----
-
-#### 2. ⚡ Key Action Priorities to Reduce Credit Days
-1. **Enforce 45-Day Hard Credit Ceiling:**
-   - Any customer with average collection days exceeding **75 days** must be placed on temporary order hold until overdue invoices are cleared.
-2. **Collect PDC Before Dispatch:**
-   - For all accounts in the 46–90 days bracket, mandate securing a stamped Post-Dated Cheque (PDC) before releasing fresh chemical consignments.
-3. **Escalate >135 Days Accounts:**
-   - Accounts with outstanding older than 135 days totaling ${over135} require immediate registered demand notices and director-level intervention.
-4. **CRM Daily Follow-up Coverage:**
-   - Ensure 100% of accounts with pending or overdue follow-ups have committed payment dates logged in the system.
-
----
-
-#### 3. 🚨 Top Priority Customer Accounts for Credit Days Reduction
-${accountsListText || '_No specific overdue accounts passed in this filter._'}
-
----
-
-> 💡 **Pro-Tip for Gemini AI Customization:** Connect your Google Gemini API Key in the environment settings to unlock real-time generative reasoning, customized dispute analysis, and tailored CRM call scripts.`;
-
-                return res.json({
-                    ok: true,
-                    reportMarkdown: generatedReport,
-                    mode,
-                    modelUsed: 'rule-based-engine (Set GEMINI_API_KEY for Live GenAI)',
-                    hasApiKey: false,
-                    generatedAt: new Date().toISOString()
-                });
-            }
-
-            // Call Google GenAI SDK
-            const ai = new GoogleGenAI({ apiKey });
-
-            const promptText = `You are the Chief Financial Officer and Senior Credit Risk Advisor for "${companyName}".
-Your objective is to help the business decrease customer credit days, accelerate cash flow collections, recover overdue receivables, and minimize bad debts.
-
-METRICS OVERVIEW:
-- Company: ${companyName}
-- Scope: ${targetCrm === 'ALL' ? 'Company-Wide Portfolio' : `CRM Owner: ${targetCrm}`}
-- Total Accounts: ${accountsCount}
-- Total Outstanding Balance: ${totalOutstanding}
-- Total Overdue > 45 Days: ${due45}
-- Total Overdue > 90 Days: ${over90}
-- Total Overdue > 135 Days: ${over135}
-- Active PDC Cheques in Hand: ${pdcInHand}
-- Current Weighted Average Collection Period: ${avgDays} days (Target: ≤ 45 days)
-
-CRITICAL CUSTOMER ACCOUNTS DATA:
-${accountsListText || 'No specific account details.'}
-
-REPORT REQUIREMENTS:
-Title: ${modeTitle}
-${modeInstruction}
-
-Formatting Guidelines:
-- Use clean Markdown with clear headings (###, ####), bullet points, bold key figures, and concise actionable tables where helpful.
-- Provide concrete numbers, specific customer names from the list, and realistic credit reduction strategies.
-- Maintain a professional, assertive, and constructive executive tone.
-- Include a specific section titled "🎯 Immediate 7-Day Action Plan for CRMs".`;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-3.7-flash',
-                contents: promptText,
-                config: {
-                    temperature: 0.3,
+            if (isBackendConfigured()) {
+                const caller = await currentProfile(bearerToken(req.headers.authorization));
+                if (!caller) {
+                    return res.status(401).json({ ok: false, error: 'Sign in to generate a report.' });
                 }
-            });
-
-            const markdown = response.text || 'Unable to generate report text.';
-
-            res.json({
-                ok: true,
-                reportMarkdown: markdown,
-                mode,
-                modelUsed: 'gemini-3.7-flash',
-                hasApiKey: true,
-                generatedAt: new Date().toISOString()
-            });
-
+            }
+            const { status, body } = await buildReport(req.body || {});
+            res.status(status).json(body);
         } catch (err: any) {
             console.error('Gemini Report Generation Error:', err);
             res.status(500).json({
                 ok: false,
-                error: err.message || 'Failed to generate AI report using Gemini.'
+                error: err?.message || 'Failed to generate AI report using Gemini.',
             });
         }
     });

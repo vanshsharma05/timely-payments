@@ -5,20 +5,9 @@
  * close, a brand accent that silently fails to paint.
  */
 const puppeteer = require('puppeteer-core');
+const { signIn } = require('./signin.cjs');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
-const signIn = async (page, name) => {
-  await page.evaluate(n => {
-    const b = [...document.querySelectorAll('button')].find(x =>
-      [...x.querySelectorAll('span')].some(s => s.textContent.trim() === n));
-    if (b) b.click();
-  }, name);
-  await new Promise(r => setTimeout(r, 700));
-  await page.waitForSelector('input#pw', { timeout: 8000 });
-  await page.type('input#pw', name === 'Admin' ? 'admin' : 'password123');
-  await page.keyboard.press('Enter');
-  await new Promise(r => setTimeout(r, 3500));
-};
 
 const clickByText = (page, text, sel = 'button') =>
   page.evaluate((t, s) => {
@@ -48,13 +37,20 @@ const dialogOpen = page =>
   await new Promise(r => setTimeout(r, 1200));
 
   /* ---- brand accents actually paint ---- */
+  // The brand yellow lives on the sign-in panel at desktop width, and on the
+  // card itself once that panel is dropped for phones.
   const loginBrand = await page.evaluate(() => {
-    const card = document.querySelector('.rounded-\\[28px\\]');
-    if (!card) return null;
-    const st = getComputedStyle(card);
-    return { borderTop: st.borderTopWidth + ' ' + st.borderTopStyle + ' ' + st.borderTopColor };
+    const yellow = [...document.querySelectorAll('aside, aside div')].some(
+      el => getComputedStyle(el).backgroundColor === 'rgb(252, 240, 0)'
+    );
+    const card = document.querySelector('main [class*="rounded-"]');
+    return { yellowBar: yellow, cardBorder: card ? getComputedStyle(card).borderTopColor : '' };
   });
-  check('login card brand rule', !!loginBrand && !/0px|none/.test(loginBrand.borderTop), loginBrand?.borderTop);
+  check(
+    'login brand rule',
+    !!loginBrand && (loginBrand.yellowBar || /252, 240, 0/.test(loginBrand.cardBorder)),
+    JSON.stringify(loginBrand)
+  );
 
   const logoOk = await page.evaluate(() => {
     const i = document.querySelector('img[alt="Shori Chemicals"]');
@@ -62,7 +58,7 @@ const dialogOpen = page =>
   });
   check('login logo loads', !!logoOk && logoOk.complete && logoOk.w > 0, JSON.stringify(logoOk));
 
-  await signIn(page, 'Admin');
+  await signIn(page);
 
   const headerBrand = await page.evaluate(() => {
     const h = document.querySelector('header');

@@ -40,33 +40,50 @@ Verify it worked: **Table Editor → profiles** should show one row with
 
 ### Adding your team later
 
-Repeat step 3 for each teammate, then set their role and CRM code in
-**SQL Editor**. `legacy_id` must match the CRM name exactly as it appears in
-your accounts sheet, because that is what links a customer row to its owner:
+Do it in the app: sign in as Admin → **Team & access** → **Add User**. Fill in
+the name, the email they will sign in with, a starting password, and the **CRM
+code**. That creates the Supabase Auth login and the profile in one go, and
+they can sign in straight away.
 
-```sql
-update public.profiles
-   set name          = 'Ankur',
-       legacy_id     = 'ANKUR',
-       role          = 'CRM',
-       data_visibility = 'AssignedOnly',
-       assigned_crms = array['ANKUR']
- where email = 'ankur@yourcompany.com';
-```
+The CRM code must match the CRM name exactly as it appears in your accounts
+sheet — that is what links a customer row to its owner — so use `ANKUR`, not
+`Ankur Sharma`. It cannot be changed afterwards without re-pointing the
+customer rows.
 
-Roles: `Admin`, `Manager`, `CRM`, `Collector`, `Viewer`.
+This needs `SUPABASE_SERVICE_ROLE_KEY` set on the server (step 4). Without it
+the app falls back to a plain sign-up, which still creates the teammate but
+sends them a confirmation email first, and cannot change passwords or fully
+delete a login.
+
+### Roles
+
+| Role | Sees | Can |
+|---|---|---|
+| `Admin` | everything | everything, including Team & access |
+| `Manager` | everything | everything except deleting customers and managing logins |
+| `CRM` | their own accounts | follow-ups, new customers, cheques, export |
+| `Collector` | accounts assigned to them | follow-ups and cheques |
+| `Viewer` | everything | nothing — read-only |
+
+The app hides what a role may not do, and Row Level Security refuses it as
+well, so neither side can be talked around. Anyone can change their own
+password from the account menu; only an Admin can change someone else's.
 
 ## 4. Copy your API keys
 
 **Project Settings → API**, copy:
 
-| Field | Goes into |
-|---|---|
-| Project URL | `VITE_SUPABASE_URL` |
-| `anon` `public` key | `VITE_SUPABASE_ANON_KEY` |
+| Field | Goes into | Where it runs |
+|---|---|---|
+| Project URL | `VITE_SUPABASE_URL` | browser |
+| `anon` `public` key | `VITE_SUPABASE_ANON_KEY` | browser |
+| `service_role` key | `SUPABASE_SERVICE_ROLE_KEY` | server only |
 
-Both are safe in the browser — Row Level Security decides what they can reach.
-**Never** copy the `service_role` key into this project.
+The first two are safe in the browser — Row Level Security decides what they
+can reach. The `service_role` key bypasses Row Level Security entirely: it is
+used only by `/api/team`, which runs on the server, to create teammate logins.
+Never give it a `VITE_` prefix and never reference it from anything under
+`components/` or `services/` — that would ship it to every visitor.
 
 ## 5. Run it locally first
 
@@ -104,6 +121,7 @@ git push -u origin main
    |---|---|
    | `VITE_SUPABASE_URL` | your Project URL |
    | `VITE_SUPABASE_ANON_KEY` | your anon key |
+   | `SUPABASE_SERVICE_ROLE_KEY` | your `service_role` key — lets Admins add teammates from Team & access |
    | `GEMINI_API_KEY` | *optional* — only for the AI report |
 
    `VITE_`-prefixed values are baked in at build time, so **after changing
@@ -117,7 +135,8 @@ git push -u origin main
 - **Site URL**: your Vercel URL
 - **Redirect URLs**: add your Vercel URL
 
-Without this, "Forgot password" emails link back to `localhost`.
+Without this, "Forgot password" emails link back to `localhost` and the
+"choose a new password" screen never opens for the person who clicked.
 
 ---
 
@@ -137,6 +156,12 @@ You do not press save. Any change you make is written to Supabase about a
 second later, and only the rows that actually changed are sent. If a write
 fails you get a red banner at the top of the dashboard — the change stays on
 screen and retries on your next edit.
+
+Supabase is the only source of truth. Signing in loads the book from the
+database — the browser keeps no copy, so one person's stale tab can never
+overwrite what someone else recorded. The Google Sheet is imported only when
+somebody presses **Sync**, and that import updates and adds accounts; it never
+deletes one. Removing a customer is done deliberately, from the customer list.
 
 ## Cost
 

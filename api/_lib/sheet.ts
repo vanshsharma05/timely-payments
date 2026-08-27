@@ -58,11 +58,30 @@ export function getCandidateCsvUrls(inputUrl: string): string[] {
     urls.push(`https://docs.google.com/spreadsheets/d/${DEFAULT_OFFICIAL_SHEET_ID}/export?format=csv`);
     urls.push(`https://docs.google.com/spreadsheets/d/${DEFAULT_OFFICIAL_SHEET_ID}/gviz/tq?tqx=out:csv`);
 
-    return Array.from(new Set(urls));
+    return Array.from(new Set(urls)).filter(isGoogleSheetUrl);
+}
+
+/**
+ * The browser hands this route a URL and the server fetches it. Without a host
+ * check that is an open proxy — anyone could point it at an internal address
+ * and read the response. Only Google's spreadsheet hosts are ever needed.
+ */
+const ALLOWED_HOSTS = ['docs.google.com', 'spreadsheets.google.com'];
+
+export function isGoogleSheetUrl(url: string): boolean {
+    try {
+        const { protocol, hostname } = new URL(url);
+        return protocol === 'https:' && ALLOWED_HOSTS.includes(hostname.toLowerCase());
+    } catch {
+        return false;
+    }
 }
 
 export async function fetchGoogleSheetCsv(inputUrl: string): Promise<{ csv: string; sourceUrl: string }> {
     const candidateUrls = getCandidateCsvUrls(inputUrl);
+    if (!candidateUrls.length) {
+        throw new Error('That does not look like a Google Sheet link. Paste the sheet URL from your browser.');
+    }
     let lastError: Error | null = null;
 
     for (const url of candidateUrls) {

@@ -1,22 +1,5 @@
-import { Outstanding, FollowUpStatus, User, UserRole, DataVisibility, BalanceType, DEFAULT_ROLE_PERMISSIONS } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, DataVisibility, BalanceType } from '../types';
 
-// Updated user list with the real team members from the Google Sheet
-export const USERS: User[] = [
-    { id: 'Admin', name: 'Admin', role: UserRole.Admin, password: 'admin', dataVisibility: DataVisibility.All, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.Admin] },
-    { id: 'ANKUR', name: 'Ankur', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['ANKUR'] },
-    { id: 'PRIKSHIT', name: 'Prikshit', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['PRIKSHIT'] },
-    { id: 'VISHNU', name: 'Vishnu', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['VISHNU'] },
-    { id: 'POONAM', name: 'Poonam', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['POONAM'] },
-    { id: 'SANDEEP', name: 'Sandeep', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['SANDEEP'] },
-    { id: 'KAPIL', name: 'Kapil', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['KAPIL'] },
-    { id: 'SAVIA', name: 'Savia', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['SAVIA'] },
-    { id: 'ROHINI', name: 'Rohini', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['ROHINI'] },
-    { id: 'GARRY', name: 'Garry', role: UserRole.CRM, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.CRM], assignedCrms: ['GARRY'] },
-    { id: 'Amit Kumar', name: 'Amit Kumar', role: UserRole.Collector, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.Collector] },
-    { id: 'Sunita Devi', name: 'Sunita Devi', role: UserRole.Collector, password: 'password123', dataVisibility: DataVisibility.AssignedOnly, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.Collector] },
-];
-
-export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pubhtml?gid=895778621&single=true';
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
 export function parseAmountAndType(val: any): { amount: number; type: BalanceType } {
@@ -41,10 +24,6 @@ export function parseAmountAndType(val: any): { amount: number; type: BalanceTyp
     };
 }
 
-// Backward-compatible amount parser returning absolute number
-export function parseAmount(val: any): number {
-    return parseAmountAndType(val).amount;
-}
 
 // Clean CSV parser for handling quotes and comma delimiters
 export function parseCSVMatrix(text: string): string[][] {
@@ -163,7 +142,7 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
         const email = r[colMap.email] ? r[colMap.email].trim() : '';
 
         const item: Outstanding = {
-            id: `out_${i}_${encodeURIComponent(companyName.slice(0, 15).replace(/\s+/g, '_'))}`,
+            id: customerIdFor(companyName),
             company: companyName,
             contactPerson: explicitContact || 'Accounts Dept',
             contactNumber: mobile,
@@ -203,6 +182,33 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
 }
 
 // Merge fresh sheet data with existing locally tracked follow-ups, notes, and collector assignments
+/**
+ * Deterministic customer id, derived from the company name.
+ *
+ * The old ids carried the sheet's row number, so re-ordering the sheet gave the
+ * same customer a new id — which, against a database, means deleting the row
+ * and inserting a copy, taking its PDC cheques with it (they cascade). Same
+ * company, same id, every import, in every browser.
+ */
+export function customerIdFor(company: string): string {
+    const slug = (company || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 60);
+    return `cust_${slug || 'unnamed'}`;
+}
+
+/**
+ * Folds a fresh sheet into the book already on file.
+ *
+ * Two rules matter for the shared database: a matched customer keeps the id it
+ * already has, and a customer the sheet no longer lists is kept rather than
+ * dropped. Dropping it here would delete the row — and its cheques and history
+ * — on the next sync. Removing a customer is a deliberate act, done from the
+ * customer list.
+ */
 export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRecords: Outstanding[]): Outstanding[] {
     if (!existingRecords || existingRecords.length === 0) {
         return processStatuses(newRecords || []);
@@ -219,13 +225,16 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
         existingMap.set(item.id, item);
     });
 
+    const matchedIds = new Set<string>();
     const merged = newRecords.map(item => {
         const key = item.company.trim().toLowerCase();
         const existing = existingMap.get(key) || existingMap.get(item.id);
 
         if (existing) {
+            matchedIds.add(existing.id);
             return {
                 ...item,
+                id: existing.id,
                 assignedCollectorId: existing.assignedCollectorId || item.assignedCollectorId,
                 followUpDate: existing.followUpDate,
                 forecastAmount: existing.forecastAmount !== undefined ? existing.forecastAmount : item.forecastAmount,
@@ -245,7 +254,10 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
         return item;
     });
 
-    return processStatuses(merged);
+    // Anything already on file that this sheet does not mention stays put.
+    const retained = existingRecords.filter(item => !matchedIds.has(item.id));
+
+    return processStatuses([...merged, ...retained]);
 }
 
 // Function to simulate checking and updating status based on date
@@ -322,62 +334,6 @@ export const getOutstandingForUser = (user: User, allData: Outstanding[]): Promi
     });
 };
 
-// Initial fallback mock data (Clean fresh state)
-export const MOCK_DATA: Outstanding[] = [
-    {
-        id: 'out_1',
-        company: 'BBF PACKAGING PRIVATE LIMITED',
-        contactPerson: 'Mr. Ramesh Gupta',
-        contactNumber: '6239501363',
-        contactPost: 'Finance & Accounts Head',
-        additionalContacts: [
-            { id: 'c1_1', name: 'Sanjay Sharma', mobile: '9876541230', post: 'Purchase Director', email: 'sanjay@bbfpack.com' }
-        ],
-        email: 'ankur@shorichemicals.com',
-        total: 3953804.00,
-        ageing: { '1-45': 1464982, '46-90': 1379377, '91-135': 755592, '>135': 353853 },
-        over90: 1109445,
-        dueOver45: 2488822,
-        crmOwnerId: 'ANKUR',
-        status: FollowUpStatus.Pending,
-        notes: [],
-        creationDate: new Date(),
-    },
-    {
-        id: 'out_2',
-        company: 'PVM ENTERPRISES PVT.LTD.',
-        contactPerson: 'Sunil Kumar',
-        contactNumber: '9501078688',
-        contactPost: 'Managing Director',
-        additionalContacts: [],
-        email: 'prikshit@shorichemicals.com',
-        total: 3665574.00,
-        ageing: { '1-45': 1328831, '46-90': 1419401, '91-135': 80519, '>135': 836823 },
-        over90: 917342,
-        dueOver45: 2336743,
-        crmOwnerId: 'PRIKSHIT',
-        status: FollowUpStatus.Pending,
-        notes: [],
-        creationDate: new Date(),
-    },
-    {
-        id: 'out_3',
-        company: 'ASHWANI KNIT',
-        contactPerson: 'Ashwani Mittal',
-        contactNumber: '9876690090',
-        contactPost: 'Proprietor',
-        additionalContacts: [],
-        email: 'prikshit@shorichemicals.com',
-        total: 3136357.00,
-        ageing: { '1-45': 807423, '46-90': 384444, '91-135': 879411, '>135': 1065079 },
-        over90: 1944490,
-        dueOver45: 2328934,
-        crmOwnerId: 'PRIKSHIT',
-        status: FollowUpStatus.Pending,
-        notes: [],
-        creationDate: new Date(),
-    }
-];
 
 // Helper to fetch Google Sheet data reliably using backend proxy or direct fallback
 export async function fetchGoogleSheetData(sheetUrl: string): Promise<{ data: Outstanding[]; records: Outstanding[]; updatedTillDate: string }> {
@@ -409,86 +365,15 @@ export async function fetchGoogleSheetData(sheetUrl: string): Promise<{ data: Ou
         console.warn('Backend proxy fetch failed, attempting client-side fallback:', e);
     }
 
-    // Strategy 2: Client-side direct candidate URLs (for Published links & Google Visualization API)
     if (!csvContent) {
-        const OFFICIAL_FALLBACK_SHEET_ID = '1DoBq1UVK53Z_029eIGUQzZ6g3sN2ytVVFCF0tFoYu_4';
-        const candidateUrls: string[] = [];
-
-        // Bare sheet ID
-        let cleanUrl = trimmed;
-        if (/^[a-zA-Z0-9-_]{25,}$/.test(cleanUrl) && !cleanUrl.startsWith('http')) {
-            cleanUrl = `https://docs.google.com/spreadsheets/d/${cleanUrl}/edit`;
-        }
-
-        if (cleanUrl.includes('/pub?output=csv') || cleanUrl.includes('/export?format=csv') || cleanUrl.includes('/gviz/tq?tqx=out:csv')) {
-            candidateUrls.push(cleanUrl);
-        }
-
-        if (cleanUrl.includes('/spreadsheets/d/e/')) {
-            let pubCsv = cleanUrl.replace(/\/edit.*/, '');
-            if (pubCsv.includes('/pubhtml')) {
-                pubCsv = pubCsv.replace(/\/pubhtml.*/, '/pub?output=csv');
-            } else if (!pubCsv.includes('/pub?output=csv')) {
-                pubCsv = pubCsv.replace(/\/pub.*/, '/pub?output=csv');
-                if (!pubCsv.includes('output=csv')) {
-                    pubCsv += (pubCsv.includes('?') ? '&' : '?') + 'output=csv';
-                }
-            }
-            candidateUrls.push(pubCsv);
-            candidateUrls.push(pubCsv + '&gid=0&single=true');
-        }
-
-        const sheetIdMatch = cleanUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-        if (sheetIdMatch && sheetIdMatch[1] && sheetIdMatch[1] !== 'e') {
-            const sheetId = sheetIdMatch[1];
-            const gidMatch = cleanUrl.match(/gid=([0-9]+)/);
-            const gid = gidMatch ? gidMatch[1] : '0';
-            candidateUrls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`);
-            candidateUrls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`);
-        }
-
-        candidateUrls.push(`https://docs.google.com/spreadsheets/d/${OFFICIAL_FALLBACK_SHEET_ID}/gviz/tq?tqx=out:csv`);
-        candidateUrls.push(`https://docs.google.com/spreadsheets/d/${OFFICIAL_FALLBACK_SHEET_ID}/export?format=csv`);
-
-        for (const targetUrl of candidateUrls) {
-            try {
-                const response = await fetch(targetUrl);
-                if (response.ok) {
-                    const text = await response.text();
-                    if (!text.includes('<!DOCTYPE html>') && !text.includes('<html') && text.trim().length > 0) {
-                        csvContent = text;
-                        break;
-                    }
-                }
-            } catch (e: any) {
-                fetchError = e;
-            }
-        }
-    }
-
-    if (!csvContent) {
-        throw fetchError || new Error('Could not fetch data. Please ensure the Google Sheet is shared with "Anyone with the link can view" or File > Share > Publish to web.');
+        throw fetchError || new Error(
+            'Could not read that sheet. Share it as "Anyone with the link can view", or File > Share > Publish to web.'
+        );
     }
 
     return parseGoogleSheetCsv(csvContent);
 }
 
-export const CUSTOMER_MASTER_EXPECTED_HEADERS = [
-    "Company / Customer Name",
-    "Contact Person",
-    "Designation",
-    "Mobile Number",
-    "Alternate Phone",
-    "Email",
-    "City",
-    "State",
-    "Address",
-    "GSTIN",
-    "Assigned CRM",
-    "Credit Limit",
-    "Credit Terms (Days)",
-    "Notes"
-];
 
 // Parse Customer Master Data CSV
 export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstanding[]; count: number } {
@@ -577,7 +462,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
         const noteStr = (colMap.notes >= 0 && colMap.notes < r.length) ? r[colMap.notes]?.trim() : '';
 
         const item: Outstanding = {
-            id: `cust_${i}_${encodeURIComponent(companyName.slice(0, 15).replace(/\s+/g, '_'))}`,
+            id: customerIdFor(companyName),
             company: companyName,
             contactPerson: contactPerson || 'Accounts Dept',
             contactNumber: mobile,
@@ -589,7 +474,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
             gstin: gstin,
             creditLimit: creditLimit,
             paymentTermsDays: paymentTermsDays,
-            crmOwnerId: crm || 'ANKUR',
+            crmOwnerId: crm || '',
             total: 0,
             totalType: 'Dr',
             ageing: { '1-45': 0, '46-90': 0, '91-135': 0, '>135': 0 },
@@ -643,56 +528,10 @@ export async function fetchCustomerMasterSheetData(sheetUrl: string): Promise<{ 
         console.warn('Backend proxy fetch failed for Master sheet, attempting client-side fallback:', e);
     }
 
-    // Strategy 2: Client fallback
     if (!csvContent) {
-        let cleanUrl = trimmed;
-        if (/^[a-zA-Z0-9-_]{25,}$/.test(cleanUrl) && !cleanUrl.startsWith('http')) {
-            cleanUrl = `https://docs.google.com/spreadsheets/d/${cleanUrl}/edit`;
-        }
-
-        const candidateUrls: string[] = [];
-        if (cleanUrl.includes('/pub?output=csv') || cleanUrl.includes('/export?format=csv') || cleanUrl.includes('/gviz/tq?tqx=out:csv')) {
-            candidateUrls.push(cleanUrl);
-        }
-        if (cleanUrl.includes('/spreadsheets/d/e/')) {
-            let pubCsv = cleanUrl.replace(/\/edit.*/, '');
-            if (pubCsv.includes('/pubhtml')) {
-                pubCsv = pubCsv.replace(/\/pubhtml.*/, '/pub?output=csv');
-            } else if (!pubCsv.includes('/pub?output=csv')) {
-                pubCsv = pubCsv.replace(/\/pub.*/, '/pub?output=csv');
-                if (!pubCsv.includes('output=csv')) {
-                    pubCsv += (pubCsv.includes('?') ? '&' : '?') + 'output=csv';
-                }
-            }
-            candidateUrls.push(pubCsv);
-        }
-        const sheetIdMatch = cleanUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-        if (sheetIdMatch && sheetIdMatch[1] && sheetIdMatch[1] !== 'e') {
-            const sheetId = sheetIdMatch[1];
-            const gidMatch = cleanUrl.match(/gid=([0-9]+)/);
-            const gid = gidMatch ? gidMatch[1] : '0';
-            candidateUrls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`);
-            candidateUrls.push(`https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`);
-        }
-
-        for (const targetUrl of candidateUrls) {
-            try {
-                const response = await fetch(targetUrl);
-                if (response.ok) {
-                    const text = await response.text();
-                    if (!text.includes('<!DOCTYPE html>') && !text.includes('<html') && text.trim().length > 0) {
-                        csvContent = text;
-                        break;
-                    }
-                }
-            } catch (e: any) {
-                fetchError = e;
-            }
-        }
-    }
-
-    if (!csvContent) {
-        throw fetchError || new Error('Could not fetch Customer Master sheet. Please ensure it is shared publicly or published to web.');
+        throw fetchError || new Error(
+            'Could not read the customer master sheet. Share it as "Anyone with the link can view", or publish it to the web.'
+        );
     }
 
     return parseCustomerMasterSheetCsv(csvContent);
@@ -710,9 +549,14 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
     let newAccountsCount = 0;
     const mergedList: Outstanding[] = [...existingData];
 
+    // Index once. Scanning the list per master row is quadratic, and with a few
+    // thousand accounts on each side that locks the tab for seconds.
+    const indexByCompany = new Map<string, number>();
+    mergedList.forEach((item, idx) => indexByCompany.set(item.company.trim().toLowerCase(), idx));
+
     masterData.forEach(masterItem => {
         const key = masterItem.company.trim().toLowerCase();
-        const existingIdx = mergedList.findIndex(item => item.company.trim().toLowerCase() === key);
+        const existingIdx = indexByCompany.has(key) ? indexByCompany.get(key)! : -1;
 
         if (existingIdx >= 0) {
             // Enrich existing customer
@@ -729,7 +573,7 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
                 gstin: masterItem.gstin || current.gstin,
                 creditLimit: masterItem.creditLimit !== undefined ? masterItem.creditLimit : current.creditLimit,
                 paymentTermsDays: masterItem.paymentTermsDays !== undefined ? masterItem.paymentTermsDays : current.paymentTermsDays,
-                crmOwnerId: (masterItem.crmOwnerId && masterItem.crmOwnerId !== 'ANKUR') ? masterItem.crmOwnerId : current.crmOwnerId,
+                crmOwnerId: masterItem.crmOwnerId || current.crmOwnerId,
                 additionalContacts: [
                     ...(current.additionalContacts || []),
                     ...(masterItem.additionalContacts || []).filter(mc => 
@@ -741,6 +585,7 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
             enrichedCount++;
         } else {
             // Add new master account
+            indexByCompany.set(key, mergedList.length);
             mergedList.push(masterItem);
             newAccountsCount++;
         }

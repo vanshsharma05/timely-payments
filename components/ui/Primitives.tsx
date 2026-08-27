@@ -1,6 +1,6 @@
 import React from 'react';
-import { Outstanding, BalanceType } from '../../types';
-import { formatCompact, formatINR, initials } from './format';
+import { BalanceType } from '../../types';
+import { formatCompact, formatINR } from './format';
 
 /* ============================================================================
    Components — Apple structure, Google affordances.
@@ -66,76 +66,6 @@ export const Button = ({
     {children}
   </button>
 );
-
-/* ---------------------------------- Chip --------------------------------- */
-
-/** Material filter chip — selected state is unmistakable. */
-export const Chip = ({
-  selected = false,
-  onClick,
-  children,
-  className,
-  title,
-}: {
-  selected?: boolean;
-  onClick?: () => void;
-  children: React.ReactNode;
-  className?: string;
-  title?: string;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    title={title}
-    aria-pressed={selected}
-    className={cx(
-      'inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[13px] font-semibold',
-      'transition-colors duration-150 border',
-      selected
-        ? 'bg-accent-tint text-accent border-accent-tint-2'
-        : 'bg-transparent text-label-2 border-separator-strong hover:bg-hover hover:text-label',
-      className
-    )}
-  >
-    {children}
-  </button>
-);
-
-/* -------------------------- Segmented control ---------------------------- */
-
-/** Apple segmented control — for switching how the same data is shown. */
-export const Segmented = <T extends string>({
-  value,
-  options,
-  onChange,
-  className,
-}: {
-  value: T;
-  options: { value: T; label: React.ReactNode }[];
-  onChange: (v: T) => void;
-  className?: string;
-}) => (
-  <div className={cx('inline-flex items-center gap-0.5 p-1 bg-card-3 rounded-[11px]', className)} role="tablist">
-    {options.map(o => {
-      const on = o.value === value;
-      return (
-        <button
-          key={o.value}
-          role="tab"
-          aria-selected={on}
-          onClick={() => onChange(o.value)}
-          className={cx(
-            'h-8 px-3.5 rounded-[9px] text-[13px] font-semibold transition-all duration-150',
-            on ? 'bg-card text-label shadow-e1' : 'text-label-3 hover:text-label-2'
-          )}
-        >
-          {o.label}
-        </button>
-      );
-    })}
-  </div>
-);
-
 /* --------------------------------- Badge --------------------------------- */
 
 type Tone = 'neutral' | 'brand' | 'pos' | 'warn' | 'dang' | 'age1' | 'age2' | 'age3' | 'age4';
@@ -243,15 +173,6 @@ export interface AgeingParts {
   a4: number;
 }
 
-export function ageingOf(item: Outstanding): AgeingParts {
-  return {
-    a1: Math.abs(item.ageing?.['1-45'] || 0),
-    a2: Math.abs(item.ageing?.['46-90'] || 0),
-    a3: Math.abs(item.ageing?.['91-135'] || 0),
-    a4: Math.abs(item.ageing?.['>135'] || 0),
-  };
-}
-
 export const AGE_BANDS = [
   { key: 'a1' as const, label: '1–45 days', short: '1–45', varName: 'var(--age-1)', tone: 'age1' as Tone },
   { key: 'a2' as const, label: '46–90 days', short: '46–90', varName: 'var(--age-2)', tone: 'age2' as Tone },
@@ -313,38 +234,6 @@ export const AgeingLegend = ({ className }: { className?: string }) => (
   </div>
 );
 
-/* ------------------------------ Person chip ------------------------------ */
-
-export const PersonChip = ({
-  name,
-  size = 'md',
-  className,
-}: {
-  name: string;
-  size?: 'sm' | 'md';
-  className?: string;
-}) => {
-  const label = (name || '').trim();
-  if (!label) {
-    return <span className={cx('text-[12.5px] text-label-3', className)}>Unassigned</span>;
-  }
-  return (
-    <span className={cx('inline-flex items-center gap-2 min-w-0', className)}>
-      <span
-        className={cx(
-          'rounded-full flex-none grid place-items-center font-bold bg-accent-tint text-accent',
-          size === 'sm' ? 'w-[20px] h-[20px] text-[9.5px]' : 'w-[24px] h-[24px] text-[10.5px]'
-        )}
-        aria-hidden="true"
-      >
-        {initials(label)}
-      </span>
-      <span className="text-[13px] text-label-2 truncate capitalize">{label.toLowerCase()}</span>
-    </span>
-  );
-};
-
-/* --------------------------------- Stat ---------------------------------- */
 
 export const Stat = ({
   label,
@@ -429,12 +318,3 @@ export const Spinner = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export const SkeletonRow = ({ cols = 6 }: { cols?: number }) => (
-  <tr className="border-b border-separator">
-    {Array.from({ length: cols }).map((_, i) => (
-      <td key={i} className="px-3 py-3.5">
-        <div className="h-3 rounded-full bg-card-3 animate-pulse" style={{ width: `${45 + ((i * 37) % 50)}%` }} />
-      </td>
-    ))}
-  </tr>
-);

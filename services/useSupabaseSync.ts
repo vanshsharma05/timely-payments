@@ -20,7 +20,11 @@ export function useCollectionSync<T extends { id: string }>(opts: {
     enabled: boolean;
     /** Stable serialisation used to detect a real change. */
     toSignature: (row: T) => string;
-    upsert: (rows: T[]) => Promise<void>;
+    /**
+     * Saves the changed rows. `created` holds the ids this hook has never seen
+     * on the server, so an adapter can insert those and update the rest.
+     */
+    upsert: (rows: T[], created: Set<string>) => Promise<void>;
     remove?: (id: string) => Promise<void>;
     /** Human-readable label used in error reporting. */
     label: string;
@@ -57,11 +61,15 @@ export function useCollectionSync<T extends { id: string }>(opts: {
         const timer = setTimeout(async () => {
             const current = new Map<string, string>();
             const changed: T[] = [];
+            const created = new Set<string>();
 
             for (const row of rows) {
                 const sig = toSignature(row);
                 current.set(row.id, sig);
-                if (synced.current.get(row.id) !== sig) changed.push(row);
+                if (synced.current.get(row.id) !== sig) {
+                    changed.push(row);
+                    if (!synced.current.has(row.id)) created.add(row.id);
+                }
             }
 
             const removed: string[] = [];
@@ -72,7 +80,7 @@ export function useCollectionSync<T extends { id: string }>(opts: {
             if (!changed.length && !removed.length) return;
 
             try {
-                if (changed.length) await upsert(changed);
+                if (changed.length) await upsert(changed, created);
                 if (remove) {
                     for (const id of removed) await remove(id);
                 }

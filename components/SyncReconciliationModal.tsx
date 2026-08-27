@@ -77,7 +77,10 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
             totalIncoming: incomingRecords.length,
             matchedCount,
             diffCrmCount,
-            newAccountsCount
+            newAccountsCount,
+            retainedCount: existingRecords.filter(
+                e => !incomingRecords.some(i => i.company.trim().toLowerCase() === e.company.trim().toLowerCase())
+            ).length,
         };
     }, [incomingRecords, existingMap]);
 
@@ -157,9 +160,11 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
 
     const handleApplySync = () => {
         // Construct final merged list
+        const matchedIds = new Set<string>();
         const merged: Outstanding[] = incomingRecords.map(item => {
             const key = item.company.trim().toLowerCase();
             const existing = existingMap.get(key) || existingMap.get(item.id);
+            if (existing) matchedIds.add(existing.id);
 
             // Determine final CRM
             let finalCrm = item.crmOwnerId;
@@ -176,6 +181,9 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
             if (existing) {
                 return {
                     ...item,
+                    // Keep the row's own id: a new one would delete the row and
+                    // insert a copy, cascading away its PDC cheques.
+                    id: existing.id,
                     crmOwnerId: finalCrm,
                     assignedCollectorId: existing.assignedCollectorId || item.assignedCollectorId,
                     followUpDate: existing.followUpDate,
@@ -197,7 +205,9 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
             };
         });
 
-        const finalProcessed = processStatuses(merged);
+        // Accounts this sheet does not mention are kept, not deleted.
+        const retained = existingRecords.filter(item => !matchedIds.has(item.id));
+        const finalProcessed = processStatuses([...merged, ...retained]);
         onConfirm(finalProcessed);
     };
 
@@ -238,7 +248,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                 </div>
 
                 {/* KPI Overview Pills */}
-                <div className="px-5 sm:px-6 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="px-5 sm:px-6 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700/60 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                         <span className="text-gray-500 dark:text-gray-400 block">Total Synced</span>
                         <span className="text-lg font-bold text-gray-900 dark:text-white">{analysis.totalIncoming}</span>
@@ -254,6 +264,10 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                         <span className="text-gray-500 dark:text-gray-400 block">New Accounts</span>
                         <span className="text-lg font-bold text-green-600 dark:text-green-400">{analysis.newAccountsCount}</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                        <span className="text-gray-500 dark:text-gray-400 block" title="Accounts already in the book that this sheet does not list. They are kept, not deleted.">Kept (not in sheet)</span>
+                        <span className="text-lg font-bold text-gray-600 dark:text-gray-300">{analysis.retainedCount}</span>
                     </div>
                 </div>
 

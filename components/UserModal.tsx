@@ -1,27 +1,51 @@
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, DataVisibility, UserPermissions, DEFAULT_ROLE_PERMISSIONS } from '../types';
+import { User, UserRole, DataVisibility, UserPermissions, TeamMemberDraft, DEFAULT_ROLE_PERMISSIONS } from '../types';
 
 interface UserModalProps {
     userToEdit: User | null;
-    onSave: (user: Omit<User, 'id'> & { id?: string }) => void;
+    /**
+     * Creates or updates the real account. Rejecting keeps the modal open and
+     * shows the reason, so a failed save is never mistaken for a saved one.
+     */
+    onSave: (user: TeamMemberDraft) => void | Promise<void>;
     onClose: () => void;
     existingCrms?: string[];
 }
+
+/** 'Ankur Sharma' -> 'ANKUR_SHARMA', the shape CRM codes take in the sheet. */
+const toCrmCode = (value: string) =>
+    value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+/**
+ * Same alphabet, but applied while typing — so it must not trim the edges, or
+ * an underscore could never be typed in the middle of a code.
+ */
+const typeCrmCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9_]+/g, '_');
 
 const KNOWN_CRMS = ['ANKUR', 'PRIKSHIT', 'VISHNU', 'POONAM', 'SANDEEP', 'KAPIL', 'SAVIA', 'ROHINI', 'GARRY'];
 
 const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: UserModalProps) => {
     const [name, setName] = useState('');
+    const [crmCode, setCrmCode] = useState('');
+    const [crmCodeTouched, setCrmCodeTouched] = useState(false);
+    const [email, setEmail] = useState('');
     const [role, setRole] = useState<UserRole>(UserRole.CRM);
     const [password, setPassword] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
     const [dataVisibility, setDataVisibility] = useState<DataVisibility>(DataVisibility.AssignedOnly);
     const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_ROLE_PERMISSIONS[UserRole.CRM]);
     const [assignedCrms, setAssignedCrms] = useState<string[]>([]);
     const [customCrmInput, setCustomCrmInput] = useState('');
 
     useEffect(() => {
+        setError('');
+        setSaving(false);
         if (userToEdit) {
             setName(userToEdit.name);
+            setCrmCode(userToEdit.id);
+            setCrmCodeTouched(true);
+            setEmail(userToEdit.email || '');
             setRole(userToEdit.role);
             setPassword(''); // Don't pre-fill password
             setDataVisibility(userToEdit.dataVisibility || (userToEdit.role === UserRole.Admin ? DataVisibility.All : DataVisibility.AssignedOnly));
@@ -29,6 +53,9 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
             setAssignedCrms(userToEdit.assignedCrms || (userToEdit.role === UserRole.CRM ? [userToEdit.id] : []));
         } else {
             setName('');
+            setCrmCode('');
+            setCrmCodeTouched(false);
+            setEmail('');
             setRole(UserRole.CRM);
             setPassword('');
             setDataVisibility(DataVisibility.AssignedOnly);
@@ -75,31 +102,58 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // What the field shows; normalised properly only when the form is sent.
+    const shownCrmCode = crmCodeTouched ? crmCode : toCrmCode(name);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
+        setError('');
+
         if (!name.trim()) {
-            alert('User name cannot be empty.');
+            setError('Enter the teammate\'s full name.');
             return;
         }
-        if (!userToEdit && !password) {
-            alert('Password is required for new users.');
+        const finalCrmCode = toCrmCode(shownCrmCode);
+        if (!finalCrmCode) {
+            setError('Enter a CRM code — it is what links customer rows to this person.');
+            return;
+        }
+        if (!userToEdit && !email.trim()) {
+            setError('Enter an email address. That is what the teammate signs in with.');
+            return;
+        }
+        if (!userToEdit && password.trim().length < 6) {
+            setError('Set a password of at least 6 characters for the new account.');
+            return;
+        }
+        if (password.trim() && password.trim().length < 6) {
+            setError('The password must be at least 6 characters.');
             return;
         }
 
         const finalVisibility = role === UserRole.Admin ? DataVisibility.All : dataVisibility;
 
-        onSave({
-            id: userToEdit?.id,
-            name: name.trim(),
-            role,
-            password: password.trim() ? password.trim() : undefined,
-            dataVisibility: finalVisibility,
-            permissions: {
-                ...permissions,
-                canViewAllCrms: finalVisibility === DataVisibility.All ? true : permissions.canViewAllCrms,
-            },
-            assignedCrms: assignedCrms.length > 0 ? assignedCrms : undefined,
-        });
+        setSaving(true);
+        try {
+            await onSave({
+                id: userToEdit ? userToEdit.id : finalCrmCode,
+                name: name.trim(),
+                email: email.trim() ? email.trim().toLowerCase() : undefined,
+                role,
+                password: password.trim() ? password.trim() : undefined,
+                dataVisibility: finalVisibility,
+                permissions: {
+                    ...permissions,
+                    canViewAllCrms: finalVisibility === DataVisibility.All ? true : permissions.canViewAllCrms,
+                },
+                assignedCrms: assignedCrms.length > 0 ? assignedCrms : undefined,
+            });
+        } catch (err: any) {
+            setError(err?.message || 'Could not save this user.');
+        } finally {
+            setSaving(false);
+        }
     };
 
     // Combine standard and custom CRM names
@@ -146,6 +200,40 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                             />
                         </div>
                         <div>
+                            <label htmlFor="userEmail" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                                Sign-in Email <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
+                            </label>
+                            <input
+                                id="userEmail"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="e.g. ankur@yourcompany.com"
+                                autoComplete="off"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white"
+                                required={!userToEdit}
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="userCrmCode" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                                CRM Code {userToEdit && <span className="text-gray-400 font-normal">(fixed)</span>}
+                            </label>
+                            <input
+                                id="userCrmCode"
+                                type="text"
+                                value={shownCrmCode}
+                                onChange={(e) => { setCrmCodeTouched(true); setCrmCode(typeCrmCode(e.target.value)); }}
+                                placeholder="e.g. ANKUR"
+                                readOnly={!!userToEdit}
+                                className={`w-full border rounded-xl shadow-2xs border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold font-mono tracking-wide focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white ${userToEdit ? 'bg-gray-100 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800'}`}
+                            />
+                            <p className="mt-1 text-[11.5px] text-gray-500 dark:text-gray-400">
+                                {userToEdit
+                                    ? 'Customer rows are linked to this code, so it cannot be changed.'
+                                    : 'Must match the CRM name in the accounts sheet for their portfolio to appear.'}
+                            </p>
+                        </div>
+                        <div>
                             <label htmlFor="userPassword" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
                                 Password {userToEdit ? <span className="text-gray-400 font-normal">(Leave blank to keep)</span> : <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>}
                             </label>
@@ -154,7 +242,8 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 type="text"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder={userToEdit ?"Keep existing password" :"Enter account password"}
+                                placeholder={userToEdit ?"Keep existing password" :"At least 6 characters"}
+                                autoComplete="new-password"
                                 className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white"
                             />
                         </div>
@@ -389,19 +478,29 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                     </div>
 
                     {/* Footer */}
+                    {error && (
+                        <div
+                            role="alert"
+                            className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[12.5px] font-semibold text-red-800 dark:text-red-300"
+                        >
+                            {error}
+                        </div>
+                    )}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3">
-                        <button 
+                        <button
                             type="button"
-                            onClick={onClose} 
-                            className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            onClick={onClose}
+                            disabled={saving}
+                            className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                          aria-label="Close">
                             Cancel
                         </button>
-                        <button 
-                            type="submit" 
-                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5"
+                        <button
+                            type="submit"
+                            disabled={saving}
+                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            <span>Save User & Rights</span>
+                            <span>{saving ? 'Saving…' : userToEdit ? 'Save User & Rights' : 'Create Account'}</span>
                         </button>
                     </div>
                 </form>

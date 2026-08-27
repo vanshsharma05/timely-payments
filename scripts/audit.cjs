@@ -7,6 +7,7 @@
  * sideways page overflow, and inputs with no label.
  */
 const puppeteer = require('puppeteer-core');
+const { signIn } = require('./signin.cjs');
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const OUT = process.argv[2] || '.smoke-shots';
@@ -138,18 +139,6 @@ const CHECKS = `
 })()
 `;
 
-const signIn = async (page, name) => {
-  await page.evaluate(n => {
-    const b = [...document.querySelectorAll('button')].find(x =>
-      [...x.querySelectorAll('span')].some(s => s.textContent.trim() === n));
-    if (b) b.click();
-  }, name);
-  await new Promise(r => setTimeout(r, 700));
-  await page.waitForSelector('input#pw', { timeout: 8000 });
-  await page.type('input#pw', name === 'Admin' ? 'admin' : 'password123');
-  await page.keyboard.press('Enter');
-  await new Promise(r => setTimeout(r, 3500));
-};
 
 const clickText = async (page, text, scope = 'body') =>
   page.evaluate((t, sc) => {
@@ -217,7 +206,7 @@ const closeDialog = async page => {
   };
 
   await run('Sign in');
-  await signIn(page, 'Admin');
+  await signIn(page);
   await run('Today');
 
   for (const [label, screen] of [

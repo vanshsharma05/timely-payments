@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can } from '../types';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatBalanceText } from './BalanceAmount';
 
@@ -91,6 +91,12 @@ const FollowUpModal = ({
 
     const collectors = users.filter(u => u.role === UserRole.Collector);
     const crmUsers = users.filter(u => u.role === UserRole.CRM);
+
+    // Rights, not job titles: a Manager reassigns accounts too, and a Viewer
+    // may read this panel but not record anything on it.
+    const canEditFollowUp = can(currentUser, 'canEditFollowUp');
+    const canReassignCrm = can(currentUser, 'canReassignCrm');
+    const canAssignCollector = canReassignCrm || currentUser.role === UserRole.CRM;
 
     // Add new contact to list
     const handleAddContact = (e: React.FormEvent) => {
@@ -225,10 +231,10 @@ const FollowUpModal = ({
                 break;
         }
 
-        if (currentUser.role === UserRole.CRM || currentUser.role === UserRole.Admin) {
+        if (canAssignCollector) {
             updatedCustomer.assignedCollectorId = assignedCollectorId || undefined;
         }
-        if (currentUser.role === UserRole.Admin && assignedCrmOwnerId) {
+        if (canReassignCrm && assignedCrmOwnerId) {
             updatedCustomer.crmOwnerId = assignedCrmOwnerId;
         }
         
@@ -878,7 +884,7 @@ const FollowUpModal = ({
                             </div>
                         )}
                        
-                        {currentUser.role === UserRole.Admin && (
+                        {canReassignCrm && (
                             <div className="relative">
                                 <label htmlFor="assignCrm" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
                                     Assigned CRM Owner (Admin Rights)
@@ -900,7 +906,7 @@ const FollowUpModal = ({
                             </div>
                         )}
 
-                        {(currentUser.role === UserRole.CRM || currentUser.role === UserRole.Admin) && (
+                        {canAssignCollector && (
                             <>
                                 <div className="relative">
                                     <label htmlFor="assignCollector" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Assign Collector (Optional)</label>
@@ -944,10 +950,12 @@ const FollowUpModal = ({
                      aria-label="Close">
                         Cancel
                     </button>
-                    <button 
-                        onClick={handleSave} 
-                        type="button" 
-                        className="px-5 py-2 text-xs font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm"
+                    <button
+                        onClick={handleSave}
+                        type="button"
+                        disabled={!canEditFollowUp}
+                        title={canEditFollowUp ? 'Save this follow-up' : 'Your role can read follow-ups but not record them'}
+                        className="px-5 py-2 text-xs font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         Save Follow-up & Contacts
                     </button>

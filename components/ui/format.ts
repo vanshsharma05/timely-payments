@@ -46,10 +46,6 @@ export function formatCompact(n: number | undefined | null): string {
   return sign + '₹' + groupIndian(v);
 }
 
-/** Short label for the ageing legend and totals strip. */
-export function formatCompactPlain(n: number | undefined | null): string {
-  return formatCompact(n).replace('₹', '');
-}
 
 export function formatDate(d: Date | string | undefined | null): string {
   if (!d) return '—';
@@ -89,9 +85,3 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** Stable hue per person so the same CRM always gets the same chip colour. */
-export function hueFor(key: string): number {
-  let h = 0;
-  for (let i = 0; i < (key || '').length; i++) h = (h * 31 + key.charCodeAt(i)) % 360;
-  return h;
-}

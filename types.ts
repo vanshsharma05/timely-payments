@@ -82,13 +82,58 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 };
 
 export interface User {
+    /** CRM code as it appears on customer rows ('ANKUR'); profiles.legacy_id. */
     id: string;
     name: string;
     role: UserRole;
-    password?: string;
+    /** Sign-in address. Held by Supabase Auth, mirrored onto the profile row. */
+    email?: string;
     dataVisibility?: DataVisibility;
     permissions?: UserPermissions;
     assignedCrms?: string[]; // Specific CRMs this user is permitted to view/manage
+}
+
+/**
+ * What the Team & access form produces. Passwords only ever travel in this
+ * direction — towards /api/team, which hands them to Supabase Auth. They are
+ * never stored on a User or read back.
+ */
+export interface TeamMemberDraft {
+    /** Absent when creating: the CRM code is chosen in the form. */
+    id?: string;
+    name: string;
+    email?: string;
+    password?: string;
+    role: UserRole;
+    dataVisibility: DataVisibility;
+    permissions: UserPermissions;
+    assignedCrms?: string[];
+}
+
+/** Effective permission matrix: what the profile says, or the role's default. */
+export function permissionsOf(user: User | null | undefined): UserPermissions {
+    if (!user) return DEFAULT_ROLE_PERMISSIONS[UserRole.Viewer];
+    const fallback = DEFAULT_ROLE_PERMISSIONS[user.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM];
+    return { ...fallback, ...(user.permissions || {}) };
+}
+
+/** Admins are never restricted by the matrix, whatever it happens to contain. */
+export function can(user: User | null | undefined, right: keyof UserPermissions): boolean {
+    if (!user) return false;
+    if (user.role === UserRole.Admin) return true;
+    return Boolean(permissionsOf(user)[right]);
+}
+
+/** Sees the whole book rather than one CRM's slice. */
+export function seesWholeBook(user: User | null | undefined): boolean {
+    if (!user) return false;
+    return (
+        user.role === UserRole.Admin ||
+        user.role === UserRole.Manager ||
+        user.role === UserRole.Viewer ||
+        user.dataVisibility === DataVisibility.All ||
+        Boolean(user.permissions?.canViewAllCrms)
+    );
 }
 
 export enum FollowUpStatus {
@@ -268,19 +313,13 @@ export interface CompanyProfile {
     bankDetails?: string;
 }
 
+/**
+ * Placeholder shown only until the real profile loads from the database.
+ * Everything beyond the name is deliberately blank: invented addresses, GSTINs
+ * and bank accounts must never reach a reminder or a report.
+ */
 export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
     name: 'Shori Chemicals Pvt. Ltd.',
-    tagline: 'Leading Industrial Chemical Solutions & Distribution',
-    address: 'Plot No. 42, Industrial Area, Phase II',
-    city: 'Ahmedabad',
-    state: 'Gujarat',
-    pincode: '382445',
-    phone: '+91 79 4001 2345 / +91 98250 12345',
-    email: 'info@shorichemicals.com',
-    gstin: '24AAACS1234K1Z5',
-    pan: 'AAACS1234K',
-    website: 'https://shorichemicals.com',
-    bankDetails: 'HDFC Bank, A/C: 50200012345678, IFSC: HDFC0000123'
 };
 
 /**

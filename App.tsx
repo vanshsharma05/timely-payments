@@ -4,11 +4,9 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory } from './types';
-import { 
-    getOutstandingForUser, 
-    USERS as INITIAL_USERS, 
-    MOCK_DATA, 
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook } from './types';
+import {
+    getOutstandingForUser,
     processStatuses,
     mergeWithExistingFollowUps,
     fetchGoogleSheetData,
@@ -22,11 +20,12 @@ import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon } from './components/shell/NavIcons';
-import { formatCompact, formatINR } from './components/ui/format';
-import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Button } from './components/ui/Primitives';
-import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, WhatsAppIcon, ChequeIcon, BuildingOfficeIcon, SparklesIcon } from './components/icons/Icons';
+import { formatCompact, formatDateShort, formatINR, relativeDays } from './components/ui/format';
+import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState } from './components/ui/Primitives';
+import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import UserModal from './components/UserModal';
+import ChangePasswordModal from './components/ChangePasswordModal';
 import TemplateModal from './components/TemplateModal';
 import NotificationBanner from './components/NotificationBanner';
 import ReportsView, { FollowUpCategoryFilter } from './components/ReportsView';
@@ -34,7 +33,6 @@ import SyncReconciliationModal from './components/SyncReconciliationModal';
 import PdcChequesView from './components/PdcChequesView';
 import PdcModal from './components/PdcModal';
 import { CompanyProfileView } from './components/CompanyProfileView';
-import { CompanyProfileModal } from './components/CompanyProfileModal';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
 
@@ -73,43 +71,14 @@ Please let us know when we can expect the payment.
 Thank you!`
 };
 
-const INITIAL_PDC_CHEQUES: PdcCheque[] = [];
+/**
+ * Supabase is the master record and the only one: state is loaded from it on
+ * sign-in and written back as it changes. Nothing about the book is cached in
+ * the browser, so a stale tab can never overwrite the team's work.
+ */
 
 const App = () => {
-    const [users, setUsers] = useState<User[]>(() => {
-        const saved = localStorage.getItem('timely_users');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    return parsed.map((u: any) => ({
-                        ...u,
-                        password: u.id === 'Admin' ? 'admin' : (u.password || 'password123'),
-                        permissions: {
-                            ...(DEFAULT_ROLE_PERMISSIONS[u.role as UserRole] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM]),
-                            ...(u.permissions || {})
-                        },
-                        assignedCrms: u.assignedCrms || (u.role === UserRole.CRM ? [u.id] : undefined)
-                    }));
-                }
-            } catch (e) {
-                console.error('Failed to parse saved users', e);
-            }
-        }
-        return INITIAL_USERS;
-    });
-
-    const handleResetUserPassword = (userId: string, newPass: string) => {
-        setUsers(prev => {
-            const updated = prev.map(u => u.id === userId ? { ...u, password: newPass } : u);
-            localStorage.setItem('timely_users', JSON.stringify(updated));
-            return updated;
-        });
-    };
-
-    useEffect(() => {
-        localStorage.setItem('timely_users', JSON.stringify(users));
-    }, [users]);
+    const [users, setUsers] = useState<User[]>([]);
 
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -136,31 +105,12 @@ const App = () => {
     const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
     const [whatsAppCustomer, setWhatsAppCustomer] = useState<Outstanding | null>(null);
 
+    const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
 
     // PDC (Post Dated Cheques) State
-    const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>(() => {
-        const saved = localStorage.getItem('timely_pdc_cheques');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                return parsed.map((p: any) => ({
-                    ...p,
-                    chequeDate: new Date(p.chequeDate),
-                    receivedDate: new Date(p.receivedDate),
-                    clearedDate: p.clearedDate ? new Date(p.clearedDate) : undefined
-                }));
-            } catch (e) {
-                console.error('Failed to parse saved PDC cheques', e);
-            }
-        }
-        return INITIAL_PDC_CHEQUES;
-    });
-
-    useEffect(() => {
-        localStorage.setItem('timely_pdc_cheques', JSON.stringify(pdcCheques));
-    }, [pdcCheques]);
+    const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>([]);
 
     const [isPdcModalOpen, setIsPdcModalOpen] = useState(false);
     const [editingPdcCheque, setEditingPdcCheque] = useState<PdcCheque | null>(null);
@@ -169,23 +119,8 @@ const App = () => {
     const [pdcInitialCustomerFilter, setPdcInitialCustomerFilter] = useState<string | null>(null);
 
     // Company Profile state
-    const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
-        const saved = localStorage.getItem('timely_company_profile');
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error('Failed to parse saved company profile', e);
-            }
-        }
-        return DEFAULT_COMPANY_PROFILE;
-    });
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
 
-    useEffect(() => {
-        localStorage.setItem('timely_company_profile', JSON.stringify(companyProfile));
-    }, [companyProfile]);
-
-    const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
     const [userManagementTab, setUserManagementTab] = useState<'users' | 'company'>('users');
 
     const handleSaveCompanyProfile = (updated: CompanyProfile) => {
@@ -194,21 +129,20 @@ const App = () => {
         setTimeout(() => setSyncMessage(null), 4000);
     };
 
-    const [templates, setTemplates] = useState<Template[]>(() => {
-        const savedTemplates = localStorage.getItem('templates');
-        return savedTemplates ? JSON.parse(savedTemplates) : [DEFAULT_TEMPLATE];
-    });
+    const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
     
     const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+    /** Banner at the top of the shell. Errors linger; confirmations do not. */
+    const notify = useCallback((type: 'success' | 'error', text: string) => {
+        setSyncMessage({ type, text });
+        window.setTimeout(() => setSyncMessage(null), type === 'error' ? 12000 : 5000);
+    }, []);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [sheetUpdatedTillDate, setSheetUpdatedTillDate] = useState<string>(() => {
-        return localStorage.getItem('sheetUpdatedTillDate') || '18-Aug-2026';
-    });
-    const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
-        return localStorage.getItem('lastSyncTime') || new Date().toISOString();
-    });
+    const [sheetUpdatedTillDate, setSheetUpdatedTillDate] = useState<string>('');
+    const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
     // Pending sync data waiting for Admin reconciliation
     const [pendingSync, setPendingSync] = useState<{
@@ -223,15 +157,9 @@ const App = () => {
     const [showNotificationBanner, setShowNotificationBanner] = useState(true);
 
     // Data Source State - default to Google Sheet
-    const [dataSourceMode, setDataSourceMode] = useState<'excel' | 'google'>(() => {
-        return (localStorage.getItem('dataSourceMode') as 'excel' | 'google') || 'google';
-    });
-    const [googleSheetUrl, setGoogleSheetUrl] = useState(() => {
-        return localStorage.getItem('googleSheetUrl') || OFFICIAL_SHEET_URL;
-    });
-    const [customerMasterSheetUrl, setCustomerMasterSheetUrl] = useState(() => {
-        return localStorage.getItem('customerMasterSheetUrl') || OFFICIAL_CUSTOMER_MASTER_URL;
-    });
+    const [dataSourceMode, setDataSourceMode] = useState<'excel' | 'google'>('google');
+    const [googleSheetUrl, setGoogleSheetUrl] = useState(OFFICIAL_SHEET_URL);
+    const [customerMasterSheetUrl, setCustomerMasterSheetUrl] = useState(OFFICIAL_CUSTOMER_MASTER_URL);
 
     // Customer Add / Edit State
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -257,7 +185,6 @@ const App = () => {
         }
         const processed = processStatuses(updated);
         setAppData(processed);
-        localStorage.setItem('timely_payment_data', JSON.stringify(processed));
         setIsCustomerModalOpen(false);
         setCustomerToEdit(null);
         setSyncMessage({
@@ -274,7 +201,6 @@ const App = () => {
             const updated = appData.filter(c => c.id !== customerId);
             const processed = processStatuses(updated);
             setAppData(processed);
-            localStorage.setItem('timely_payment_data', JSON.stringify(processed));
             setSyncMessage({
                 type: 'success',
                 text: `Customer"${target.company}" deleted successfully.`
@@ -368,128 +294,15 @@ const App = () => {
         }).filter((item): item is Outstanding => item !== null);
     }, []);
 
-    // Load Data based on mode
-    useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                // Check if we have cached data in LocalStorage
-                const storedData = localStorage.getItem('timely_payment_data');
-                let existingList: Outstanding[] = [];
-                if (storedData) {
-                    try {
-                        const parsed = JSON.parse(storedData);
-                        existingList = parsed.map((item: any) => {
-                            const a1 = Math.abs(item.ageing?.['1-45'] || 0);
-                            const a2 = Math.abs(item.ageing?.['46-90'] || 0);
-                            const a3 = Math.abs(item.ageing?.['91-135'] || 0);
-                            const a4 = Math.abs(item.ageing?.['>135'] || 0);
-                            const over90 = Math.abs(item.over90 !== undefined ? item.over90 : (a3 + a4));
-                            const dueOver45 = Math.abs(item.dueOver45 !== undefined ? item.dueOver45 : (a2 + over90));
 
-                            return {
-                                ...item,
-                                total: Math.abs(item.total || 0),
-                                totalType: item.totalType || 'Dr',
-                                ageing: {
-                                    '1-45': a1,
-                                    '46-90': a2,
-                                    '91-135': a3,
-                                    '>135': a4
-                                },
-                                ageingTypes: item.ageingTypes || {
-                                    '1-45': 'Dr',
-                                    '46-90': 'Dr',
-                                    '91-135': 'Dr',
-                                    '>135': 'Dr'
-                                },
-                                over90: over90,
-                                over90Type: item.over90Type || 'Dr',
-                                dueOver45: dueOver45,
-                                dueOver45Type: item.dueOver45Type || 'Dr',
-                                followUpDate: item.followUpDate ? new Date(item.followUpDate) : undefined,
-                                forecastAmount: item.forecastAmount !== undefined ? Number(item.forecastAmount) : undefined,
-                                forecastDate: item.forecastDate ? new Date(item.forecastDate) : (item.followUpDate ? new Date(item.followUpDate) : undefined),
-                                creationDate: new Date(item.creationDate),
-                                lastFollowUpOn: item.lastFollowUpOn ? new Date(item.lastFollowUpOn) : undefined,
-                            };
-                        });
-                    } catch (e) {
-                        console.warn("Failed to parse cached data:", e);
-                    }
-                }
-
-                if (existingList.length > 0) {
-                    setAppData(processStatuses(existingList));
-                } else {
-                    setAppData(processStatuses(MOCK_DATA));
-                }
-
-                // If in Google mode, always attempt fresh fetch on mount
-                if (dataSourceMode === 'google') {
-                    try {
-                        const targetUrl = (googleSheetUrl || OFFICIAL_SHEET_URL).trim();
-                        const parsed = await fetchGoogleSheetData(targetUrl);
-                        if (parsed.records && parsed.records.length > 0) {
-                            if (parsed.updatedTillDate) {
-                                setSheetUpdatedTillDate(parsed.updatedTillDate);
-                                localStorage.setItem('sheetUpdatedTillDate', parsed.updatedTillDate);
-                            }
-                            const nowIso = new Date().toISOString();
-                            setLastSyncTime(nowIso);
-                            localStorage.setItem('lastSyncTime', nowIso);
-                            const baseList = existingList.length > 3 ? existingList : [];
-                            const merged = mergeWithExistingFollowUps(baseList, parsed.records);
-                            const processed = processStatuses(merged);
-                            setAppData(processed);
-                        }
-                    } catch (e) {
-                        console.warn("Initial Google Sheet sync notice, using cached data:", e);
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to load initial data", e);
-                setAppData(processStatuses(MOCK_DATA));
-            } finally {
-                setLoading(false);
-            }
-        };
-        loadData();
-    }, [dataSourceMode]);
-
-    // Persist settings
-    useEffect(() => {
-        localStorage.setItem('dataSourceMode', dataSourceMode);
-        localStorage.setItem('googleSheetUrl', googleSheetUrl);
-        localStorage.setItem('customerMasterSheetUrl', customerMasterSheetUrl);
-        localStorage.setItem('templates', JSON.stringify(templates));
-        localStorage.setItem('sheetUpdatedTillDate', sheetUpdatedTillDate);
-        localStorage.setItem('lastSyncTime', lastSyncTime);
-    }, [dataSourceMode, googleSheetUrl, customerMasterSheetUrl, templates, sheetUpdatedTillDate, lastSyncTime]);
-
-    // Whenever master appData changes, save to local storage (acts as cache for Google mode too)
-    useEffect(() => {
-        if (appData.length === 0) return;
-        // Serialising the whole dataset is synchronous and O(rows). Debounce it
-        // so it never lands inside the frame of a click or a filter change, and
-        // swallow quota errors rather than crashing the dashboard.
-        const id = setTimeout(() => {
-            try {
-                localStorage.setItem('timely_payment_data', JSON.stringify(appData));
-            } catch (e) {
-                console.warn('Could not cache dataset to localStorage:', e);
-            }
-        }, 500);
-        return () => clearTimeout(id);
-    }, [appData]);
 
     // =====================================================================
     // Supabase backend
     //
-    // With VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY set, Supabase is the
-    // master record: state is hydrated from it on sign-in and every change is
-    // written back, so the whole team shares one dataset. Without those keys
-    // the app falls back to the original localStorage behaviour.
+    // Supabase is the master record: state is hydrated from it on sign-in and
+    // every change is written back, so the whole team shares one dataset.
+    // Without VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY the app does not run
+    // at all — LoginScreen says so rather than pretending to work.
     // =====================================================================
     const [serverLoaded, setServerLoaded] = useState(false);
     const [restoringSession, setRestoringSession] = useState(isSupabaseConfigured);
@@ -547,6 +360,19 @@ const App = () => {
     const reportSyncError = useCallback((text: string) => setSyncMessage({ type: 'error', text }), []);
 
     // Stable adapters. These tables are small, so a sequential loop is fine.
+    /**
+     * Edits go out as updates and genuinely new accounts as an upsert, so the
+     * database can ask for the "add customer" right only when one is being
+     * added. An id we have not seen may still exist server-side (someone else
+     * created it since this tab loaded), which is why that path upserts.
+     */
+    const saveCustomerRows = useCallback(async (rows: Outstanding[], created: Set<string>) => {
+        const fresh = rows.filter(r => created.has(r.id));
+        const edited = rows.filter(r => !created.has(r.id));
+        if (edited.length) await repo.updateCustomers(edited);
+        if (fresh.length) await repo.upsertCustomers(fresh);
+    }, []);
+
     const upsertPdcRows = useCallback(async (rows: PdcCheque[]) => {
         for (const r of rows) await repo.upsertPdcCheque(r);
     }, []);
@@ -559,7 +385,7 @@ const App = () => {
     useCollectionSync({
         rows: appData, enabled: syncEnabled, label: 'customers',
         toSignature: customerSignature,
-        upsert: repo.upsertCustomers, remove: repo.deleteCustomer,
+        upsert: saveCustomerRows, remove: repo.deleteCustomer,
         onError: reportSyncError,
     });
     useCollectionSync({
@@ -638,26 +464,6 @@ const App = () => {
         setUserTab('overview');
     };
 
-    const handleUserChange = (userId: string) => {
-        const userToSwitchTo = users.find(u => u.id === userId);
-        if (userToSwitchTo) {
-            const enteredPassword = prompt(`Enter password for ${userToSwitchTo.name}:`);
-            if (enteredPassword === userToSwitchTo.password) {
-                const fullUser: User = {
-                    ...userToSwitchTo,
-                    permissions: {
-                        ...(DEFAULT_ROLE_PERMISSIONS[userToSwitchTo.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM]),
-                        ...(userToSwitchTo.permissions || {})
-                    },
-                    assignedCrms: userToSwitchTo.assignedCrms || (userToSwitchTo.role === UserRole.CRM ? [userToSwitchTo.id] : undefined)
-                };
-                setCurrentUser(fullUser);
-            } else {
-                alert('Incorrect password. User switch cancelled.');
-            }
-        }
-    };
-    
     const handleOpenFollowUp = (customer: Outstanding) => {
         setSelectedCustomer(customer);
         setIsModalOpen(true);
@@ -676,7 +482,6 @@ const App = () => {
         );
         const fullyProcessed = processStatuses(updatedList);
         setAppData(fullyProcessed);
-        localStorage.setItem('timely_payment_data', JSON.stringify(fullyProcessed));
     };
 
 
@@ -713,74 +518,70 @@ const App = () => {
         setIsUserModalOpen(false);
     };
 
-    const handleSaveUser = (userToSave: Omit<User, 'id'> & { id?: string }) => {
-        let updatedRecord: User | null = null;
-        setUsers(currentUsers => {
-            if (userToSave.id) {
-                // Edit existing user
-                return currentUsers.map(u => {
-                    if (u.id === userToSave.id) {
-                        const updatedUser: User = {
-                            ...u,
-                            name: userToSave.name,
-                            role: userToSave.role,
-                            dataVisibility: userToSave.dataVisibility,
-                            permissions: userToSave.permissions || DEFAULT_ROLE_PERMISSIONS[userToSave.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM],
-                            assignedCrms: userToSave.assignedCrms || (userToSave.role === UserRole.CRM ? [u.id] : undefined),
-                        };
-                        // Only update password if a new one was entered
-                        if (userToSave.password) {
-                            updatedUser.password = userToSave.password;
-                        }
-                        updatedRecord = updatedUser;
-                        return updatedUser;
-                    }
-                    return u;
-                });
-            } else {
-                // Add new user
-                const newUser: User = {
-                    ...userToSave,
-                    id: userToSave.name.trim(), // ID is Name
-                    password: userToSave.password || 'password123', // Default password for new users
-                    dataVisibility: userToSave.dataVisibility || DataVisibility.AssignedOnly,
-                    permissions: userToSave.permissions || DEFAULT_ROLE_PERMISSIONS[userToSave.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM],
-                    assignedCrms: userToSave.assignedCrms || (userToSave.role === UserRole.CRM ? [userToSave.name.trim()] : undefined),
-                };
-                updatedRecord = newUser;
-                return [...currentUsers, newUser];
-            }
-        });
-        if (updatedRecord && currentUser && (currentUser.id === (updatedRecord as User).id || currentUser.name === (updatedRecord as User).name)) {
-            setCurrentUser(updatedRecord);
+    /**
+     * Creates or updates a teammate's real Supabase login and profile, then
+     * re-reads the roster so the table shows what the server actually holds.
+     * Errors are rethrown for UserModal to display: the modal stays open, and a
+     * failed save is never mistaken for a saved one.
+     */
+    const handleSaveUser = async (draft: TeamMemberDraft) => {
+        const isNewUser = !editingUser;
+        const legacyId = (draft.id || draft.name).trim();
+
+        const input: repo.TeamMemberInput = {
+            id: legacyId,
+            name: draft.name,
+            email: draft.email,
+            password: draft.password,
+            role: draft.role,
+            dataVisibility: draft.dataVisibility,
+            permissions: draft.permissions,
+            assignedCrms:
+                draft.assignedCrms || (draft.role === UserRole.CRM ? [legacyId] : []),
+        };
+
+        if (isNewUser) {
+            await repo.createTeamMember(input);
+        } else {
+            await repo.updateTeamMember(input);
         }
+
+        const roster = await repo.fetchUsers();
+        setUsers(roster);
+        // Keep our own rights fresh if an Admin just edited their own row.
+        const me = roster.find(u => u.id === currentUser?.id);
+        if (me) setCurrentUser(me);
+
+        notify(
+            'success',
+            isNewUser
+                ? `${input.name} can now sign in with ${input.email}.`
+                : `${input.name}'s role and rights are saved.`
+        );
         handleCloseUserModal();
     };
 
-    const handleDeleteUser = (userId: string) => {
-        if (window.confirm('Are you sure you want to delete this user?')) {
-            setUsers(currentUsers => currentUsers.filter(u => u.id !== userId));
-            // If deleting the current user, log them out
-            if (currentUser?.id === userId) {
-                handleLogout();
-            }
+    const handleDeleteUser = async (userId: string) => {
+        if (!window.confirm(`Remove ${userId}? Their login stops working immediately.`)) return;
+        try {
+            await repo.deleteTeamMember(userId);
+            setUsers(await repo.fetchUsers());
+            notify('success', `${userId} no longer has access.`);
+        } catch (e: any) {
+            notify('error', e?.message || 'Could not remove the user.');
         }
     };
 
-    // Reset Users Only to Default
-    const handleResetUsersOnly = () => {
-        if (window.confirm("Are you sure you want to reset all users to the default team roster?\n\nPasswords will reset to:\n• Admin: admin\n• Team members: password123")) {
-            setUsers(INITIAL_USERS);
-            localStorage.setItem('timely_users', JSON.stringify(INITIAL_USERS));
-            setSyncMessage({ type: 'success', text: 'User accounts and default passwords have been reset to original roster.' });
-            setTimeout(() => setSyncMessage(null), 4000);
-        }
-    };
-
-    // Factory Reset: Reset All Data & All Users to Fresh Start
+    /**
+     * Factory reset. With a backend this rewrites the shared dataset for
+     * everyone — customers, cheques, templates and the company profile — but
+     * deliberately leaves logins alone: those are real accounts, and they are
+     * removed one at a time in Team & access.
+     */
     const handleResetAllDataAndUsers = async (skipConfirm = false) => {
         if (!skipConfirm) {
-            const confirmed = window.confirm("COMPLETE FRESH START\n\nAre you sure you want to reset ALL data and ALL users?\n\nThis will:\n1. Reset all user accounts & restore default passwords (Admin: 'admin', Team: 'password123')\n2. Clear all follow-up notes, tags, forecast amounts, and custom contacts\n3. Clear all Post-Dated Cheques (PDC)\n4. Fetch a 100% clean, fresh dataset from the live Google Sheet\n5. Restore default message templates & company profile\n\nClick OK to proceed with fresh start."
+            const confirmed = window.confirm(
+                "COMPLETE FRESH START\n\nThis rewrites the shared dataset for the whole team:\n1. Clear all follow-up notes, tags, forecast amounts and custom contacts\n2. Delete every Post-Dated Cheque (PDC)\n3. Re-import a clean dataset from the live Google Sheet\n4. Restore the default message template and company profile\n\nTeam logins are NOT touched — remove those in Team & access.\n\nClick OK to proceed."
             );
             if (!confirmed) return;
         }
@@ -789,19 +590,8 @@ const App = () => {
         setSyncMessage({ type: 'success', text: 'Resetting system and fetching clean fresh data...' });
 
         try {
-            // Clear all localStorage keys
-            localStorage.removeItem('timely_payment_data');
-            localStorage.removeItem('timely_users');
-            localStorage.removeItem('timely_pdc_cheques');
-            localStorage.removeItem('timely_company_profile');
-            localStorage.removeItem('templates');
-            localStorage.removeItem('sheetUpdatedTillDate');
-            localStorage.removeItem('lastSyncTime');
-            localStorage.removeItem('dataSourceMode');
-            localStorage.removeItem('googleSheetUrl');
-
-            // Reset React state variables
-            setUsers(INITIAL_USERS);
+            // Each of these is picked up by the sync effects, which write the
+            // reset through to Supabase for the whole team.
             setPdcCheques([]);
             setCompanyProfile(DEFAULT_COMPANY_PROFILE);
             setTemplates([DEFAULT_TEMPLATE]);
@@ -814,32 +604,32 @@ const App = () => {
                 if (parsed.records && parsed.records.length > 0) {
                     const freshProcessed = processStatuses(parsed.records);
                     setAppData(freshProcessed);
-                    localStorage.setItem('timely_payment_data', JSON.stringify(freshProcessed));
                     if (parsed.updatedTillDate) {
                         setSheetUpdatedTillDate(parsed.updatedTillDate);
-                        localStorage.setItem('sheetUpdatedTillDate', parsed.updatedTillDate);
                     }
                 } else {
-                    setAppData(processStatuses(MOCK_DATA));
+                    throw new Error('The sheet returned no rows.');
                 }
-            } catch (fetchErr) {
-                console.warn("Could not fetch live sheet during reset, using clean mock data:", fetchErr);
-                setAppData(processStatuses(MOCK_DATA));
+            } catch (fetchErr: any) {
+                // Leave the real dataset alone and say why the reset stopped.
+                throw new Error(
+                    `Could not re-import the sheet, so the customer list was left as it is: ${fetchErr?.message || fetchErr}`
+                );
             }
 
-            const nowIso = new Date().toISOString();
-            setLastSyncTime(nowIso);
-            localStorage.setItem('lastSyncTime', nowIso);
-            localStorage.setItem('timely_users', JSON.stringify(INITIAL_USERS));
+            setLastSyncTime(new Date().toISOString());
 
             setSyncMessage({
                 type: 'success',
-                text: 'System successfully reset! All users and data have been restored for a clean fresh start.'
+                text: 'Dataset reset and re-imported. Team logins were left untouched.',
             });
             setTimeout(() => setSyncMessage(null), 6000);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to reset:", err);
-            setSyncMessage({ type: 'error', text: 'Reset encountered an error. Please try again.' });
+            setSyncMessage({
+                type: 'error',
+                text: err?.message || 'Reset encountered an error. Please try again.',
+            });
         } finally {
             setIsSyncing(false);
         }
@@ -911,10 +701,8 @@ const App = () => {
         setAppData(processed);
         const nowIso = new Date().toISOString();
         setLastSyncTime(nowIso);
-        localStorage.setItem('lastSyncTime', nowIso);
         if (pendingSync?.updatedTillDate) {
             setSheetUpdatedTillDate(pendingSync.updatedTillDate);
-            localStorage.setItem('sheetUpdatedTillDate', pendingSync.updatedTillDate);
         }
         setSyncMessage({
             type: 'success',
@@ -936,7 +724,6 @@ const App = () => {
 
         if (overrideUrl && typeof overrideUrl === 'string') {
             setGoogleSheetUrl(overrideUrl);
-            localStorage.setItem('googleSheetUrl', overrideUrl);
         }
         
         setIsSyncing(true);
@@ -952,7 +739,6 @@ const App = () => {
             // Open reconciliation review modal for Admin or when existing data exists
             const nowIso = new Date().toISOString();
             setLastSyncTime(nowIso);
-            localStorage.setItem('lastSyncTime', nowIso);
 
             if (appData.length > 0) {
                 setPendingSync({
@@ -963,7 +749,6 @@ const App = () => {
             } else {
                 if (updatedTillDate) {
                     setSheetUpdatedTillDate(updatedTillDate);
-                    localStorage.setItem('sheetUpdatedTillDate', updatedTillDate);
                 }
                 const merged = mergeWithExistingFollowUps(appData, records);
                 const processedData = processStatuses(merged);
@@ -990,7 +775,6 @@ const App = () => {
 
         if (overrideUrl && typeof overrideUrl === 'string') {
             setCustomerMasterSheetUrl(overrideUrl);
-            localStorage.setItem('customerMasterSheetUrl', overrideUrl);
         }
 
         setIsSyncing(true);
@@ -1007,7 +791,6 @@ const App = () => {
 
             const nowIso = new Date().toISOString();
             setLastSyncTime(nowIso);
-            localStorage.setItem('lastSyncTime', nowIso);
 
             setSyncMessage({
                 type: 'success',
@@ -1061,12 +844,10 @@ const App = () => {
 
             if (updatedTillDate) {
                 setSheetUpdatedTillDate(updatedTillDate);
-                localStorage.setItem('sheetUpdatedTillDate', updatedTillDate);
             }
 
             const nowIso = new Date().toISOString();
             setLastSyncTime(nowIso);
-            localStorage.setItem('lastSyncTime', nowIso);
 
             setSyncMessage({
                 type: 'success',
@@ -1081,10 +862,6 @@ const App = () => {
         }
     };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
-    }
-    
     // WhatsApp Reminder Handler (opens recipient & template selector with 'Other number' option)
     const handleSendWhatsApp = (customer: Outstanding) => {
         setWhatsAppCustomer(customer);
@@ -1166,6 +943,53 @@ const App = () => {
             pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
         };
     }, [appData]);
+
+    /**
+     * What the signed-in person may do, in one place.
+     *
+     * The permission matrix on the profile is the authority; an Admin is never
+     * restricted by it, and a Viewer never writes. Row Level Security enforces
+     * the same rules in the database — this is what stops the UI offering
+     * buttons the server would refuse.
+     */
+    const rights = useMemo(() => ({
+        isAdmin: currentUser?.role === UserRole.Admin,
+        isManager: currentUser?.role === UserRole.Manager,
+        isViewer: currentUser?.role === UserRole.Viewer,
+        canAddCustomer: can(currentUser, 'canAddCustomer'),
+        canEditCustomer: can(currentUser, 'canEditCustomer'),
+        canDeleteCustomer: can(currentUser, 'canDeleteCustomer'),
+        canEditFollowUp: can(currentUser, 'canEditFollowUp'),
+        canManagePdc: can(currentUser, 'canManagePdc'),
+        canReassignCrm: can(currentUser, 'canReassignCrm'),
+        canExportData: can(currentUser, 'canExportData'),
+        /** Importing a sheet rewrites the shared book, so it stays with the seniors. */
+        canSyncSheets:
+            currentUser?.role === UserRole.Admin || currentUser?.role === UserRole.Manager,
+        seesWholeBook: seesWholeBook(currentUser),
+        permissions: permissionsOf(currentUser),
+    }), [currentUser]);
+
+    /** Same shape as portfolioAgeing, but only what this person is chasing. */
+    const myAgeing = useMemo(() => {
+        let a1 = 0, a2 = 0, a3 = 0, a4 = 0;
+        outstandingData.forEach(item => {
+            if (item.totalType === 'Cr') return;
+            const t = item.ageingTypes || {};
+            if (t['1-45'] !== 'Cr') a1 += Math.abs(item.ageing?.['1-45'] || 0);
+            if (t['46-90'] !== 'Cr') a2 += Math.abs(item.ageing?.['46-90'] || 0);
+            if (t['91-135'] !== 'Cr') a3 += Math.abs(item.ageing?.['91-135'] || 0);
+            if (t['>135'] !== 'Cr') a4 += Math.abs(item.ageing?.['>135'] || 0);
+        });
+        const total = a1 + a2 + a3 + a4;
+        const over45 = a2 + a3 + a4;
+        const over90 = a3 + a4;
+        return {
+            a1, a2, a3, a4, total, over45, over90,
+            pct45: total > 0 ? Math.round((over45 / total) * 100) : 0,
+            pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
+        };
+    }, [outstandingData]);
 
     const fourBoxesSummary = useMemo(() => {
         const today = getToday();
@@ -1686,7 +1510,7 @@ const App = () => {
             onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
             pdcCheques={pdcCheques}
-            onSyncSheet={handleCombinedSync}
+            onSyncSheet={rights.canSyncSheets ? handleCombinedSync : undefined}
             isSyncing={isSyncing}
             lastUpdatedTill={sheetUpdatedTillDate}
             onExportExcel={handleExportCustomerExcel}
@@ -1701,268 +1525,232 @@ const App = () => {
         return (
             <>
                 {activeTab === 'overview' && (
-                    <div className="space-y-6">
-                        {/* Today PDC Cheques Focus Banner */}
-                        {todayPdcMetrics.todayCount > 0 && (
-                            <div className="p-4 bg-card-2 text-label rounded-[16px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 bg-card rounded-[12px]">
-                                        <ChequeIcon className="w-6 h-6 text-pos" />
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold uppercase tracking-wider text-pos">Bank Presentation</span>
-                                            <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-pos-bg text-pos">
-                                                {todayPdcMetrics.todayCount} Cheque{todayPdcMetrics.todayCount === 1 ? '' : 's'} Due Today
-                                            </span>
-                                        </div>
-                                        <p className="text-sm font-bold mt-0.5">
-                                            {formatCurrency(todayPdcMetrics.todayAmount)} due for presentation in bank today
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={handleOpenTodayPdc}
-                                        className="h-9 px-4 bg-accent hover:bg-accent-press text-on-accent font-semibold rounded-full text-xs transition-colors"
-                                    >
-                                        View Today's Cheques
-                                    </button>
-                                    <button
-                                        onClick={() => handleOpenAddPdc()}
-                                        className="h-9 px-4 bg-card hover:bg-hover text-label-2 hover:text-label font-semibold rounded-full text-xs border border-separator-strong transition-colors"
-                                    >
-                                        + Add PDC
-                                    </button>
-                                </div>
-                            </div>
+                    <div className="flex flex-col gap-7">
+                        {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
+                            <NotificationBanner
+                                urgentCount={notificationSummary.urgentCount}
+                                overdueCount={notificationSummary.overdueCount}
+                                onView={handleViewPriorityItems}
+                                onDismiss={() => setShowNotificationBanner(false)}
+                            />
                         )}
 
-                        {/* Cash Flow Forecast Banner for CRM */}
-                        <div className="p-4 bg-card-2 text-label rounded-[16px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-400/30">
-                                    <SparklesIcon className="w-6 h-6 text-accent" />
-                                </div>
+                        {/* ---------- my worklist ---------- */}
+                        <section>
+                            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
                                 <div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-accent">Daily Cash Flow Forecast</span>
-                                        <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-accent-tint text-accent">
-                                            {cashFlowForecastMetrics.todayCount} Expected Today
-                                        </span>
-                                    </div>
-                                    <p className="text-sm font-bold mt-0.5">
-                                        Today's Inflow Forecast: <strong className="text-emerald-300 font-extrabold">{formatCurrency(cashFlowForecastMetrics.todayForecast)}</strong> • 7-Day Target: {formatCurrency(cashFlowForecastMetrics.weekForecast)}
-                                    </p>
+                                    <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">My worklist</h2>
+                                    <p className="text-[13.5px] text-label-3 mt-1">Tap a card to filter the accounts below.</p>
                                 </div>
-                            </div>
-                            <div className="text-xs text-indigo-200 bg-white/10 px-3 py-1.5 rounded-lg border border-white/15">
-                                Total Portfolio Forecast: <strong className="text-amber-300 font-bold">{formatCurrency(cashFlowForecastMetrics.totalForecast)}</strong> ({cashFlowForecastMetrics.totalCount} accounts)
-                            </div>
-                        </div>
-
-                        {/* 4 Main Clickable Boxes for CRM Dashboard */}
-                        <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
-                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
-                                <div>
-                                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">Daily Focus Areas</h2>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Click any box below to filter your priority accounts and update follow-up notes.</p>
-                                </div>
-                                {categoryFilter !== 'all' && (
-                                    <button
-                                        onClick={handleClearFilters}
-                                        className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 self-start sm:self-auto"
-                                    >
-                                        Clear Active Filter ({categoryFilter})
-                                    </button>
+                                {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
+                                    <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
                                 )}
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <button
-                                    type="button"
+
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                                <Stat
+                                    label="Due today"
+                                    tone="brand"
+                                    active={categoryFilter === 'today'}
                                     onClick={() => handleCategoryBoxClick('today')}
-                                    className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'today' ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-950/40 ring-2 ring-blue-400' : 'border-blue-100 dark:border-blue-900/50 bg-white dark:bg-gray-800 hover:border-blue-300'}`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Today Follow Up</span>
-                                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">{userBoxMetrics.todayCount}</span>
-                                    </div>
-                                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.todayCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.todayAmount)}</p>
-                                </button>
-
-                                <button
-                                    type="button"
+                                    value={userBoxMetrics.todayCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.todayAmount)}</span> to chase</>}
+                                />
+                                <Stat
+                                    label="Overdue"
+                                    tone="dang"
+                                    active={categoryFilter === 'overdue'}
                                     onClick={() => handleCategoryBoxClick('overdue')}
-                                    className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'overdue' ? 'border-red-500 bg-red-50/80 dark:bg-red-950/40 ring-2 ring-red-400' : 'border-red-100 dark:border-red-900/50 bg-white dark:bg-gray-800 hover:border-red-300'}`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Overdue Follow Up</span>
-                                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300">{userBoxMetrics.overdueCount}</span>
-                                    </div>
-                                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.overdueCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-red-700 dark:text-red-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.overdueAmount)}</p>
-                                </button>
-
-                                <button
-                                    type="button"
+                                    value={userBoxMetrics.overdueCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.overdueAmount)}</span> past promised date</>}
+                                />
+                                <Stat
+                                    label="No follow-up"
+                                    tone="warn"
+                                    active={categoryFilter === 'no_follow_up'}
                                     onClick={() => handleCategoryBoxClick('no_follow_up')}
-                                    className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'no_follow_up' ? 'border-amber-500 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-400' : 'border-amber-100 dark:border-amber-900/50 bg-white dark:bg-gray-800 hover:border-amber-300'}`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">No Follow Up List</span>
-                                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">{userBoxMetrics.noFollowUpCount}</span>
-                                    </div>
-                                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.noFollowUpCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.noFollowUpAmount)}</p>
-                                </button>
-
-                                <button
-                                    type="button"
+                                    value={userBoxMetrics.noFollowUpCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.noFollowUpAmount)}</span> unattended</>}
+                                />
+                                <Stat
+                                    label="Scheduled"
+                                    tone="pos"
+                                    active={categoryFilter === 'future'}
                                     onClick={() => handleCategoryBoxClick('future')}
-                                    className={`text-left p-4 rounded-xl border-2 transition-all shadow-sm ${categoryFilter === 'future' ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-400' : 'border-emerald-100 dark:border-emerald-900/50 bg-white dark:bg-gray-800 hover:border-emerald-300'}`}
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Future Follow Up</span>
-                                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">{userBoxMetrics.futureCount}</span>
-                                    </div>
-                                    <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{userBoxMetrics.futureCount} <span className="text-sm font-normal text-gray-500">accounts</span></p>
-                                    <p className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold mt-1">{formatCurrency(userBoxMetrics.futureAmount)}</p>
-                                </button>
+                                    value={userBoxMetrics.futureCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.futureAmount)}</span> committed</>}
+                                />
                             </div>
+                        </section>
+
+                        {/* ---------- my book ---------- */}
+                        <div className="grid lg:grid-cols-2 gap-3.5">
+                            <Card className="p-6 flex flex-col">
+                                <SectionHeader
+                                    title="My book"
+                                    subtitle="Everything assigned to you, by age."
+                                    actions={<AgeingLegend />}
+                                />
+                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7">
+                                    <div>
+                                        <p className="label">Outstanding</p>
+                                        <p className="num text-[34px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
+                                            {formatCompact(myAgeing.total)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{userBoxMetrics.totalCount} accounts</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Past 45 days</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
+                                            {formatCompact(myAgeing.over45)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct45}% of your book</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Past 90 days</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
+                                            {formatCompact(myAgeing.over90)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct90}% of your book</p>
+                                    </div>
+                                </div>
+                                <div className="mt-auto pt-7">
+                                    <AgeingBar parts={myAgeing} height={12} />
+                                </div>
+                            </Card>
+
+                            <Card className="p-6 flex flex-col">
+                                <SectionHeader
+                                    title="Cheques and commitments"
+                                    subtitle="Cheques to present, and what customers promised you."
+                                />
+                                <div className="flex items-end gap-10 mt-7 flex-wrap">
+                                    <div>
+                                        <p className="label">Cheques today</p>
+                                        <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
+                                            {todayPdcMetrics.todayCount}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{formatCompact(todayPdcMetrics.todayAmount)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Held in hand</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
+                                            {formatCompact(todayPdcMetrics.activeAmount)}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Promised today</p>
+                                        <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                            {formatCompact(cashFlowForecastMetrics.todayForecast)}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.todayCount} commitments</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2.5 mt-auto pt-7">
+                                    <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
+                                        {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
+                                    </Button>
+                                    {rights.canManagePdc && (
+                                        <Button size="sm" variant="secondary" onClick={() => handleOpenAddPdc()}>Record a cheque</Button>
+                                    )}
+                                </div>
+                            </Card>
                         </div>
 
-                        {/* Filtered Active Customer Tasks */}
-                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-6">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                                        {categoryFilter === 'today' ?"Today's Follow-up Schedule" :
-                                         categoryFilter === 'overdue' ?"Overdue Accounts Requiring Action" :
-                                         categoryFilter === 'no_follow_up' ?"Accounts Without Planned Follow-ups" :
-                                         categoryFilter === 'future' ?"Upcoming Future Follow-ups" :"My Assigned Accounts"}
-                                    </h2>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Showing {filteredData.length} accounts</p>
-                                </div>
-                                <div className="relative w-full sm:w-64">
-                                    <input
-                                        type="text"
-                                        placeholder="Search customer, phone..."
-                                        value={searchTerm}
-                                        onChange={e => setSearchTerm(e.target.value)}
-                                        className="w-full pl-9 pr-3 py-1.5 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
-                                    />
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                                    </div>
-                                </div>
-                            </div>
+                        {/* ---------- the accounts themselves ---------- */}
+                        <Card className="p-6">
+                            <SectionHeader
+                                title={
+                                    categoryFilter === 'today' ? 'Due today'
+                                        : categoryFilter === 'overdue' ? 'Past their promised date'
+                                        : categoryFilter === 'no_follow_up' ? 'No follow-up planned'
+                                        : categoryFilter === 'future' ? 'Scheduled'
+                                        : 'My accounts'
+                                }
+                                subtitle={`${filteredData.length} account${filteredData.length === 1 ? '' : 's'}${searchTerm ? ' matching your search' : ''}`}
+                                actions={
+                                    <Button size="sm" variant="quiet" onClick={() => setActiveKey('customers')}>
+                                        Open full list
+                                    </Button>
+                                }
+                            />
 
                             {filteredData.length === 0 ? (
-                                <div className="text-center py-10 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
-                                    <p className="text-gray-500 dark:text-gray-400 font-medium">No accounts match the current filter.</p>
-                                    <button
-                                        onClick={handleClearFilters}
-                                        className="mt-2 text-sm text-green-600 dark:text-green-400 hover:text-green-700 font-semibold"
-                                    >
-                                        View All Assigned Accounts
-                                    </button>
-                                </div>
+                                <EmptyState
+                                    title="Nothing here"
+                                    hint="No account matches the current filter."
+                                    action={<Button size="sm" variant="secondary" onClick={handleClearFilters}>Show all my accounts</Button>}
+                                />
                             ) : (
-                                <div className="space-y-3">
-                                    {filteredData.map(customer => {
-                                        const isOverdue = customer.status === FollowUpStatus.Overdue || (customer.followUpDate && new Date(customer.followUpDate).setHours(0,0,0,0) < getToday().getTime());
-                                        const isNoFollow = !customer.followUpDate;
-
+                                <div className="mt-6 flex flex-col gap-2.5">
+                                    {filteredData.slice(0, 40).map(customer => {
+                                        const cat = getFollowUpCategory(customer, getToday());
+                                        const due = relativeDays(customer.followUpDate);
                                         return (
                                             <div
                                                 key={customer.id}
-                                                className={`rounded-xl p-4 flex flex-col md:flex-row justify-between md:items-center gap-4 transition-all border ${
-                                                    customer.isUrgent
-                                                        ? 'bg-red-50/70 dark:bg-red-950/30 border-red-200 dark:border-red-900/50'
-                                                        : isOverdue
-                                                        ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
-                                                        : isNoFollow
-                                                        ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40'
-                                                        : 'bg-white dark:bg-gray-800/80 border-gray-100 dark:border-gray-700/60 shadow-sm'
-                                                }`}
+                                                className="rounded-[14px] bg-card-2 px-4 py-3.5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5"
                                             >
-                                                <div className="flex-1">
-                                                    <div className="flex flex-wrap items-center gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
                                                         <button
                                                             onClick={() => handleOpenFollowUp(customer)}
-                                                            className="font-bold text-base text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 text-left"
+                                                            className="text-[15px] font-bold text-label hover:text-accent text-left truncate max-w-[380px]"
                                                         >
                                                             {customer.company}
                                                         </button>
-                                                        {customer.isUrgent && (
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                                                Urgent
-                                                            </span>
-                                                        )}
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                            customer.status === FollowUpStatus.Today ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                                                            customer.status === FollowUpStatus.Overdue ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                                            customer.status === FollowUpStatus.Upcoming ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
-                                                            'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
-                                                        }`}>
-                                                            {customer.status}
-                                                        </span>
+                                                        {customer.isUrgent && <Badge tone="dang">Urgent</Badge>}
+                                                        {cat === 'overdue' && <Badge tone="dang">{due?.text || 'Overdue'}</Badge>}
+                                                        {cat === 'today' && <Badge tone="brand">Due today</Badge>}
+                                                        {cat === 'future' && <Badge tone="pos">{due?.text || 'Scheduled'}</Badge>}
+                                                        {cat === 'no_follow_up' && <Badge tone="warn">No follow-up</Badge>}
                                                     </div>
-
-                                                    <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 dark:text-gray-300">
-                                                        <div>
-                                                            <span className="text-gray-400">Contact: </span>
-                                                            <span className="font-medium">{customer.contactPerson || 'N/A'} ({customer.contactNumber || 'No phone'})</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-400">Follow-up Date: </span>
-                                                            <span className={`font-semibold ${isOverdue ? 'text-red-600' : isNoFollow ? 'text-amber-600' : 'text-gray-800 dark:text-gray-200'}`}>
-                                                                {customer.followUpDate ? new Date(customer.followUpDate).toLocaleDateString('en-GB') : 'Not Scheduled'}
-                                                            </span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-400">Balance: </span>
-                                                            <span className="font-bold text-gray-900 dark:text-white">{formatCurrency(customer.total)}</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {customer.notes && customer.notes.length > 0 && (
-                                                        <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-800/60 px-2 py-1 rounded">
-                                                            Last Note:"{customer.notes[customer.notes.length - 1]}"
-                                                        </p>
-                                                    )}
+                                                    <p className="text-[13px] text-label-3 mt-1.5 truncate">
+                                                        {customer.contactPerson || 'No contact'}
+                                                        {customer.contactNumber ? ` · ${customer.contactNumber}` : ''}
+                                                        {customer.notes?.length ? ` · ${customer.notes[customer.notes.length - 1]}` : ''}
+                                                    </p>
                                                 </div>
 
-                                                <div className="flex items-center gap-2 self-end md:self-center">
-                                                    <button
-                                                        onClick={() => handleOpenEditCustomer(customer)}
-                                                        className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-semibold transition-colors shadow-2xs flex items-center gap-1 border border-gray-200 dark:border-gray-700"
-                                                        title="Edit Customer Master Info & Name"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleOpenFollowUp(customer)}
-                                                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors shadow-sm flex items-center"
-                                                    >
-                                                        <EditIcon className="w-3.5 h-3.5 mr-1" />
-                                                        Update
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleSendWhatsApp(customer)}
-                                                        className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-semibold hover:bg-emerald-600 transition-colors shadow-sm flex items-center"
-                                                    >
-                                                        <WhatsAppIcon className="w-3.5 h-3.5 mr-1" />
-                                                        WhatsApp
-                                                    </button>
+                                                <div className="flex items-center gap-4 md:gap-5 flex-none">
+                                                    <div className="text-right">
+                                                        <p className="num text-[16px] font-semibold text-label">
+                                                            {formatCompact(customer.total)}
+                                                        </p>
+                                                        <p className="text-[12px] text-label-3 mt-0.5">
+                                                            {customer.followUpDate ? formatDateShort(customer.followUpDate) : 'not scheduled'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button size="sm" variant="quiet" onClick={() => handleSendWhatsApp(customer)}>
+                                                            WhatsApp
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="primary"
+                                                            onClick={() => handleOpenFollowUp(customer)}
+                                                            disabled={!rights.canEditFollowUp}
+                                                            title={rights.canEditFollowUp ? 'Log a follow-up' : 'Your role cannot record follow-ups'}
+                                                        >
+                                                            Follow up
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
                                     })}
+                                    {filteredData.length > 40 && (
+                                        <button
+                                            onClick={() => setActiveKey('customers')}
+                                            className="text-[13.5px] font-semibold text-accent hover:underline self-start mt-1"
+                                        >
+                                            {filteredData.length - 40} more in the full list
+                                        </button>
+                                    )}
                                 </div>
                             )}
-                        </div>
+                        </Card>
                     </div>
                 )}
 
@@ -2003,7 +1791,7 @@ const App = () => {
 
 
 
-    const renderAdminDashboard = () => {
+    const renderCompanyDashboard = () => {
         // Use lifted state
         const activeTab = adminTab;
 
@@ -2031,7 +1819,6 @@ const App = () => {
                     const parsedData = parseRawDataArray(json.slice(1));
                     const nowIso = new Date().toISOString();
                     setLastSyncTime(nowIso);
-                    localStorage.setItem('lastSyncTime', nowIso);
                     if (appData.length > 0) {
                         setPendingSync({
                             records: parsedData,
@@ -2101,7 +1888,7 @@ const App = () => {
 
                 {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && (
                     <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-6">
-                        {activeTab === 'users' && (
+                        {activeTab === 'users' && rights.isAdmin && (
                             <div className="space-y-6">
                                 {/* Sub-navigation tabs inside User Management */}
                                 <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
@@ -2137,14 +1924,7 @@ const App = () => {
                                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button 
-                                                    onClick={handleResetUsersOnly}
-                                                    className="flex items-center px-3 py-2 text-xs font-semibold rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 transition-colors"
-                                                    title="Reset user list and passwords to default roster"
-                                                >
-                                                    <span>Reset Users to Default</span>
-                                                </button>
-                                                <button 
+                                                <button
                                                     onClick={() => handleOpenUserModal(null)}
                                                     className="flex items-center px-3.5 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-xs"
                                                 >
@@ -2172,6 +1952,9 @@ const App = () => {
                                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                                     <div className="font-bold text-gray-900 dark:text-white">{user.name}</div>
                                                                     <div className="text-xs text-gray-400 font-mono">ID: {user.id}</div>
+                                                                    {user.email && (
+                                                                        <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
+                                                                    )}
                                                                 </td>
                                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                                     <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-lg ${
@@ -2264,7 +2047,7 @@ const App = () => {
                                 onOpenPdcForCustomer={handleOpenPdcForCustomer}
                             />
                         )}
-                         {activeTab === 'templates' && (
+                         {activeTab === 'templates' && rights.canSyncSheets && (
                             <div>
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Manage Message Templates</h2>
@@ -2301,7 +2084,7 @@ const App = () => {
                                 </div>
                             </div>
                         )}
-                        {activeTab === 'source' && (
+                        {activeTab === 'source' && rights.canSyncSheets && (
                              <div>
                                 <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Data Source Management</h2>
                                 
@@ -2468,7 +2251,6 @@ const App = () => {
                                                             type="button"
                                                             onClick={() => {
                                                                 setGoogleSheetUrl(OFFICIAL_TRANSACTIONS_SHEET_URL);
-                                                                localStorage.setItem('googleSheetUrl', OFFICIAL_TRANSACTIONS_SHEET_URL);
                                                             }}
                                                             className="inline-flex items-center min-h-[28px] text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline"
                                                         >
@@ -2508,7 +2290,6 @@ const App = () => {
                                                             type="button"
                                                             onClick={() => {
                                                                 setCustomerMasterSheetUrl(OFFICIAL_CUSTOMER_MASTER_URL);
-                                                                localStorage.setItem('customerMasterSheetUrl', OFFICIAL_CUSTOMER_MASTER_URL);
                                                             }}
                                                             className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline"
                                                         >
@@ -2525,19 +2306,14 @@ const App = () => {
                                                 <button 
                                                     onClick={() => handleResetAllDataAndUsers(false)}
                                                     className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5"
-                                                    title="Reset all users, passwords, follow-ups, and fetch clean live Google Sheet data"
+                                                    title="Clear follow-ups and cheques for everyone and re-import the live sheet. Logins are not touched."
                                                 >
-                                                    <TrashIcon /> <span>Reset All Data & Users (Fresh Start)</span>
-                                                </button>
-                                                <button 
-                                                    onClick={handleResetUsersOnly}
-                                                    className="px-3 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-semibold transition-colors"
-                                                >
-                                                    <span>Reset Users Only</span>
+                                                    <TrashIcon /> <span>Reset All Data (Fresh Start)</span>
                                                 </button>
                                             </div>
                                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                                Use"Reset All Data & Users" to wipe custom notes, passwords, and PDC cheques to begin cleanly from scratch.
+                                                This wipes notes, forecasts and PDC cheques for the whole team and
+                                                re-imports the sheet. Team logins are managed in Team &amp; access.
                                             </p>
                                         </div>
                                     </div>
@@ -2559,20 +2335,16 @@ const App = () => {
         );
     }
 
+    /**
+     * Which dashboard someone sees follows from what they can see, not from
+     * their job title: anyone who reads the whole book gets the company view
+     * (Admin, Manager, Viewer), anyone who owns a slice of it gets the personal
+     * one (CRM, Collector). Switching on the role name is what left Manager and
+     * Viewer staring at an "invalid role" page.
+     */
     const renderDashboard = () => {
-        if (!currentUser) {
-             return <div className="text-center py-12"><p className="text-lg">No user selected.</p></div>;
-        }
-        switch (currentUser.role) {
-            case UserRole.Admin:
-                return renderAdminDashboard();
-            case UserRole.CRM:
-                return renderUserDashboard();
-            case UserRole.Collector:
-                return renderUserDashboard();
-            default:
-                return <div className="text-center py-12 text-red-500"><p className="text-lg">Invalid user role.</p></div>;
-        }
+        if (!currentUser) return null;
+        return rights.seesWholeBook ? renderCompanyDashboard() : renderUserDashboard();
     };
 
     // Don't flash the login screen while an existing session is being restored.
@@ -2589,22 +2361,17 @@ const App = () => {
 
     if (!isAuthenticated) {
         return (
-            <LoginScreen
-                users={users}
-                onLogin={handleLogin}
-                onResetPassword={handleResetUserPassword}
-                onResetAll={() => handleResetAllDataAndUsers(false)}
-            />
+            <LoginScreen onLogin={handleLogin} />
         );
     }
 
     if (!currentUser) return null;
 
 
-    const isAdmin = currentUser.role === UserRole.Admin;
-    const activeKey = isAdmin ? adminTab : userTab;
-    const setActiveKey = isAdmin ? setAdminTab : setUserTab;
-    const boxes = isAdmin ? fourBoxesSummary : userBoxMetrics;
+    const wholeBook = rights.seesWholeBook;
+    const activeKey = wholeBook ? adminTab : userTab;
+    const setActiveKey = wholeBook ? setAdminTab : setUserTab;
+    const boxes = wholeBook ? fourBoxesSummary : userBoxMetrics;
 
     // Needs-attention count drives the badge on"Today" - overdue first,
     // because that is what actually costs the company money.
@@ -2612,40 +2379,48 @@ const App = () => {
 
     const workItems: NavItem[] = [
         { key: 'overview', label: 'Today', icon: <TodayIcon />, badge: attentionCount, badgeTone: boxes.overdueCount > 0 ? 'dang' : 'neutral' },
-        { key: 'customers', label: isAdmin ? 'Customers' : 'My customers', icon: <BookIcon /> },
+        { key: 'customers', label: wholeBook ? 'Customers' : 'My customers', icon: <BookIcon /> },
         { key: 'pdc', label: 'PDC cheques', icon: <ChequeNavIcon />, badge: todayPdcMetrics.todayCount, badgeTone: 'warn' },
-        { key: 'reports', label: isAdmin ? 'Reports' : 'My performance', icon: <ChartIcon /> },
+        { key: 'reports', label: wholeBook ? 'Reports' : 'My performance', icon: <ChartIcon /> },
     ];
 
-    const navGroups: NavGroup[] = isAdmin
-        ? [
-            { items: workItems },
-            {
-                heading: 'Setup',
-                items: [
-                    { key: 'users', label: 'Team & access', icon: <TeamIcon /> },
-                    { key: 'templates', label: 'Message templates', icon: <MessageIcon /> },
-                    { key: 'source', label: 'Data source', icon: <PlugIcon /> },
-                ],
-            },
-        ]
+    // Setup is per role: only an Admin manages logins, and only Admin and
+    // Manager may write templates or change the data source — which is exactly
+    // what the templates and app_settings policies allow in the database.
+    const setupItems: NavItem[] = [
+        ...(rights.isAdmin ? [{ key: 'users', label: 'Team & access', icon: <TeamIcon /> }] : []),
+        ...(rights.canSyncSheets
+            ? [
+                  { key: 'templates', label: 'Message templates', icon: <MessageIcon /> },
+                  { key: 'source', label: 'Data source', icon: <PlugIcon /> },
+              ]
+            : []),
+    ];
+
+    const navGroups: NavGroup[] = setupItems.length
+        ? [{ items: workItems }, { heading: 'Setup', items: setupItems }]
         : [{ items: workItems }];
 
+    // A tab that is not in this person's navigation must not render either,
+    // whatever the tab state happens to be holding.
+    const allowedKeys = new Set([...workItems, ...setupItems].map(i => i.key));
+    const safeKey = allowedKeys.has(activeKey) ? activeKey : 'overview';
+
     const PAGE_TITLE: Record<string, string> = {
-        overview: isAdmin ? 'Collections overview' : 'Today\u2019s follow-ups',
-        customers: isAdmin ? 'Customer book' : 'My customers',
+        overview: wholeBook ? 'Collections overview' : 'Today\u2019s follow-ups',
+        customers: wholeBook ? 'Customer book' : 'My customers',
         pdc: 'Post-dated cheques',
-        reports: isAdmin ? 'Reports' : 'My performance',
+        reports: wholeBook ? 'Reports' : 'My performance',
         users: 'Team & access',
         templates: 'Message templates',
         source: 'Data source',
     };
 
-    const scopeLabel = isAdmin
+    const scopeLabel = wholeBook
         ? `${appData.length} accounts company-wide`
         : `${outstandingData.length} accounts assigned to you`;
 
-    const totalBook = (isAdmin ? appData : outstandingData)
+    const totalBook = (wholeBook ? appData : outstandingData)
         .reduce((s, r) => s + (r.totalType === 'Cr' ? 0 : (r.total || 0)), 0);
 
     const shellBanner = syncMessage ? (
@@ -2686,13 +2461,12 @@ const App = () => {
         <>
         <AppShell
             currentUser={currentUser}
-            users={users}
             groups={navGroups}
-            activeKey={activeKey}
+            activeKey={safeKey}
             onNavigate={setActiveKey}
-            onUserChange={handleUserChange}
             onLogout={handleLogout}
-            title={PAGE_TITLE[activeKey] || 'Timely Payment'}
+            onChangePassword={() => setIsPasswordModalOpen(true)}
+            title={PAGE_TITLE[safeKey] || 'Timely Payment'}
             subtitle={
                 <span className="inline-flex items-center gap-2 flex-wrap">
                     <span>{scopeLabel}</span>
@@ -2703,8 +2477,9 @@ const App = () => {
             }
             searchTerm={searchTerm}
             onSearch={setSearchTerm}
-            onSync={() => handleCombinedSync()}
+            onSync={rights.canSyncSheets ? () => handleCombinedSync() : undefined}
             isSyncing={isSyncing}
+            readOnly={rights.isViewer}
             dataAsOf={sheetUpdatedTillDate}
             lastSyncTime={lastSyncTime}
             banner={shellBanner}
@@ -2736,6 +2511,15 @@ const App = () => {
                     onAddPdc={handleOpenAddPdc}
                     onUpdatePdcStatus={handleUpdatePdcStatus}
                     onEditCustomer={handleOpenEditCustomer}
+                />
+            )}
+            {isPasswordModalOpen && (
+                <ChangePasswordModal
+                    onClose={() => setIsPasswordModalOpen(false)}
+                    onDone={() => {
+                        setIsPasswordModalOpen(false);
+                        notify('success', 'Your password has been changed.');
+                    }}
                 />
             )}
             {isUserModalOpen && (
@@ -2772,14 +2556,6 @@ const App = () => {
                     sourceName={pendingSync.sourceName}
                     onConfirm={handleConfirmSyncReconciliation}
                     onCancel={handleCancelSyncReconciliation}
-                />
-            )}
-            {isCompanyModalOpen && (
-                <CompanyProfileModal
-                    isOpen={isCompanyModalOpen}
-                    onClose={() => setIsCompanyModalOpen(false)}
-                    profile={companyProfile}
-                    onSave={handleSaveCompanyProfile}
                 />
             )}
             {isWhatsAppModalOpen && whatsAppCustomer && (

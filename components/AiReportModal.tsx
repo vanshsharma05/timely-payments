@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus } from '../types';
+import { authHeaders } from '../services/repository';
 import { SparklesIcon, DownloadIcon, CheckCircleIcon, UsersIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
 interface AiReportModalProps {
@@ -184,7 +185,8 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
 
             const response = await fetch('/api/gemini-report', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                // The route costs money per call, so it only answers signed-in users.
+                headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
                 body: JSON.stringify(payload)
             });
 

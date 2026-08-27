@@ -1,17 +1,6 @@
 const puppeteer = require('puppeteer-core');
+const { signIn } = require('./signin.cjs');
 
-  const signIn = async (page, name) => {
-    await page.evaluate(n => {
-      const btns = [...document.querySelectorAll('button')];
-      const b = btns.find(x => [...x.querySelectorAll('span')].some(s => s.textContent.trim() === n));
-      if (b) b.click();
-    }, name);
-    await new Promise(r => setTimeout(r, 800));
-    await page.waitForSelector('input#pw', { timeout: 8000 });
-    await page.type('input#pw', name === 'Admin' ? 'admin' : 'password123');
-    await page.keyboard.press('Enter');
-    await new Promise(r => setTimeout(r, 3500));
-  };
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const OUT = process.argv[2];
@@ -37,7 +26,7 @@ const OUT = process.argv[2];
   await new Promise(r => setTimeout(r, 1200));
   await page.screenshot({ path: OUT + '/10-login-light.png' });
 
-  await signIn(page, 'Admin');
+  await signIn(page);
   await page.screenshot({ path: OUT + '/11-overview-light.png' });
 
   const clickNav = async label => {

@@ -102,6 +102,9 @@ const GearGlyph = ({ className }: { className?: string }) => (
     <path d="M19.2 14.8a1.5 1.5 0 0 0 .3 1.65l.06.06a1.83 1.83 0 1 1-2.6 2.6l-.05-.06a1.5 1.5 0 0 0-1.65-.3 1.5 1.5 0 0 0-.91 1.37v.17a1.83 1.83 0 1 1-3.66 0v-.09a1.5 1.5 0 0 0-.98-1.37 1.5 1.5 0 0 0-1.65.3l-.06.06a1.83 1.83 0 1 1-2.6-2.6l.06-.05a1.5 1.5 0 0 0 .3-1.65 1.5 1.5 0 0 0-1.37-.91H4.2a1.83 1.83 0 1 1 0-3.66h.09a1.5 1.5 0 0 0 1.37-.98 1.5 1.5 0 0 0-.3-1.65l-.06-.06a1.83 1.83 0 1 1 2.6-2.6l.05.06a1.5 1.5 0 0 0 1.65.3h.08a1.5 1.5 0 0 0 .91-1.37V4.2a1.83 1.83 0 1 1 3.66 0v.09a1.5 1.5 0 0 0 .91 1.37 1.5 1.5 0 0 0 1.65-.3l.06-.06a1.83 1.83 0 1 1 2.6 2.6l-.06.05a1.5 1.5 0 0 0-.3 1.65v.08a1.5 1.5 0 0 0 1.37.91h.17a1.83 1.83 0 1 1 0 3.66h-.09a1.5 1.5 0 0 0-1.37.91z" />
   </svg>
 );
+const KeyGlyph = ({ className }: { className?: string }) => (
+  <svg {...g(className)}><circle cx="8" cy="14" r="4" /><path d="m11 11 8-8M17 5l2 2M14.5 7.5l2 2" /></svg>
+);
 const LogoutGlyph = ({ className }: { className?: string }) => (
   <svg {...g(className)}><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 8 6 12l4 4M6 12h10" /></svg>
 );
@@ -175,11 +178,9 @@ const IconButton = ({
 
 export interface AppShellProps {
   currentUser: User;
-  users: User[];
   groups: NavGroup[];
   activeKey: string;
   onNavigate: (key: string) => void;
-  onUserChange: (id: string) => void;
   onLogout: () => void;
 
   title: string;
@@ -192,6 +193,10 @@ export interface AppShellProps {
 
   onSync?: () => void;
   isSyncing?: boolean;
+  /** Viewers can read everything and change nothing; say so rather than let them find out. */
+  readOnly?: boolean;
+  /** Opens the change-your-own-password dialog. */
+  onChangePassword?: () => void;
   dataAsOf?: string;
   lastSyncTime?: string;
 
@@ -201,11 +206,9 @@ export interface AppShellProps {
 
 export const AppShell = ({
   currentUser,
-  users,
   groups,
   activeKey,
   onNavigate,
-  onUserChange,
   onLogout,
   title,
   subtitle,
@@ -215,6 +218,8 @@ export const AppShell = ({
   searchPlaceholder = 'Search customers, contacts, notes',
   onSync,
   isSyncing,
+  readOnly,
+  onChangePassword,
   dataAsOf,
   lastSyncTime,
   banner,
@@ -342,32 +347,27 @@ export const AppShell = ({
                     </div>
                   </div>
 
-                  {users.length > 1 && (
-                    <div className="max-h-56 overflow-y-auto py-1.5 border-b border-separator">
-                      <p className="label px-4 pt-1 pb-2">Switch account</p>
-                      {users
-                        .filter(u => u.id !== currentUser.id)
-                        .map(u => (
-                          <button
-                            key={u.id}
-                            role="menuitem"
-                            onClick={() => {
-                              setUserOpen(false);
-                              onUserChange(u.id);
-                            }}
-                            className={MENU_ITEM}
-                          >
-                            <span className="w-7 h-7 rounded-full bg-card-3 text-label-2 grid place-items-center text-[10.5px] font-bold flex-none">
-                              {initials(u.name)}
-                            </span>
-                            <span className="truncate">{u.name}</span>
-                            <span className="ml-auto text-[12px] text-label-3 flex-none">{u.role}</span>
-                          </button>
-                        ))}
-                    </div>
+                  {readOnly && (
+                    <p className="px-4 py-2 text-[12.5px] text-label-3 border-b border-separator">
+                      Read-only access
+                    </p>
                   )}
 
-                  <button role="menuitem" onClick={onLogout} className={cx(MENU_ITEM, 'mt-1')}>
+                  {onChangePassword && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setUserOpen(false);
+                        onChangePassword();
+                      }}
+                      className={cx(MENU_ITEM, 'mt-1')}
+                    >
+                      <KeyGlyph className="w-[18px] h-[18px]" />
+                      Change password
+                    </button>
+                  )}
+
+                  <button role="menuitem" onClick={onLogout} className={cx(MENU_ITEM)}>
                     <LogoutGlyph className="w-[18px] h-[18px]" />
                     Sign out
                   </button>

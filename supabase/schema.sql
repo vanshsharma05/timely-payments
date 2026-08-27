@@ -238,6 +238,34 @@ returns boolean language sql stable security definer set search_path = public as
     select coalesce(public.current_role() = 'Admin', false);
 $$;
 
+-- Permission matrix, enforced in the database.
+--
+-- The app hides buttons a role may not use; this makes the same rules true for
+-- anything talking to PostgREST directly. Mirrors DEFAULT_ROLE_PERMISSIONS in
+-- types.ts, and falls back to the role's default when a profile's permissions
+-- object does not carry the key.
+create or replace function public.has_perm(right_name text)
+returns boolean language sql stable security definer set search_path = public as $$
+    select case
+        when p.role = 'Admin' then true
+        when p.permissions ? right_name then coalesce((p.permissions ->> right_name)::boolean, false)
+        else case right_name
+            when 'canViewAllCrms'    then p.role in ('Manager','Viewer')
+            when 'canAddCustomer'    then p.role in ('Manager','CRM')
+            when 'canEditCustomer'   then p.role in ('Manager','CRM','Collector')
+            when 'canEditFinancials' then p.role = 'Manager'
+            when 'canDeleteCustomer' then false
+            when 'canEditFollowUp'   then p.role in ('Manager','CRM','Collector')
+            when 'canReassignCrm'    then p.role = 'Manager'
+            when 'canManagePdc'      then p.role in ('Manager','CRM','Collector')
+            when 'canExportData'     then p.role in ('Manager','CRM')
+            else false
+        end
+    end
+    from public.profiles p
+    where p.id = auth.uid();
+$$;
+
 -- profiles ------------------------------------------------------------------
 drop policy if exists profiles_read     on public.profiles;
 drop policy if exists profiles_self_upd on public.profiles;
@@ -246,9 +274,11 @@ drop policy if exists profiles_admin_all on public.profiles;
 create policy profiles_read on public.profiles
     for select to authenticated using (true);
 
-create policy profiles_self_upd on public.profiles
-    for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
-
+-- Deliberately NO self-update policy. RLS policies are permissive: a rule
+-- letting you edit your own row would also let you set your own role to
+-- 'Admin' straight from the browser with the anon key, which is a complete
+-- bypass of everything below. Profiles are changed by an Admin, through
+-- Team & access, which goes via /api/team on the server.
 create policy profiles_admin_all on public.profiles
     for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
@@ -260,24 +290,40 @@ drop policy if exists customers_delete on public.customers;
 create policy customers_read on public.customers
     for select to authenticated using (true);
 
+-- Adding an account is its own right; editing one that exists is not. The
+-- change sync updates existing rows and only inserts genuinely new ones, so
+-- this can be strict without blocking a note.
 create policy customers_write on public.customers
-    for insert to authenticated with check (public.can_write());
+    for insert to authenticated
+    with check (public.can_write() and public.has_perm('canAddCustomer'));
 
 create policy customers_update on public.customers
     for update to authenticated using (public.can_write()) with check (public.can_write());
 
-create policy customers_delete on public.customers
-    for delete to authenticated using (public.current_role() in ('Admin','Manager'));
+-- customers_delete is defined further down, once has_perm() exists.
 
 -- pdc_cheques ---------------------------------------------------------------
 drop policy if exists pdc_read on public.pdc_cheques;
-drop policy if exists pdc_write on public.pdc_cheques;
 
 create policy pdc_read on public.pdc_cheques
     for select to authenticated using (true);
 
+
+-- customers: deleting an account is the destructive one, so it needs the right
+-- as well as the role. Inserts and updates stay on can_write(), because the
+-- change sync upserts a whole row for something as ordinary as a note.
+drop policy if exists customers_delete on public.customers;
+create policy customers_delete on public.customers
+    for delete to authenticated
+    using (public.current_role() in ('Admin','Manager') and public.has_perm('canDeleteCustomer'));
+
+-- pdc_cheques: recording and clearing cheques is its own right.
+drop policy if exists pdc_write on public.pdc_cheques;
 create policy pdc_write on public.pdc_cheques
-    for all to authenticated using (public.can_write()) with check (public.can_write());
+    for all to authenticated
+    using (public.can_write() and public.has_perm('canManagePdc'))
+    with check (public.can_write() and public.has_perm('canManagePdc'));
+
 
 -- templates / company_profile / app_settings --------------------------------
 drop policy if exists templates_read on public.templates;

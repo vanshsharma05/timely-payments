@@ -1,17 +1,6 @@
 const puppeteer = require('puppeteer-core');
+const { signIn } = require('./signin.cjs');
 
-  const signIn = async (page, name) => {
-    await page.evaluate(n => {
-      const btns = [...document.querySelectorAll('button')];
-      const b = btns.find(x => [...x.querySelectorAll('span')].some(s => s.textContent.trim() === n));
-      if (b) b.click();
-    }, name);
-    await new Promise(r => setTimeout(r, 800));
-    await page.waitForSelector('input#pw', { timeout: 8000 });
-    await page.type('input#pw', name === 'Admin' ? 'admin' : 'password123');
-    await page.keyboard.press('Enter');
-    await new Promise(r => setTimeout(r, 3500));
-  };
 
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
@@ -49,7 +38,9 @@ const OUT = process.argv[2];
       mounted: !!root && root.children.length > 0,
       html: (root?.innerHTML || '').length,
       text: (document.body.innerText || '').slice(0, 260),
-      hasRoster: !!document.querySelector('input#pw') || document.body.innerText.includes('Find your name'),
+      // The roster must never be printed on a page anyone can open.
+      hasRoster: document.body.innerText.includes('Find your name'),
+      asksForEmail: !!document.querySelector('input#email'),
       bodyBg: getComputedStyle(document.body).backgroundColor,
       theme: document.documentElement.getAttribute('data-theme'),
       font: getComputedStyle(document.body).fontFamily,
@@ -60,7 +51,7 @@ const OUT = process.argv[2];
   // --- sign in as Admin ---
   let dash = null;
   if (true) {
-    await signIn(page, 'Admin');
+    await signIn(page);
     dash = await page.evaluate(() => ({
       text: (document.body.innerText || '').slice(0, 700),
       navCount: document.querySelectorAll('aside button').length,

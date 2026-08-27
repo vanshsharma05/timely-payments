@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, PdcCheque, PdcStatus, User, UserRole, DataVisibility } from '../types';
+import { Outstanding, PdcCheque, PdcStatus, User, UserRole, DataVisibility, can } from '../types';
 import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
 interface PdcChequesViewProps {
@@ -46,6 +46,11 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'passed'>('all');
 
     const today = useMemo(() => new Date(), []);
+
+    // What this person may do to a cheque. Row Level Security enforces the same
+    // rule, so a button we cannot honour is a button we do not show.
+    const canManagePdc = can(currentUser, 'canManagePdc');
+    const canExport = can(currentUser, 'canExportData');
 
     // Permission and Data Scoping
     const canViewAll = 
@@ -319,21 +324,25 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button
-                        onClick={handleExport}
-                        className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
-                        title="Export PDC list to Excel"
-                    >
-                        <DownloadIcon />
-                        <span>Export Excel</span>
-                    </button>
-                    <button
-                        onClick={() => onAddPdc()}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-colors flex items-center gap-2"
-                    >
-                        <span className="text-lg leading-none">+</span>
-                        <span>Add PDC Cheque</span>
-                    </button>
+                    {canExport && (
+                        <button
+                            onClick={handleExport}
+                            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
+                            title="Export PDC list to Excel"
+                        >
+                            <DownloadIcon />
+                            <span>Export Excel</span>
+                        </button>
+                    )}
+                    {canManagePdc && (
+                        <button
+                            onClick={() => onAddPdc()}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-colors flex items-center gap-2"
+                        >
+                            <span className="text-lg leading-none">+</span>
+                            <span>Add PDC Cheque</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -655,7 +664,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                     : 'Click"+ Add PDC Cheque" to register a new post-dated cheque.'}
                                             </p>
                                             <button
-                                                onClick={() => onAddPdc()}
+                                                onClick={() => canManagePdc && onAddPdc()}
+                                                disabled={!canManagePdc}
                                                 className="mt-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors"
                                             >
                                                 + Add PDC Cheque
@@ -778,6 +788,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
                                             {/* Quick Status Toggle */}
                                             <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
+                                                {!canManagePdc ? (
+                                                    <span className="text-[12.5px] text-label-3">{cheque.status}</span>
+                                                ) : (
                                                 <div className="inline-flex items-center gap-0.5 bg-gray-50 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700">
                                                     <button
                                                         onClick={() => onUpdatePdcStatus(cheque.id, PdcStatus.Cleared)}
@@ -813,10 +826,12 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                         ✕ Bounce
                                                     </button>
                                                 </div>
+                                                )}
                                             </td>
 
                                             {/* Action Buttons */}
                                             <td className="px-2.5 py-2.5 whitespace-nowrap text-right space-x-1">
+                                                {canManagePdc && (
                                                 <button
                                                     onClick={() => onEditPdc(cheque)}
                                                     className="p-1 text-gray-400 hover:text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
@@ -824,6 +839,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                 >
                                                     <EditIcon />
                                                 </button>
+                                                )}
+                                                {canManagePdc && (
                                                 <button
                                                     onClick={() => {
                                                         if (window.confirm(`Are you sure you want to delete Cheque #${cheque.chequeNumber} for ${cheque.customerName}?`)) {
@@ -835,6 +852,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                 >
                                                     <TrashIcon />
                                                 </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );

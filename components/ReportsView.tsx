@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, PdcStatus, CompanyProfile, DataVisibility, getFollowUpCategory, DEFAULT_COMPANY_PROFILE } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, PdcStatus, CompanyProfile, DataVisibility, getFollowUpCategory, can, DEFAULT_COMPANY_PROFILE } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -63,6 +63,10 @@ export const ReportsView = ({
         currentUser?.role === UserRole.Viewer || 
         currentUser?.dataVisibility === DataVisibility.All || 
         Boolean(currentUser?.permissions?.canViewAllCrms);
+
+    // Downloading the book and spending money on an AI report are both rights
+    // a Viewer or Collector is not given.
+    const canExport = can(currentUser, 'canExportData');
 
     const userAllowedData = useMemo(() => {
         if (canViewAll || !currentUser) return data;
@@ -384,6 +388,7 @@ export const ReportsView = ({
                             )}
                         </div>
 
+                        {canExport && (
                         <button
                             onClick={() => setIsAiReportOpen(true)}
                             className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-bold shadow-sm transition-all whitespace-nowrap"
@@ -392,7 +397,9 @@ export const ReportsView = ({
                             <SparklesIcon className="w-4 h-4 text-yellow-300 animate-pulse" />
                             <span>AI Credit Report</span>
                         </button>
+                        )}
 
+                        {canExport && (
                         <button
                             onClick={exportToExcel}
                             className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors whitespace-nowrap"
@@ -401,6 +408,7 @@ export const ReportsView = ({
                             <DownloadIcon />
                             <span>Excel</span>
                         </button>
+                        )}
                     </div>
                 </div>
             </div>

@@ -5,6 +5,7 @@ import {
     PdcStatus,
     Template,
     User,
+    UserPermissions,
     UserRole,
     DataVisibility,
     CompanyProfile,
@@ -54,6 +55,32 @@ async function inChunks<T>(rows: T[], fn: (chunk: T[]) => Promise<void>): Promis
 
 function fail(context: string, error: { message: string } | null): void {
     if (error) throw new Error(`${context}: ${error.message}`);
+}
+
+/**
+ * Reads a whole table.
+ *
+ * PostgREST answers a plain select with at most 1000 rows, silently — which had
+ * the app showing the first 1000 customers of several thousand as if that were
+ * the entire book. Pages through by `id` (unique, so a row can neither be
+ * skipped nor repeated between pages) until a short page arrives.
+ */
+const PAGE = 1000;
+async function fetchAllRows(table: string, context: string): Promise<any[]> {
+    const db = requireSupabase();
+    const rows: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await db
+            .from(table)
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1);
+        fail(context, error);
+        if (!data?.length) break;
+        rows.push(...data);
+        if (data.length < PAGE) break;
+    }
+    return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,18 +174,12 @@ export function outstandingToRow(c: Outstanding): Record<string, any> {
 }
 
 export async function fetchCustomers(): Promise<Outstanding[]> {
-    const { data, error } = await requireSupabase()
-        .from('customers')
-        .select('*')
-        .order('company', { ascending: true });
-    fail('Could not load customers', error);
-    return (data || []).map(rowToOutstanding);
+    const rows = await fetchAllRows('customers', 'Could not load customers');
+    return rows
+        .map(rowToOutstanding)
+        .sort((a, b) => a.company.localeCompare(b.company));
 }
 
-export async function upsertCustomer(c: Outstanding): Promise<void> {
-    const { error } = await requireSupabase().from('customers').upsert(outstandingToRow(c));
-    fail('Could not save customer', error);
-}
 
 /** Used by the Google Sheet import; chunked so large sheets don't time out. */
 export async function upsertCustomers(list: Outstanding[]): Promise<void> {
@@ -167,6 +188,24 @@ export async function upsertCustomers(list: Outstanding[]): Promise<void> {
         const { error } = await db.from('customers').upsert(chunk);
         fail('Could not import customers', error);
     });
+}
+
+/**
+ * Saves edits to customers that already exist.
+ *
+ * Deliberately an update rather than an upsert: upserting asks the database for
+ * insert rights too, and creating an account is a separate permission from
+ * recording a note on one. Rows are written one at a time because PostgREST has
+ * no multi-row update, and an edit touches a handful of rows at most.
+ */
+export async function updateCustomers(list: Outstanding[]): Promise<void> {
+    const db = requireSupabase();
+    for (const c of list) {
+        const row = outstandingToRow(c);
+        delete row.id;
+        const { error } = await db.from('customers').update(row).eq('id', c.id);
+        fail('Could not save customer', error);
+    }
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
@@ -211,12 +250,10 @@ const pdcToRow = (p: PdcCheque): Record<string, any> => ({
 });
 
 export async function fetchPdcCheques(): Promise<PdcCheque[]> {
-    const { data, error } = await requireSupabase()
-        .from('pdc_cheques')
-        .select('*')
-        .order('cheque_date', { ascending: true });
-    fail('Could not load PDC cheques', error);
-    return (data || []).map(rowToPdc);
+    const rows = await fetchAllRows('pdc_cheques', 'Could not load PDC cheques');
+    return rows
+        .map(rowToPdc)
+        .sort((a, b) => a.chequeDate.getTime() - b.chequeDate.getTime());
 }
 
 export async function upsertPdcCheque(p: PdcCheque): Promise<void> {
@@ -242,6 +279,7 @@ export const rowToUser = (r: any): User & { authId: string } => ({
     authId: r.id,
     id: r.legacy_id,
     name: r.name || r.legacy_id,
+    email: r.email || undefined,
     role: (r.role as UserRole) || UserRole.CRM,
     dataVisibility: (r.data_visibility as DataVisibility) || DataVisibility.AssignedOnly,
     permissions:
@@ -274,20 +312,110 @@ export async function fetchCurrentProfile(): Promise<User | null> {
     return rowToUser(data);
 }
 
-/** Admin-only: update an existing teammate's role, permissions or assignments. */
-export async function updateUserProfile(user: User): Promise<void> {
-    const { error } = await requireSupabase()
-        .from('profiles')
-        .update({
-            name: user.name,
-            role: user.role,
-            data_visibility: user.dataVisibility ?? DataVisibility.AssignedOnly,
-            permissions: user.permissions ?? DEFAULT_ROLE_PERMISSIONS[user.role],
-            assigned_crms: user.assignedCrms ?? [],
-        })
-        .eq('legacy_id', user.id);
-    fail('Could not update user', error);
+// ---------------------------------------------------------------------------
+// team administration (Team & access)
+//
+// A teammate is two things: a Supabase Auth login and a profiles row. Only the
+// service role key can create a login, and that key never reaches the browser,
+// so every change goes through /api/team, which checks the caller is an Admin
+// before it touches anything.
+// ---------------------------------------------------------------------------
+
+export interface TeamMemberInput {
+    /** CRM code (profiles.legacy_id). Fixed once the teammate exists. */
+    id: string;
+    name: string;
+    email?: string;
+    /** Only when setting or changing it. */
+    password?: string;
+    role: UserRole;
+    dataVisibility: DataVisibility;
+    permissions: UserPermissions;
+    assignedCrms?: string[];
 }
+
+/** Thrown when /api/team cannot be reached or is not configured. */
+class TeamApiUnavailable extends Error {}
+
+const toPayload = (u: TeamMemberInput) => ({
+    id: u.id.trim(),
+    name: u.name.trim(),
+    email: u.email?.trim() ? u.email.trim().toLowerCase() : undefined,
+    password: u.password || undefined,
+    role: u.role,
+    dataVisibility: u.dataVisibility,
+    permissions: u.permissions,
+    assignedCrms: u.assignedCrms ?? [],
+});
+
+async function callTeamApi(action: 'create' | 'update' | 'delete', user: unknown): Promise<void> {
+    const auth = await authHeaders();
+    if (!auth.Authorization) throw new Error('Your session has expired. Sign in again.');
+
+    let response: Response;
+    try {
+        response = await fetch('/api/team', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...auth },
+            body: JSON.stringify({ action, user }),
+        });
+    } catch {
+        throw new TeamApiUnavailable('The server could not be reached. Check your connection and try again.');
+    }
+
+    // A host with no API routes answers with the app's index.html, which is not
+    // JSON — treat anything unparseable as "this deployment has no endpoint".
+    let payload: any = null;
+    try {
+        payload = await response.json();
+    } catch {
+        payload = null;
+    }
+
+    if (response.ok && payload?.ok) return;
+    if (!payload || response.status === 404 || payload.code === 'service_key_missing') {
+        throw new TeamApiUnavailable(
+            'Accounts cannot be managed on this deployment: the server has no Supabase service role key. ' +
+                'Set SUPABASE_SERVICE_ROLE_KEY and redeploy.'
+        );
+    }
+    throw new Error(payload.error || `Could not save the teammate (HTTP ${response.status}).`);
+}
+
+/** Creates the login and the profile. Returns once the teammate really exists. */
+export async function createTeamMember(input: TeamMemberInput): Promise<void> {
+    if (!input.email?.trim()) {
+        throw new Error('An email address is required — it is what the teammate signs in with.');
+    }
+    if (!input.password || input.password.length < 8) {
+        throw new Error('Set a password of at least 8 characters for the new teammate.');
+    }
+    await callTeamApi('create', toPayload(input));
+}
+
+/** Saves role, rights and login details of an existing teammate. */
+export async function updateTeamMember(input: TeamMemberInput): Promise<void> {
+    if (input.password && input.password.length < 8) {
+        throw new Error('A new password must be at least 8 characters.');
+    }
+    await callTeamApi('update', toPayload(input));
+}
+
+/** Removes a teammate's access, login and profile together. */
+export async function deleteTeamMember(legacyId: string): Promise<void> {
+    await callTeamApi('delete', { id: legacyId });
+}
+
+/**
+ * Changes the signed-in user's own password. Supabase requires a live session,
+ * so this works for every role without touching the service key.
+ */
+export async function changeOwnPassword(newPassword: string): Promise<void> {
+    if (newPassword.length < 8) throw new Error('Use at least 8 characters.');
+    const { error } = await requireSupabase().auth.updateUser({ password: newPassword });
+    if (error) throw new Error(error.message);
+}
+
 
 // ---------------------------------------------------------------------------
 // templates
@@ -384,6 +512,18 @@ export async function signIn(email: string, password: string): Promise<User> {
 
 export async function signOut(): Promise<void> {
     if (supabase) await supabase.auth.signOut();
+}
+
+/**
+ * Authorization header for this app's own API routes (/api/team,
+ * /api/gemini-report). They verify the token server-side, so a request without
+ * one is rejected rather than served.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+    if (!supabase) return {};
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /** Loads everything the dashboard needs in one pass. */
