@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Outstanding, User, UserRole } from '../types';
-import { processStatuses } from '../services/googleSheetService';
+import { financialsFromSheet, processStatuses } from '../services/googleSheetService';
 
 export interface SyncReconciliationModalProps {
     incomingRecords: Outstanding[];
@@ -179,20 +179,21 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
             }
 
             if (existing) {
+                // Start from the row on file and overwrite only what the sheet
+                // is the authority on. Building from the sheet row instead threw
+                // away credit limits, GSTINs, designations, extra contacts and
+                // expected collections on every account it matched.
                 return {
-                    ...item,
-                    // Keep the row's own id: a new one would delete the row and
-                    // insert a copy, cascading away its PDC cheques.
-                    id: existing.id,
+                    ...existing,
+                    ...financialsFromSheet(item),
                     crmOwnerId: finalCrm,
-                    assignedCollectorId: existing.assignedCollectorId || item.assignedCollectorId,
-                    followUpDate: existing.followUpDate,
-                    status: existing.status || item.status,
-                    notes: existing.notes && existing.notes.length > 0 ? existing.notes : item.notes,
-                    isUrgent: existing.isUrgent !== undefined ? existing.isUrgent : item.isUrgent,
                     isNewCustomer: false,
-                    lastFollowUpOn: existing.lastFollowUpOn,
-                    contactPerson: existing.contactPerson && existing.contactPerson !== 'Accounts Dept' ? existing.contactPerson : item.contactPerson,
+                    contactPerson:
+                        existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
+                            ? existing.contactPerson
+                            : item.contactPerson,
+                    contactNumber: existing.contactNumber || item.contactNumber,
+                    email: existing.email || item.email,
                 };
             }
 

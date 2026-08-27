@@ -201,6 +201,25 @@ export function customerIdFor(company: string): string {
 }
 
 /**
+ * The columns an invoice sheet is the authority on. Everything else — contacts,
+ * master data, follow-ups, notes, expected collections — belongs to the app and
+ * survives an import untouched.
+ */
+export function financialsFromSheet(sheet: Outstanding) {
+    return {
+        company: sheet.company,
+        total: sheet.total,
+        totalType: sheet.totalType,
+        ageing: sheet.ageing,
+        ageingTypes: sheet.ageingTypes,
+        over90: sheet.over90,
+        over90Type: sheet.over90Type,
+        dueOver45: sheet.dueOver45,
+        dueOver45Type: sheet.dueOver45Type,
+    };
+}
+
+/**
  * Folds a fresh sheet into the book already on file.
  *
  * Two rules matter for the shared database: a matched customer keeps the id it
@@ -233,22 +252,17 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
         if (existing) {
             matchedIds.add(existing.id);
             return {
-                ...item,
-                id: existing.id,
-                assignedCollectorId: existing.assignedCollectorId || item.assignedCollectorId,
-                followUpDate: existing.followUpDate,
-                forecastAmount: existing.forecastAmount !== undefined ? existing.forecastAmount : item.forecastAmount,
-                forecastDate: existing.forecastDate || existing.followUpDate,
-                status: existing.status || item.status,
-                notes: existing.notes && existing.notes.length > 0 ? existing.notes : item.notes,
-                isUrgent: existing.isUrgent !== undefined ? existing.isUrgent : item.isUrgent,
-                lastFollowUpOn: existing.lastFollowUpOn,
-                contactPerson: existing.contactPerson && existing.contactPerson !== 'Accounts Dept' ? existing.contactPerson : item.contactPerson,
+                ...existing,
+                ...financialsFromSheet(item),
+                crmOwnerId: item.crmOwnerId || existing.crmOwnerId,
+                // The sheet's contact details fill gaps; they never overwrite
+                // what someone has taken the trouble to record.
+                contactPerson:
+                    existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
+                        ? existing.contactPerson
+                        : item.contactPerson,
                 contactNumber: existing.contactNumber || item.contactNumber,
-                contactPost: existing.contactPost || item.contactPost,
-                additionalContacts: existing.additionalContacts && existing.additionalContacts.length > 0 
-                    ? existing.additionalContacts 
-                    : (item.additionalContacts || []),
+                email: existing.email || item.email,
             };
         }
         return item;

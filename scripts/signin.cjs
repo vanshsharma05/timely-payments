@@ -30,10 +30,21 @@ function credentials() {
     return { email, password };
 }
 
-/** Signs in and resolves once the dashboard has had time to hydrate. */
+/**
+ * Signs in and resolves once the dashboard has had time to hydrate. A session
+ * restored from a previous run means there is nothing to sign in to, so this
+ * returns quietly rather than waiting for a form that will never appear.
+ */
 async function signIn(page) {
     const { email, password } = credentials();
-    await page.waitForSelector('input#email', { timeout: 20000 });
+    const needsLogin = await page
+        .waitForSelector('input#email', { timeout: 20000 })
+        .then(() => true)
+        .catch(() => false);
+    if (!needsLogin) {
+        await new Promise((r) => setTimeout(r, 4000));
+        return;
+    }
     await page.type('input#email', email);
     await page.keyboard.press('Enter');
     await page.waitForSelector('input#pw', { timeout: 20000 });

@@ -1755,7 +1755,7 @@ const App = () => {
                 )}
 
                 {activeTab === 'pdc' && (
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-6">
+                    <Card className="p-6">
                         <PdcChequesView
                             pdcCheques={pdcCheques}
                             customers={appData}
@@ -1768,7 +1768,7 @@ const App = () => {
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
                         />
-                    </div>
+                    </Card>
                 )}
 
                 {activeTab === 'reports' && (
@@ -1870,7 +1870,7 @@ const App = () => {
                 {activeTab === 'customers' && renderCustomerListView()}
 
                 {activeTab === 'pdc' && (
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-6">
+                    <Card className="p-6">
                         <PdcChequesView
                             pdcCheques={pdcCheques}
                             customers={appData}
@@ -1883,22 +1883,22 @@ const App = () => {
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
                         />
-                    </div>
+                    </Card>
                 )}
 
                 {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && (
-                    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-6">
+                    <div className="bg-card rounded-lg shadow-md p-6">
                         {activeTab === 'users' && rights.isAdmin && (
                             <div className="space-y-6">
                                 {/* Sub-navigation tabs inside User Management */}
-                                <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
+                                <div className="flex flex-wrap items-center gap-2 border-b border-separator pb-3">
                                     <button
                                         onClick={() => setUserManagementTab('users')}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                                            userManagementTab === 'users'
-                                                ? 'bg-green-600 text-white shadow-xs'
-                                                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                        }`}
+ userManagementTab === 'users'
+ ? 'bg-accent text-on-accent shadow-e1'
+ : 'bg-card-3 text-label-2 hover:bg-hover'
+ }`}
                                     >
                                         <UsersIcon className="w-4 h-4" />
                                         <span>User Accounts ({users.length})</span>
@@ -1906,10 +1906,10 @@ const App = () => {
                                     <button
                                         onClick={() => setUserManagementTab('company')}
                                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                                            userManagementTab === 'company'
-                                                ? 'bg-green-600 text-white shadow-xs'
-                                                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                        }`}
+ userManagementTab === 'company'
+ ? 'bg-accent text-on-accent shadow-e1'
+ : 'bg-card-3 text-label-2 hover:bg-hover'
+ }`}
                                     >
                                         <BuildingOfficeIcon className="w-4 h-4" />
                                         <span>Company Profile & Organization</span>
@@ -1920,50 +1920,50 @@ const App = () => {
                                     <div>
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                                             <div>
-                                                <h2 className="text-xl font-bold text-gray-800 dark:text-white">System Users & Access Roles</h2>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
+                                                <h2 className="text-xl font-bold text-label">System Users & Access Roles</h2>
+                                                <p className="text-xs text-label-3 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => handleOpenUserModal(null)}
-                                                    className="flex items-center px-3.5 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-xs"
+                                                    className="flex items-center px-3.5 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press shadow-xs"
                                                 >
                                                     <UserPlusIcon className="w-4 h-4 -ml-1 mr-2" />
                                                     <span>Add User</span>
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-left text-xs sm:text-sm">
-                                                <thead className="bg-gray-50 dark:bg-gray-800">
+                                        <div className="overflow-x-auto rounded-xl border border-separator">
+                                            <table className="min-w-full divide-y divide-separator text-left text-xs sm:text-sm">
+                                                <thead className="bg-card-2">
                                                     <tr>
-                                                        <th className="px-4 py-3 font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">User & ID</th>
-                                                        <th className="px-4 py-3 font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Role</th>
-                                                        <th className="px-4 py-3 font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Assigned CRMs / Scope</th>
-                                                        <th className="px-4 py-3 font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Granted Permissions</th>
-                                                        <th className="px-4 py-3 text-right font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">User & ID</th>
+                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Role</th>
+                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Assigned CRMs / Scope</th>
+                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Granted Permissions</th>
+                                                        <th className="px-4 py-3 text-right font-semibold text-label-3 uppercase tracking-wider">Actions</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                                                <tbody className="bg-card divide-y divide-separator">
                                                     {users.map(user => {
                                                         const p = user.permissions;
                                                         return (
                                                             <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                                                                 <td className="px-4 py-3 whitespace-nowrap">
-                                                                    <div className="font-bold text-gray-900 dark:text-white">{user.name}</div>
+                                                                    <div className="font-bold text-label">{user.name}</div>
                                                                     <div className="text-xs text-gray-400 font-mono">ID: {user.id}</div>
                                                                     {user.email && (
-                                                                        <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
+                                                                        <div className="text-xs text-label-3">{user.email}</div>
                                                                     )}
                                                                 </td>
                                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                                     <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-lg ${
-                                                                        user.role === UserRole.Admin ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
-                                                                        user.role === UserRole.Manager ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' :
-                                                                        user.role === UserRole.CRM ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
-                                                                        user.role === UserRole.Collector ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                                                                        'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                                                                    }`}>
+ user.role === UserRole.Admin ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
+ user.role === UserRole.Manager ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' :
+ user.role === UserRole.CRM ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
+ user.role === UserRole.Collector ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+ 'bg-card-3 text-label-2 border border-separator'
+ }`}>
                                                                         {user.role}
                                                                     </span>
                                                                 </td>
@@ -2012,7 +2012,7 @@ const App = () => {
                                                                         {user.role !== UserRole.Admin && (
                                                                             <button 
                                                                                 onClick={() => handleDeleteUser(user.id)} 
-                                                                                className="p-1.5 text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors" 
+                                                                                className="p-1.5 text-dang hover:opacity-80 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors" 
                                                                                 title="Delete user"
                                                                             >
                                                                                 <TrashIcon className="w-4 h-4" />
@@ -2050,31 +2050,31 @@ const App = () => {
                          {activeTab === 'templates' && rights.canSyncSheets && (
                             <div>
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Manage Message Templates</h2>
+                                    <h2 className="text-2xl font-bold text-label">Manage Message Templates</h2>
                                     <button 
                                         onClick={() => handleOpenTemplateModal(null)}
-                                        className="flex items-center px-3 py-2 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700"
+                                        className="flex items-center px-3 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press"
                                     >
                                         <UserPlusIcon className="w-5 h-5 -ml-1 mr-2" />
                                         <span>New Template</span>
                                     </button>
                                 </div>
                                 <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                        <thead className="bg-gray-50 dark:bg-gray-800">
+                                    <table className="min-w-full divide-y divide-separator">
+                                        <thead className="bg-card-2">
                                             <tr>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Template Name</th>
-                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-label-3 uppercase tracking-wider">Template Name</th>
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-label-3 uppercase tracking-wider">Actions</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                                        <tbody className="bg-card divide-y divide-separator">
                                             {templates.map(template => (
                                                 <tr key={template.id}>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800 dark:text-gray-200">{template.name}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{template.name}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                         <div className="flex justify-end items-center space-x-2">
-                                                            <button onClick={() => handleOpenTemplateModal(template)} className="w-9 h-9 grid place-items-center rounded-full text-green-600 dark:text-green-400 hover:text-green-800 hover:bg-hover" aria-label={`Edit template ${template.name}`}><EditIcon /></button>
-                                                            <button onClick={() => handleDeleteTemplate(template.id)} className="w-9 h-9 grid place-items-center rounded-full text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-hover" aria-label={`Delete template ${template.name}`}><TrashIcon /></button>
+                                                            <button onClick={() => handleOpenTemplateModal(template)} className="w-9 h-9 grid place-items-center rounded-full text-accent hover:text-accent hover:bg-hover" aria-label={`Edit template ${template.name}`}><EditIcon /></button>
+                                                            <button onClick={() => handleDeleteTemplate(template.id)} className="w-9 h-9 grid place-items-center rounded-full text-dang hover:opacity-80 hover:bg-hover" aria-label={`Delete template ${template.name}`}><TrashIcon /></button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -2086,53 +2086,53 @@ const App = () => {
                         )}
                         {activeTab === 'source' && rights.canSyncSheets && (
                              <div>
-                                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Data Source Management</h2>
+                                <h2 className="text-2xl font-bold mb-6 text-label">Data Source Management</h2>
                                 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                     
                                     {/* Data Format Section */}
-                                    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 col-span-1 lg:col-span-2 bg-blue-50 dark:bg-blue-900/20">
+                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2 bg-accent-tint">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-white">1. Data Format Required</h3>
-                                                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                                                <h3 className="text-lg font-semibold mb-2 text-label">1. Data Format Required</h3>
+                                                <p className="text-sm text-label-2 mb-4">
                                                     Your Excel file or Google Sheet must have the following columns in this exact order (starting row 1):
                                                 </p>
                                             </div>
                                             <div className="flex space-x-2">
-                                                 <button onClick={downloadTemplate} className="flex items-center px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                 <button onClick={downloadTemplate} className="flex items-center px-3 py-2 bg-card border border-separator-strong rounded-md text-sm font-medium hover:bg-hover transition-colors">
                                                     <DownloadIcon />
                                                     <span className="ml-2">Download Excel Template</span>
                                                 </button>
-                                                <button onClick={copyHeaders} className="flex items-center px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                <button onClick={copyHeaders} className="flex items-center px-3 py-2 bg-card border border-separator-strong rounded-md text-sm font-medium hover:bg-hover transition-colors">
                                                     <ClipboardListIcon className="w-4 h-4 mr-2"/> Copy Headers
                                                 </button>
                                             </div>
                                         </div>
                                         <div className="overflow-x-auto">
-                                            <table className="min-w-full text-xs text-left text-gray-500 dark:text-gray-400">
-                                                <thead className="text-xs text-gray-700 uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-400">
+                                            <table className="min-w-full text-xs text-left text-label-3">
+                                                <thead className="text-xs text-label-2 uppercase bg-card-3">
                                                     <tr>
-                                                        {EXPECTED_HEADERS.map((h, i) => <th key={i} className="px-2 py-1 border dark:border-gray-600">{h}</th>)}
+                                                        {EXPECTED_HEADERS.map((h, i) => <th key={i} className="px-2 py-1 border">{h}</th>)}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    <tr className="bg-white dark:bg-gray-800">
-                                                        <td className="px-2 py-1 border dark:border-gray-600 font-mono">out_1</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">Acme Corp</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">John Doe</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">9876543210</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">5000</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">5000</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">0</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">0</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">0</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">Priya Singh</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">Amit Kumar</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">2023-12-01</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">Follow up</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">FALSE</td>
-                                                        <td className="px-2 py-1 border dark:border-gray-600">2023-01-01</td>
+                                                    <tr className="bg-card">
+                                                        <td className="px-2 py-1 border font-mono">out_1</td>
+                                                        <td className="px-2 py-1 border">Acme Corp</td>
+                                                        <td className="px-2 py-1 border">John Doe</td>
+                                                        <td className="px-2 py-1 border">9876543210</td>
+                                                        <td className="px-2 py-1 border">5000</td>
+                                                        <td className="px-2 py-1 border">5000</td>
+                                                        <td className="px-2 py-1 border">0</td>
+                                                        <td className="px-2 py-1 border">0</td>
+                                                        <td className="px-2 py-1 border">0</td>
+                                                        <td className="px-2 py-1 border">Priya Singh</td>
+                                                        <td className="px-2 py-1 border">Amit Kumar</td>
+                                                        <td className="px-2 py-1 border">2023-12-01</td>
+                                                        <td className="px-2 py-1 border">Follow up</td>
+                                                        <td className="px-2 py-1 border">FALSE</td>
+                                                        <td className="px-2 py-1 border">2023-01-01</td>
                                                     </tr>
                                                 </tbody>
                                             </table>
@@ -2140,9 +2140,9 @@ const App = () => {
                                     </div>
 
                                     {/* Data Source Configuration */}
-                                    <div className="p-6 rounded-lg border border-gray-200 dark:border-gray-700 col-span-1 lg:col-span-2">
+                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2">
                                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
-                                            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">2. Select Data Source & Sync Status</h3>
+                                            <h3 className="text-lg font-semibold text-label">2. Select Data Source & Sync Status</h3>
                                             <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-xs">
                                                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                                                 <span className="font-semibold">Last Synced:</span>
@@ -2151,7 +2151,7 @@ const App = () => {
                                         </div>
                                         
                                         <div className="flex flex-col sm:flex-row gap-6 mb-6">
-                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'excel' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
+                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'excel' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-separator'}`}>
                                                 <div className="flex items-center mb-2">
                                                     <input 
                                                         type="radio" 
@@ -2159,16 +2159,16 @@ const App = () => {
                                                         value="excel" 
                                                         checked={dataSourceMode === 'excel'} 
                                                         onChange={() => setDataSourceMode('excel')}
-                                                        className="h-4 w-4 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                                        className="h-4 w-4 text-accent focus:ring-green-500"
                                                     />
-                                                    <span className="ml-3 font-semibold text-gray-900 dark:text-white">Excel Upload (Offline)</span>
+                                                    <span className="ml-3 font-semibold text-label">Excel Upload (Offline)</span>
                                                 </div>
-                                                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                                                <p className="text-sm text-label-3 ml-7">
                                                     Best for single users. Data is stored in your browser. No internet needed after load.
                                                 </p>
                                             </label>
 
-                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'google' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-gray-200 dark:border-gray-700'}`}>
+                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'google' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-separator'}`}>
                                                 <div className="flex items-center mb-2">
                                                     <input 
                                                         type="radio" 
@@ -2176,22 +2176,22 @@ const App = () => {
                                                         value="google" 
                                                         checked={dataSourceMode === 'google'} 
                                                         onChange={() => setDataSourceMode('google')}
-                                                        className="h-4 w-4 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                                        className="h-4 w-4 text-accent focus:ring-green-500"
                                                     />
-                                                    <span className="ml-3 font-semibold text-gray-900 dark:text-white">Live Google Sheet (Team)</span>
+                                                    <span className="ml-3 font-semibold text-label">Live Google Sheet (Team)</span>
                                                 </div>
-                                                <p className="text-sm text-gray-500 dark:text-gray-400 ml-7">
+                                                <p className="text-sm text-label-3 ml-7">
                                                     Best for teams. Multiple users see the same data. Requires sheet to be public/shared.
                                                 </p>
                                             </label>
                                         </div>
 
                                         {dataSourceMode === 'excel' ? (
-                                            <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-10 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 text-center">
+                                            <div className="flex flex-col items-center justify-center border-2 border-dashed border-separator-strong rounded-lg p-10 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                                <p className="text-sm text-label-3 mb-4 text-center">
                                                     Upload your .xlsx file here. This will replace the current dataset.
                                                 </p>
-                                                <label htmlFor="file-upload" className="cursor-pointer flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 shadow-md">
+                                                <label htmlFor="file-upload" className="cursor-pointer flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg transition-colors bg-accent text-on-accent hover:bg-accent-press disabled:bg-gray-400 shadow-md">
                                                      <UploadIcon />
                                                      <span className="ml-2">{isSyncing ? 'Processing...' : 'Select Excel File'}</span>
                                                 </label>
@@ -2202,18 +2202,18 @@ const App = () => {
                                                 {/* Top Action: Dual Sync */}
                                                 <div className="p-4 bg-card-2 dark:from-emerald-950/40 dark:to-blue-950/40 border border-emerald-300 dark:border-emerald-700 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3">
                                                     <div>
-                                                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                                        <h4 className="text-sm font-extrabold text-label flex items-center gap-1.5">
                                                             <span>One-Click Dual Sync</span>
                                                             <span className="px-2 py-0.5 text-[11.5px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded font-bold">Recommended</span>
                                                         </h4>
-                                                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                                                        <p className="text-xs text-gray-600 mt-0.5">
                                                             Synchronizes both Outstanding Invoices and Customer Master details (GSTIN, credit terms, contacts) in a single run.
                                                         </p>
                                                     </div>
                                                     <button
                                                         onClick={handleCombinedSync}
                                                         disabled={isSyncing}
-                                                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl disabled:opacity-50 flex items-center gap-2 font-bold text-xs shadow-md transition-all whitespace-nowrap"
+                                                        className="px-5 py-2.5 bg-accent hover:bg-accent-press text-on-accent rounded-xl disabled:opacity-50 flex items-center gap-2 font-bold text-xs shadow-md transition-all whitespace-nowrap"
                                                     >
                                                         <SyncIcon />
                                                         <span>{isSyncing ? 'Syncing All Sheets...' : 'Sync Both Sheets Now'}</span>
@@ -2221,9 +2221,9 @@ const App = () => {
                                                 </div>
 
                                                 {/* Sheet 1: Outstanding Invoices */}
-                                                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">
+                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800">
                                                             1. Outstanding Invoices & Ageing Sheet
                                                         </label>
                                                         <span className="text-[12.5px] text-gray-500">Live transaction balances</span>
@@ -2234,7 +2234,7 @@ const App = () => {
                                                             value={googleSheetUrl}
                                                             onChange={(e) => setGoogleSheetUrl(e.target.value)}
                                                             placeholder="https://docs.google.com/spreadsheets/d/..."
-                                                            className="flex-1 p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700 text-xs font-mono"
+                                                            className="flex-1 p-2 border rounded-lg text-xs font-mono"
                                                         />
                                                         <button 
                                                             onClick={() => handleGoogleSync()}
@@ -2260,9 +2260,9 @@ const App = () => {
                                                 </div>
 
                                                 {/* Sheet 2: Customer Master Directory */}
-                                                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800 dark:text-gray-200">
+                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800">
                                                             2. Customer Master Directory & Credit Terms Sheet
                                                         </label>
                                                         <span className="text-[12.5px] text-gray-500">GSTIN, addresses, multiple contacts, limits</span>
@@ -2273,12 +2273,12 @@ const App = () => {
                                                             value={customerMasterSheetUrl}
                                                             onChange={(e) => setCustomerMasterSheetUrl(e.target.value)}
                                                             placeholder="https://docs.google.com/spreadsheets/d/..."
-                                                            className="flex-1 p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-700 text-xs font-mono"
+                                                            className="flex-1 p-2 border rounded-lg text-xs font-mono"
                                                         />
                                                         <button 
                                                             onClick={() => handleCustomerMasterSync()}
                                                             disabled={isSyncing}
-                                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
+                                                            className="px-4 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
                                                         >
                                                             <SyncIcon /> 
                                                             <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Master'}</span>
@@ -2300,18 +2300,18 @@ const App = () => {
                                             </div>
                                         )}
                                         
-                                        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                                            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Troubleshooting & Fresh Start</h4>
+                                        <div className="mt-8 pt-6 border-t border-separator">
+                                            <h4 className="text-sm font-semibold text-label-2 mb-3">Troubleshooting & Fresh Start</h4>
                                             <div className="flex flex-wrap items-center gap-3">
                                                 <button 
                                                     onClick={() => handleResetAllDataAndUsers(false)}
-                                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5"
+                                                    className="px-4 py-2 bg-dang-bg text-dang hover:brightness-95 rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5"
                                                     title="Clear follow-ups and cheques for everyone and re-import the live sheet. Logins are not touched."
                                                 >
                                                     <TrashIcon /> <span>Reset All Data (Fresh Start)</span>
                                                 </button>
                                             </div>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                            <p className="text-xs text-label-3 mt-2">
                                                 This wipes notes, forecasts and PDC cheques for the whole team and
                                                 re-imports the sheet. Team logins are managed in Team &amp; access.
                                             </p>
@@ -2320,10 +2320,10 @@ const App = () => {
                                 </div>
                                 {syncMessage && (
                                     <div className={`mt-6 p-3 rounded-lg text-sm font-medium ${
-                                        syncMessage.type === 'success' 
-                                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
-                                            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                                    }`}>
+ syncMessage.type === 'success' 
+ ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
+ : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+ }`}>
                                         {syncMessage.text}
                                     </div>
                                 )}
