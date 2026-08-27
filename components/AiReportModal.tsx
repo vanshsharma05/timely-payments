@@ -290,6 +290,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                             CRM Account Owner:
                                         </label>
                                         <select
+                                            aria-label="Report scope"
                                             value={targetCrm}
                                             onChange={(e) => setTargetCrm(e.target.value)}
                                             className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-emerald-500 focus:outline-none"

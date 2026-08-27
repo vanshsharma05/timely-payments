@@ -1952,7 +1952,7 @@ const App = () => {
                                                             <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
                                                                 <td className="px-4 py-3 whitespace-nowrap">
                                                                     <div className="font-bold text-label">{user.name}</div>
-                                                                    <div className="text-xs text-gray-400 font-mono">ID: {user.id}</div>
+                                                                    <div className="text-xs text-label-3 font-mono">ID: {user.id}</div>
                                                                     {user.email && (
                                                                         <div className="text-xs text-label-3">{user.email}</div>
                                                                     )}
@@ -2074,7 +2074,7 @@ const App = () => {
                                         <tbody className="bg-card divide-y divide-separator">
                                             {templates.map(template => (
                                                 <tr key={template.id}>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{template.name}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-label">{template.name}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                         <div className="flex justify-end items-center space-x-2">
                                                             <button onClick={() => handleOpenTemplateModal(template)} className="w-9 h-9 grid place-items-center rounded-full text-accent hover:text-accent hover:bg-hover" aria-label={`Edit template ${template.name}`}><EditIcon /></button>
@@ -2210,7 +2210,7 @@ const App = () => {
                                                             <span>One-Click Dual Sync</span>
                                                             <span className="px-2 py-0.5 text-[11.5px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded font-bold">Recommended</span>
                                                         </h4>
-                                                        <p className="text-xs text-gray-600 mt-0.5">
+                                                        <p className="text-xs text-label-2 mt-0.5">
                                                             Synchronizes both Outstanding Invoices and Customer Master details (GSTIN, credit terms, contacts) in a single run.
                                                         </p>
                                                     </div>
@@ -2227,10 +2227,10 @@ const App = () => {
                                                 {/* Sheet 1: Outstanding Invoices */}
                                                 <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800">
+                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
                                                             1. Outstanding Invoices & Ageing Sheet
                                                         </label>
-                                                        <span className="text-[12.5px] text-gray-500">Live transaction balances</span>
+                                                        <span className="text-[12.5px] text-label-3">Live transaction balances</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2249,14 +2249,14 @@ const App = () => {
                                                             <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Invoices'}</span>
                                                         </button>
                                                     </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-gray-500">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
                                                         <span>ID, Company, Contact, Total Due, Ageing columns</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => {
                                                                 setGoogleSheetUrl(OFFICIAL_TRANSACTIONS_SHEET_URL);
                                                             }}
-                                                            className="inline-flex items-center min-h-[28px] text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline"
+                                                            className="inline-flex items-center min-h-[28px] py-1 text-accent hover:opacity-80 font-semibold underline"
                                                         >
                                                             Restore Default Invoices URL
                                                         </button>
@@ -2266,10 +2266,10 @@ const App = () => {
                                                 {/* Sheet 2: Customer Master Directory */}
                                                 <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-gray-800">
+                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
                                                             2. Customer Master Directory & Credit Terms Sheet
                                                         </label>
-                                                        <span className="text-[12.5px] text-gray-500">GSTIN, addresses, multiple contacts, limits</span>
+                                                        <span className="text-[12.5px] text-label-3">GSTIN, addresses, multiple contacts, limits</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2288,14 +2288,14 @@ const App = () => {
                                                             <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Master'}</span>
                                                         </button>
                                                     </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-gray-500">
+                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
                                                         <span>Company Name, Contact Person, Designation, Mobile, City, State, GSTIN, Credit Limit</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => {
                                                                 setCustomerMasterSheetUrl(OFFICIAL_CUSTOMER_MASTER_URL);
                                                             }}
-                                                            className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-semibold underline"
+                                                            className="inline-flex items-center min-h-[28px] py-1 text-accent hover:opacity-80 font-semibold underline"
                                                         >
                                                             Restore Default Master URL
                                                         </button>

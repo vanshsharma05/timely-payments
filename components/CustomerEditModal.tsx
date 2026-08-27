@@ -244,7 +244,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                     <button 
                         type="button" 
                         onClick={onClose} 
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="w-10 h-10 grid place-items-center flex-none text-label-3 hover:text-label text-2xl font-bold rounded-full hover:bg-hover"
                      aria-label="Close">
                         &times;
                     </button>

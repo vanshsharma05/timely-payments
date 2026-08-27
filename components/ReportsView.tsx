@@ -288,6 +288,9 @@ export const ReportsView = ({
     }, [crmScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
 
     // Export current report view to Excel with full ageing breakdown
+    /** True when a stored contact number is worth offering as a dial link. */
+    const dialable = (raw?: string) => (raw || '').replace(/D/g, '').length >= 7;
+
     const exportToExcel = () => {
         if (!XLSX) {
             alert('Excel utility is loading, please try again in a moment.');
@@ -346,6 +349,7 @@ export const ReportsView = ({
                             <span>Select CRM Owner:</span>
                         </label>
                         <select
+                            aria-label="Filter by CRM owner"
                             id="crmSelect"
                             value={selectedCrm}
                             onChange={(e) => {
@@ -428,7 +432,7 @@ export const ReportsView = ({
                     }`}
                 >
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1">
+                        <span className="text-xs font-extrabold uppercase tracking-wider text-dang flex items-center gap-1">
                             <span>&gt;90 Days Overdue</span>
                         </span>
                         <div className="p-2 bg-red-100 dark:bg-red-900/60 rounded-lg text-red-600 dark:text-red-300">
@@ -436,14 +440,14 @@ export const ReportsView = ({
                         </div>
                     </div>
                     <div className="mt-2.5">
-                        <div className="text-3xl font-black text-red-600 dark:text-red-400">
+                        <div className="text-3xl font-black text-dang">
                             {boxMetrics.over90Count} <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">customers</span>
                         </div>
                         <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
-                            {formatCurrency(boxMetrics.over90Amount)} <span className="font-normal text-gray-400">(91-135d + &gt;135d)</span>
+                            {formatCurrency(boxMetrics.over90Amount)} <span className="font-normal text-label-3">(91-135d + &gt;135d)</span>
                         </p>
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-red-600 dark:text-red-400">
+                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-dang">
                         <span>{categoryFilter === 'over90' ? '✓ Showing >90d Customers' : 'Instant Report of >90d'}</span>
                         <span>→</span>
                     </div>
@@ -462,22 +466,22 @@ export const ReportsView = ({
                     }`}
                 >
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                        <span className="text-xs font-extrabold uppercase tracking-wider text-dang flex items-center gap-1">
                             <span>&gt;135 Days Critical</span>
                         </span>
-                        <div className="p-2 bg-rose-100 dark:bg-rose-900/60 rounded-lg text-rose-700 dark:text-rose-300">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-900/60 rounded-lg text-dang">
                             <ExclamationTriangleIcon className="w-5 h-5" />
                         </div>
                     </div>
                     <div className="mt-2.5">
-                        <div className="text-3xl font-black text-rose-700 dark:text-rose-400">
+                        <div className="text-3xl font-black text-dang">
                             {boxMetrics.over135Count} <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">customers</span>
                         </div>
                         <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
-                            {formatCurrency(boxMetrics.over135Amount)} <span className="font-normal text-rose-500">Critical late</span>
+                            {formatCurrency(boxMetrics.over135Amount)} <span className="font-normal text-dang">Critical late</span>
                         </p>
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-rose-700 dark:text-rose-400">
+                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-dang">
                         <span>{categoryFilter === 'over135' ? '✓ Showing >135d Customers' : 'Instant Report of >135d'}</span>
                         <span>→</span>
                     </div>
@@ -496,8 +500,8 @@ export const ReportsView = ({
                     }`}
                 >
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Today Follow up</span>
-                        <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-600 dark:text-blue-400">
+                        <span className="text-xs font-bold uppercase tracking-wider text-accent">Today Follow up</span>
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-accent">
                             <ClockIcon />
                         </div>
                     </div>
@@ -509,7 +513,7 @@ export const ReportsView = ({
                             {formatCurrency(boxMetrics.todayAmount)}
                         </p>
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
+                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-accent">
                         <span>{categoryFilter === 'today' ? '✓ Showing Today' : 'Click to view report'}</span>
                         <span>→</span>
                     </div>
@@ -528,8 +532,8 @@ export const ReportsView = ({
                     }`}
                 >
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">No Follow-up Set</span>
-                        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-600 dark:text-amber-400">
+                        <span className="text-xs font-bold uppercase tracking-wider text-warn">No Follow-up Set</span>
+                        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-warn">
                             <ExclamationTriangleIcon className="w-5 h-5" />
                         </div>
                     </div>
@@ -541,7 +545,7 @@ export const ReportsView = ({
                             {formatCurrency(boxMetrics.noFollowUpAmount)}
                         </p>
                     </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-warn">
                         <span>{categoryFilter === 'no_follow_up' ? '✓ Showing No Follow-up' : 'Click to view report'}</span>
                         <span>→</span>
                     </div>
@@ -554,7 +558,7 @@ export const ReportsView = ({
                     <div>
                         <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
                             <span>Portfolio Overview & Ageing Summary:</span>
-                            <span className="text-green-600 dark:text-green-400">{selectedCrm === 'ALL' ? 'Company Total' : getUserDisplayName(selectedCrm)}</span>
+                            <span className="text-pos">{selectedCrm === 'ALL' ? 'Company Total' : getUserDisplayName(selectedCrm)}</span>
                         </h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             Live bucket monitoring for 1-45d, 46-90d, 91-135d, and critical &gt;135d.
@@ -581,27 +585,27 @@ export const ReportsView = ({
                     <div className="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg">
                         <p className="text-[12.5px] text-gray-500 dark:text-gray-400 font-medium uppercase">Total Accounts</p>
                         <p className="text-base font-extrabold text-gray-900 dark:text-white mt-0.5">{boxMetrics.totalCount}</p>
-                        <p className="text-[11.5px] text-gray-400">{formatCurrency(boxMetrics.totalAmount)}</p>
+                        <p className="text-[11.5px] text-label-3">{formatCurrency(boxMetrics.totalAmount)}</p>
                     </div>
                     <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-lg">
                         <p className="text-[12.5px] text-emerald-800 dark:text-emerald-300 font-medium uppercase">1-45 Days (Current)</p>
-                        <p className="text-base font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5">{formatCurrency(boxMetrics.ageing1_45Amount)}</p>
-                        <p className="text-[11.5px] text-emerald-600 dark:text-emerald-400">{boxMetrics.ageing1_45Count} accounts</p>
+                        <p className="text-base font-extrabold text-pos mt-0.5">{formatCurrency(boxMetrics.ageing1_45Amount)}</p>
+                        <p className="text-[11.5px] text-pos">{boxMetrics.ageing1_45Count} accounts</p>
                     </div>
                     <div className="p-2.5 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 rounded-lg">
                         <p className="text-[12.5px] text-amber-800 dark:text-amber-300 font-medium uppercase">46-90 Days</p>
-                        <p className="text-base font-extrabold text-amber-700 dark:text-amber-400 mt-0.5">{formatCurrency(boxMetrics.ageing46_90Amount)}</p>
-                        <p className="text-[11.5px] text-amber-600 dark:text-amber-400">{boxMetrics.ageing46_90Count} accounts</p>
+                        <p className="text-base font-extrabold text-warn mt-0.5">{formatCurrency(boxMetrics.ageing46_90Amount)}</p>
+                        <p className="text-[11.5px] text-warn">{boxMetrics.ageing46_90Count} accounts</p>
                     </div>
                     <div className="p-2.5 bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 rounded-lg">
                         <p className="text-[12.5px] text-orange-900 dark:text-orange-300 font-bold uppercase">91-135 Days</p>
-                        <p className="text-base font-extrabold text-orange-700 dark:text-orange-400 mt-0.5">{formatCurrency(boxMetrics.ageing91_135Amount)}</p>
-                        <p className="text-[11.5px] text-orange-600 dark:text-orange-400">{boxMetrics.ageing91_135Count} accounts</p>
+                        <p className="text-base font-extrabold text-age-3-ink mt-0.5">{formatCurrency(boxMetrics.ageing91_135Amount)}</p>
+                        <p className="text-[11.5px] text-age-3-ink">{boxMetrics.ageing91_135Count} accounts</p>
                     </div>
                     <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-lg">
                         <p className="text-[12.5px] text-rose-900 dark:text-rose-200 font-extrabold uppercase">&gt;135 Days Critical</p>
-                        <p className="text-base font-black text-rose-700 dark:text-rose-400 mt-0.5">{formatCurrency(boxMetrics.over135Amount)}</p>
-                        <p className="text-[11.5px] text-rose-600 dark:text-rose-300 font-semibold">{boxMetrics.over135Count} accounts</p>
+                        <p className="text-base font-black text-dang mt-0.5">{formatCurrency(boxMetrics.over135Amount)}</p>
+                        <p className="text-[11.5px] text-dang font-semibold">{boxMetrics.over135Count} accounts</p>
                     </div>
                     <div className="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-lg">
                         <p className="text-[12.5px] text-red-900 dark:text-red-200 font-extrabold uppercase">Total &gt;90d Overdue</p>
@@ -643,7 +647,7 @@ export const ReportsView = ({
                                 className={`h-8 px-3 rounded-full transition-colors font-semibold ${
                                     categoryFilter === 'over90'
                                         ? 'bg-red-600 text-white ring-2 ring-red-400'
-                                        : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 border border-red-200 dark:border-red-800'
+                                        : 'bg-red-50 dark:bg-red-950/40 text-dang hover:bg-red-100 border border-red-200 dark:border-red-800'
                                 }`}
                             >
                                 &gt;90d Report ({boxMetrics.over90Count})
@@ -653,7 +657,7 @@ export const ReportsView = ({
                                 className={`h-8 px-3 rounded-full transition-colors font-semibold ${
                                     categoryFilter === 'over135'
                                         ? 'bg-rose-700 text-white ring-2 ring-rose-400'
-                                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-800'
+                                        : 'bg-rose-50 dark:bg-rose-950/40 text-dang hover:bg-rose-100 border border-rose-200 dark:border-rose-800'
                                 }`}
                             >
                                 &gt;135d Report ({boxMetrics.over135Count})
@@ -683,7 +687,7 @@ export const ReportsView = ({
                                 className={`h-8 px-3 rounded-full transition-colors ${
                                     categoryFilter === 'overdue'
                                         ? 'bg-red-600 text-white font-bold'
-                                        : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100'
+                                        : 'bg-red-50 dark:bg-red-950/40 text-dang hover:bg-red-100'
                                 }`}
                             >
                                 Overdue ({boxMetrics.overdueCount})
@@ -722,31 +726,31 @@ export const ReportsView = ({
                         </button>
                         <button
                             onClick={() => setAgeingFilter('1-45')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '1-45' ? 'bg-emerald-600 text-white' : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'}`}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '1-45' ? 'bg-emerald-600 text-white' : 'text-pos hover:bg-emerald-100 dark:hover:bg-emerald-950/40'}`}
                         >
                             1-45d ({boxMetrics.ageing1_45Count})
                         </button>
                         <button
                             onClick={() => setAgeingFilter('46-90')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '46-90' ? 'bg-amber-600 text-white' : 'text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/40'}`}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '46-90' ? 'bg-amber-600 text-white' : 'text-warn hover:bg-amber-100 dark:hover:bg-amber-950/40'}`}
                         >
                             46-90d ({boxMetrics.ageing46_90Count})
                         </button>
                         <button
                             onClick={() => setAgeingFilter('91-135')}
-                            className={`px-2 py-0.5 rounded text-[12.5px] font-bold transition-colors ${ageingFilter === '91-135' ? 'bg-orange-600 text-white' : 'text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-950/40'}`}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === '91-135' ? 'bg-orange-600 text-white' : 'text-age-3-ink hover:bg-orange-100 dark:hover:bg-orange-950/40'}`}
                         >
                             91-135d ({boxMetrics.ageing91_135Count})
                         </button>
                         <button
                             onClick={() => setAgeingFilter('over135')}
-                            className={`px-2 py-0.5 rounded text-[12.5px] font-bold transition-colors ${ageingFilter === 'over135' ? 'bg-rose-700 text-white' : 'text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/40'}`}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === 'over135' ? 'bg-rose-700 text-white' : 'text-dang hover:bg-rose-100 dark:hover:bg-rose-950/40'}`}
                         >
                             &gt;135d ({boxMetrics.over135Count})
                         </button>
                         <button
                             onClick={() => setAgeingFilter('over90')}
-                            className={`px-2 py-0.5 rounded text-[12.5px] font-bold transition-colors ${ageingFilter === 'over90' ? 'bg-red-600 text-white' : 'text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/40'}`}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === 'over90' ? 'bg-red-600 text-white' : 'text-dang hover:bg-red-100 dark:hover:bg-red-950/40'}`}
                         >
                             &gt;90d Total ({boxMetrics.over90Count})
                         </button>
@@ -763,7 +767,7 @@ export const ReportsView = ({
                                 
                                 {/* The four buckets, as one column - same as the customer ledger */}
                                 <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
-                                <th className="px-2.5 py-2.5 text-right text-red-600 dark:text-red-400">
+                                <th className="px-2.5 py-2.5 text-right text-dang">
                                     &gt;90d Total
                                 </th>
 
@@ -843,11 +847,13 @@ export const ReportsView = ({
                                                     )}
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
-                                                    {item.contactNumber && (
-                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] hover:text-green-600 dark:text-green-400 font-medium">
+                                                    {item.contactNumber && (dialable(item.contactNumber) ? (
+                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] px-1 -mx-1 hover:text-pos font-medium">
                                                             {item.contactNumber}
                                                         </a>
-                                                    )}
+                                                    ) : (
+                                                        <span>{item.contactNumber}</span>
+                                                    ))}
                                                     {item.contactPerson && (
                                                         <span className="truncate max-w-[110px]">({item.contactPerson})</span>
                                                     )}
@@ -899,7 +905,7 @@ export const ReportsView = ({
 
                                             {/* >90d Total Column */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <span className={`text-xs ${over90Total > 0 ? 'text-red-600 dark:text-red-400 font-extrabold' : 'text-gray-400 dark:text-gray-600'}`}>
+                                                <span className={`text-xs ${over90Total > 0 ? 'text-dang font-extrabold' : 'text-gray-400 dark:text-gray-600'}`}>
                                                     {over90Total > 0 ? formatINR(over90Total) : '—'}
                                                 </span>
                                             </td>
@@ -935,12 +941,12 @@ export const ReportsView = ({
                                                             {formatDate(item.followUpDate)}
                                                         </span>
                                                     ) : (
-                                                        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium italic">
+                                                        <span className="text-xs text-warn font-medium italic">
                                                             Not Set
                                                         </span>
                                                     )}
                                                     {item.forecastAmount !== undefined && item.forecastAmount > 0 && (
-                                                        <span className="inline-flex items-center gap-0.5 text-[11.5px] font-bold text-emerald-700 dark:text-emerald-400">
+                                                        <span className="inline-flex items-center gap-0.5 text-[11.5px] font-bold text-pos">
                                                             {formatCurrency(item.forecastAmount)}
                                                         </span>
                                                     )}

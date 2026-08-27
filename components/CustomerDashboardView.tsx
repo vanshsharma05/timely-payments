@@ -133,6 +133,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Math.abs(amount));
     };
 
+    /** True when a stored contact number is worth offering as a dial link. */
+    const dialable = (raw?: string) => (raw || '').replace(/\D/g, '').length >= 7;
+
     const formatDate = (date?: Date | string) => {
         if (!date) return '';
         return new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
@@ -362,7 +365,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         className={`px-3.5 py-1.5 text-xs font-extrabold rounded-lg transition-all shadow-sm flex items-center gap-1.5 ${
                             canAddCustomer
                                 ? 'bg-accent hover:bg-accent-press text-on-accent cursor-pointer'
-                                : 'bg-card-3 text-label-3 cursor-not-allowed'
+                                : 'bg-card-3 text-label-2 cursor-not-allowed'
                         }`}
                     >
                         <span>Add Customer</span>
@@ -582,7 +585,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all flex items-center gap-1 ${
                                 rankFilter === 'Bad'
                                     ? 'bg-rose-600 text-white ring-1 ring-rose-400'
-                                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                    : 'bg-rose-50 dark:bg-rose-950/40 text-dang border border-rose-200 dark:border-rose-800'
                             }`}
                         >
                             <span>Bad Payment ({metrics.badCount})</span>
@@ -605,7 +608,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
                                 ageingFilter === 'over90'
                                     ? 'bg-red-600 text-white'
-                                    : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                                    : 'bg-red-50 dark:bg-red-950/40 text-dang border border-red-200 dark:border-red-800'
                             }`}
                         >
                             &gt;90d
@@ -635,6 +638,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     {/* Balance Type & Origin Toggles */}
                     <div className="flex items-center gap-1.5">
                         <select
+                            aria-label="Filter by payment rank"
                             value={balanceTypeFilter}
                             onChange={e => setBalanceTypeFilter(e.target.value as any)}
                             className="text-[12.5px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-200"
@@ -645,6 +649,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </select>
 
                         <select
+                            aria-label="Filter by CRM owner"
                             value={originFilter}
                             onChange={e => setOriginFilter(e.target.value as any)}
                             className="text-[12.5px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-200"
@@ -665,7 +670,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     setBalanceTypeFilter('ALL');
                                     setOriginFilter('ALL');
                                 }}
-                                className="text-[12.5px] text-red-600 dark:text-red-400 font-bold hover:underline px-1"
+                                className="text-[12.5px] text-dang font-bold hover:underline px-1"
                             >
                                 Reset
                             </button>
@@ -683,6 +688,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                         <select
+                            aria-label="Filter by follow-up status"
                             value={bulkCrm}
                             onChange={e => setBulkCrm(e.target.value)}
                             className="px-2 py-1 text-xs rounded-lg border border-emerald-400 bg-white dark:bg-gray-800 font-bold text-gray-900 dark:text-white"
@@ -750,7 +756,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     type="checkbox"
                                                     checked={selectedCustomerIds.length === filteredData.length && filteredData.length > 0}
                                                     onChange={e => handleSelectAll(e.target.checked)}
-                                                    className="w-4 h-4 rounded text-green-600 dark:text-green-400 focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
+                                                    className="w-4 h-4 rounded text-pos focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
                                                     title="Select all customers on view"
                                                     aria-label="Select all customers in view"
                                                 />
@@ -794,7 +800,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                             checked={isChecked}
                                                             onChange={() => handleToggleRow(item.id)}
                                                             aria-label={`Select ${item.company}`}
-                                                            className="w-4 h-4 rounded text-green-600 dark:text-green-400 focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
+                                                            className="w-4 h-4 rounded text-pos focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
                                                         />
                                                     </label>
                                                 </td>
@@ -856,11 +862,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                             {item.contactPerson} {item.contactPost ? `(${item.contactPost})` : ''}
                                                         </span>
                                                     )}
-                                                    {item.contactNumber && (
-                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap">
+                                                    {item.contactNumber && (dialable(item.contactNumber) ? (
+                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap">
                                                             {item.contactNumber}
                                                         </a>
-                                                    )}
+                                                    ) : (
+                                                        <span className="text-label-3 whitespace-nowrap">{item.contactNumber}</span>
+                                                    ))}
                                                     {item.additionalContacts && item.additionalContacts.length > 0 && (
                                                         <span 
                                                             className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 text-[11px] font-bold cursor-help whitespace-nowrap"
@@ -929,7 +937,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             {/* Due >45 */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10">
                                                 <span
-                                                    className={`num text-[12.5px] ${due45 > 0 ? 'text-rose-700 dark:text-rose-400 font-extrabold' : 'text-gray-500 dark:text-gray-400'}`}
+                                                    className={`num text-[12.5px] ${due45 > 0 ? 'text-dang font-extrabold' : 'text-label-3'}`}
                                                     title={formatCompact(due45)}
                                                 >
                                                     {formatINR(due45)}
@@ -941,9 +949,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 <div className="flex flex-col items-center justify-center gap-0.5">
                                                     <StatusBadge status={item.status} />
                                                     <span className={`text-[11.5px] font-bold ${
-                                                        item.status === FollowUpStatus.Overdue ? 'text-red-600 dark:text-red-400' :
-                                                        item.status === FollowUpStatus.Today ? 'text-blue-600 dark:text-blue-400 font-extrabold' :
-                                                        item.status === FollowUpStatus.Upcoming ? 'text-emerald-600 dark:text-emerald-400 font-semibold' :
+                                                        item.status === FollowUpStatus.Overdue ? 'text-dang' :
+                                                        item.status === FollowUpStatus.Today ? 'text-accent font-extrabold' :
+                                                        item.status === FollowUpStatus.Upcoming ? 'text-pos font-semibold' :
                                                         'text-gray-600 dark:text-gray-400'
                                                     }`}>
                                                         {item.followUpDate ? formatDate(item.followUpDate) : 'No date'}
@@ -988,7 +996,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     {/* WhatsApp Reminder */}
                                                     <button
                                                         onClick={() => onWhatsApp(item)}
-                                                        className="w-8 h-8 grid place-items-center text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-full transition-colors"
+                                                        className="w-8 h-8 grid place-items-center text-pos hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-full transition-colors"
                                                         title="Send WhatsApp follow-up"
                                                         aria-label={`Send WhatsApp follow-up to ${item.company}`}
                                                     >
@@ -1033,7 +1041,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                                     onDeleteCustomer(item.id);
                                                                 }
                                                             }}
-                                                            className="w-8 h-8 grid place-items-center text-red-600 dark:text-red-400 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-full transition-colors"
+                                                            className="w-8 h-8 grid place-items-center text-dang hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-full transition-colors"
                                                             title="Delete customer"
                                                             aria-label={`Delete ${item.company}`}
                                                         >
@@ -1096,7 +1104,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 defaultClass="font-extrabold text-sm text-gray-900 dark:text-white"
                                             />
                                             {over90 > 0 && (
-                                                <div className="text-[11.5px] font-bold text-red-600 dark:text-red-400 mt-0.5">
+                                                <div className="text-[11.5px] font-bold text-dang mt-0.5">
                                                     &gt;90d: {formatCurrency(over90)}
                                                 </div>
                                             )}
@@ -1111,12 +1119,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                         </div>
                                         {item.contactNumber && (
                                             <div className="flex items-center justify-between text-[12.5px]">
-                                                <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
+                                                <a href={dialable(item.contactNumber) ? `tel:${item.contactNumber}` : undefined} className="inline-flex items-center min-h-[28px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
                                                     {item.contactNumber}
                                                 </a>
                                                 <button
                                                     onClick={() => onWhatsApp(item)}
-                                                    className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 text-xs font-semibold flex items-center gap-1"
+                                                    className="text-pos hover:text-emerald-700 text-xs font-semibold flex items-center gap-1"
                                                 >
                                                     <WhatsAppIcon className="w-3.5 h-3.5" />
                                                     <span>WhatsApp</span>

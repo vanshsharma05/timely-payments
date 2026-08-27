@@ -307,7 +307,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             {/* Header with Title & Action */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
                 <div className="flex items-center space-x-3">
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-pos rounded-xl">
                         <ChequeIcon className="w-7 h-7" />
                     </div>
                     <div>
@@ -361,10 +361,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'today' ? 'text-amber-100' : 'text-amber-600 dark:text-amber-400'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'today' ? 'text-amber-100' : 'text-warn'}`}>
                             Today's Bank Presentation
                         </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === 'today' ? 'bg-white/20' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'}`}>
+                        <div className={`p-2 rounded-xl ${statusFilter === 'today' ? 'bg-white/20' : 'bg-amber-100 dark:bg-amber-900/40 text-warn'}`}>
                             <ClockIcon />
                         </div>
                     </div>
@@ -372,11 +372,11 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {metrics.todayCount}
                         <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === 'today' ? 'text-white' : 'text-amber-600 dark:text-amber-400'}`}>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === 'today' ? 'text-white' : 'text-warn'}`}>
                         ₹{metrics.todayAmount.toLocaleString('en-IN')}
                     </div>
                     {metrics.todayCount > 0 && (
-                        <div className={`text-xs mt-2 font-medium flex items-center gap-1 ${statusFilter === 'today' ? 'text-amber-100' : 'text-amber-600 dark:text-amber-400'}`}>
+                        <div className={`text-xs mt-2 font-medium flex items-center gap-1 ${statusFilter === 'today' ? 'text-amber-100' : 'text-warn'}`}>
                             <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
                             <span>Ready to present in bank today</span>
                         </div>
@@ -396,10 +396,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Pending ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Pending ? 'text-blue-100' : 'text-accent'}`}>
                             Upcoming PDCs
                         </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Pending ? 'bg-white/20' : 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'}`}>
+                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Pending ? 'bg-white/20' : 'bg-blue-100 dark:bg-blue-900/40 text-accent'}`}>
                             <ChequeIcon />
                         </div>
                     </div>
@@ -407,7 +407,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {metrics.pendingCount}
                         <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Pending ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`}>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Pending ? 'text-white' : 'text-accent'}`}>
                         ₹{metrics.pendingAmount.toLocaleString('en-IN')}
                     </div>
                     <div className="text-xs opacity-70 mt-2">Future dated cheques in hand</div>
@@ -426,10 +426,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Hold ? 'text-orange-100' : 'text-orange-600 dark:text-orange-400'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Hold ? 'text-orange-100' : 'text-age-3-ink'}`}>
                             Cheques on Hold
                         </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Hold ? 'bg-white/20' : 'bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400'}`}>
+                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Hold ? 'bg-white/20' : 'bg-orange-100 dark:bg-orange-900/40 text-age-3-ink'}`}>
                             <ExclamationTriangleIcon />
                         </div>
                     </div>
@@ -437,7 +437,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {metrics.holdCount}
                         <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Hold ? 'text-white' : 'text-orange-600 dark:text-orange-400'}`}>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Hold ? 'text-white' : 'text-age-3-ink'}`}>
                         ₹{metrics.holdAmount.toLocaleString('en-IN')}
                     </div>
                     <div className="text-xs opacity-70 mt-2">Customer requested hold</div>
@@ -456,10 +456,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Cleared ? 'text-emerald-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Cleared ? 'text-emerald-100' : 'text-pos'}`}>
                             Cleared in Bank
                         </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Cleared ? 'bg-white/20' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'}`}>
+                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Cleared ? 'bg-white/20' : 'bg-emerald-100 dark:bg-emerald-900/40 text-pos'}`}>
                             <CheckCircleIcon />
                         </div>
                     </div>
@@ -467,7 +467,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {metrics.clearedCount}
                         <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Cleared ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Cleared ? 'text-white' : 'text-pos'}`}>
                         ₹{metrics.clearedAmount.toLocaleString('en-IN')}
                     </div>
                     <div className="text-xs opacity-70 mt-2">Funds successfully realized</div>
@@ -486,10 +486,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Bounced ? 'text-rose-100' : 'text-rose-600 dark:text-rose-400'}`}>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Bounced ? 'text-rose-100' : 'text-dang'}`}>
                             Bounced / Returned
                         </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Bounced ? 'bg-white/20' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400'}`}>
+                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Bounced ? 'bg-white/20' : 'bg-rose-100 dark:bg-rose-900/40 text-dang'}`}>
                             <ExclamationTriangleIcon />
                         </div>
                     </div>
@@ -497,7 +497,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {metrics.bouncedCount}
                         <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Bounced ? 'text-white' : 'text-rose-600 dark:text-rose-400'}`}>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Bounced ? 'text-white' : 'text-dang'}`}>
                         ₹{metrics.bouncedAmount.toLocaleString('en-IN')}
                     </div>
                     <div className="text-xs opacity-70 mt-2">Requires urgent follow-up</div>
@@ -526,6 +526,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     {/* Customer Filter */}
                     <div>
                         <select
+                            aria-label="Filter by customer"
                             value={selectedCustomer}
                             onChange={(e) => setSelectedCustomer(e.target.value)}
                             className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
@@ -542,6 +543,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     {/* CRM Owner Filter */}
                     <div>
                         <select
+                            aria-label="Filter by CRM owner"
                             value={selectedCrm}
                             onChange={(e) => setSelectedCrm(e.target.value)}
                             className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
@@ -558,6 +560,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     {/* Bank Filter */}
                     <div>
                         <select
+                            aria-label="Filter by bank"
                             value={bankFilter}
                             onChange={(e) => setBankFilter(e.target.value)}
                             className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
@@ -605,6 +608,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         <select
                             value={dateRangeFilter}
                             onChange={(e) => setDateRangeFilter(e.target.value as any)}
+                            aria-label="Filter cheques"
                             className="px-3 py-1.5 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
                         >
                             <option value="all">Any Date</option>
@@ -617,7 +621,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         {hasActiveFilters && (
                             <button
                                 onClick={handleClearFilters}
-                                className="px-3 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:underline font-semibold"
+                                className="px-3 py-1.5 text-xs text-dang hover:underline font-semibold"
                             >
                                 Reset Filters
                             </button>
@@ -695,7 +699,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                             {onOpenCustomerFollowUp && (
                                                                 <button
                                                                     onClick={() => onOpenCustomerFollowUp(customer)}
-                                                                    className="text-[11.5px] text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
+                                                                    className="text-[11.5px] text-pos hover:underline font-semibold"
                                                                 >
                                                                     Follow-up →
                                                                 </button>
@@ -742,7 +746,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
                                             {/* Amount */}
                                             <td className="px-2.5 py-2.5 whitespace-nowrap text-right">
-                                                <span className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400">
+                                                <span className="text-sm sm:text-base font-extrabold text-pos">
                                                     ₹{cheque.amount.toLocaleString('en-IN')}
                                                 </span>
                                             </td>
@@ -834,7 +838,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                 {canManagePdc && (
                                                 <button
                                                     onClick={() => onEditPdc(cheque)}
-                                                    className="p-1 text-gray-400 hover:text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                                                    className="p-1 text-gray-400 hover:text-accent hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
                                                     title="Edit Cheque Details"
                                                 >
                                                     <EditIcon />
@@ -847,7 +851,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                             onDeletePdc(cheque.id);
                                                         }
                                                     }}
-                                                    className="p-1 text-gray-400 hover:text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
+                                                    className="p-1 text-gray-400 hover:text-dang hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
                                                     title="Delete Cheque"
                                                 >
                                                     <TrashIcon />

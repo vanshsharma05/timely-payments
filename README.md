@@ -83,6 +83,15 @@ that opens the app on a "choose a new password" screen. For that link to come
 back to the live site rather than `localhost`, set the Site URL and Redirect
 URLs in Supabase (see [DEPLOYMENT.md](DEPLOYMENT.md) step 8).
 
+> **Supabase's own mailer sends only 2 emails an hour, for the whole project.**
+> That is enough to test with and not enough for a team: the third person
+> asking for a reset link that hour gets nothing. Point Supabase at your own
+> SMTP server — **Authentication → Emails → SMTP Settings** — using the same
+> account as `SMTP_URL` below, and the limit lifts. Until then an Admin can
+> always set somebody's password directly in Team & access.
+
+Self sign-up is disabled: accounts exist only because an Admin created them.
+
 ## Checks
 
 ```bash

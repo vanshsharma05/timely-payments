@@ -491,6 +491,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                             <td className="px-4 py-2.5">
                                                 <div className="flex items-center gap-1.5">
                                                     <select
+                                                        aria-label="CRM owner for this account"
                                                         value={selectedCrm}
                                                         onChange={e => handleSingleCustomerCrmChange(row.id, e.target.value)}
                                                         className="px-2.5 py-1 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"

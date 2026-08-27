@@ -155,7 +155,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full border border-gray-100 dark:border-gray-700 overflow-hidden transform transition-all">
                 {/* Modal Header */}
-                <div className="px-6 py-5 bg-accent text-white flex items-center justify-between">
+                <div className="px-6 py-5 bg-accent text-on-accent flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                         <div className="p-2 bg-white/10 rounded-xl">
                             <ChequeIcon className="w-6 h-6 text-white" />

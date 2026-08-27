@@ -82,7 +82,10 @@ function readableAuthError(message: string): string {
     return 'This account still needs its email confirmed. Check your inbox for the confirmation link.';
   }
   if (m.includes('rate limit') || m.includes('too many')) {
-    return 'Too many attempts. Wait a minute and try again.';
+    // Supabase's built-in mailer allows very few messages an hour, so a second
+    // person asking for a reset link often lands here. Say what to do instead
+    // of leaving them pressing the button.
+    return 'Too many emails have gone out in the last hour. Wait a while, or ask an Admin to set your password in Team & access.';
   }
   if (m.includes('no profile exists')) {
     return 'Signed in, but this account has no profile yet. Ask an Admin to finish setting it up.';

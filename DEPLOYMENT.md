@@ -138,6 +138,22 @@ git push -u origin main
 Without this, "Forgot password" emails link back to `localhost` and the
 "choose a new password" screen never opens for the person who clicked.
 
+While you are there, **Authentication → Emails → SMTP Settings**: Supabase's
+built-in mailer is capped at 2 messages an hour for the whole project, which
+runs out the moment two people forget their password on the same morning. Point
+it at your own SMTP account and that stops being a problem.
+
+## 9. Turn on the daily reminder
+
+**Settings → Alerts & reminders**, in the app. It needs an email provider on the
+deployment first — `RESEND_API_KEY` or `SMTP_URL`, plus `ALERT_FROM` — and
+`CRON_SECRET` so Vercel's scheduler can prove it is the one calling. The
+schedule itself lives in [vercel.json](vercel.json); it runs at 03:30 UTC, which
+is 9:00 in Ludhiana.
+
+Press **Send me a test now** to prove delivery before switching it on for
+everyone. The screen lists what each run actually did.
+
 ---
 
 ## Loading your real data

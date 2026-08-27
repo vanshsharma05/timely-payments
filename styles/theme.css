@@ -94,7 +94,7 @@
 
     --label:   #F2F3F6;
     --label-2: #A2A7B2;
-    --label-3: #8A9099;
+    --label-3: #989DA5;   /* lifted to clear AA on the tinted card */
     --label-4: #565B65;
 
     --accent:       #7FA8E0;
@@ -113,7 +113,7 @@
     --age-1: #35C495;   --age-1-bg: #10281F;   --age-1-ink: #35C495;
     --age-2: #E0A83E;   --age-2-bg: #2A2113;   --age-2-ink: #E0A83E;
     --age-3: #F27B54;   --age-3-bg: #2E1A13;   --age-3-ink: #F27B54;
-    --age-4: #F05A72;   --age-4-bg: #2C1419;   --age-4-ink: #F05A72;
+    --age-4: #F05A72;   --age-4-bg: #2C1419;   --age-4-ink: #F27489;
 
     /* the same steps, inverted for a dark ground */
     --p-n400: #9AA0AC;  --p-n500: #AEB4BF;  --p-n600: #C3C8D1;
@@ -126,7 +126,7 @@
 
     --pos:  #35C495;  --pos-bg:  #10281F;
     --warn: #E0A83E;  --warn-bg: #2A2113;
-    --dang: #F05A72;  --dang-bg: #2C1419;
+    --dang: #F27489;  --dang-bg: #2C1419;
 
     --e1: 0 1px 2px rgb(0 0 0 / .5);
     --e2: 0 2px 6px rgb(0 0 0 / .5), 0 8px 20px -8px rgb(0 0 0 / .6);
