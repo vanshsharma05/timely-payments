@@ -124,11 +124,39 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
 
     useEffect(() => { load(); }, [load]);
 
+    /**
+     * The panel promises that everyone sees the same thread, which is only true
+     * if it notices what colleagues write. It re-reads on a slow timer and
+     * whenever the window is brought back to the front — the moment somebody
+     * returns from a call is exactly when the answer matters.
+     */
+    const savingRef = useRef(false);
+    savingRef.current = saving;
+
+    useEffect(() => {
+        const refresh = () => {
+            // Not while a post is in flight: the reply would not contain the
+            // entry being written, and it would blink out and back.
+            if (document.visibilityState !== 'visible' || savingRef.current) return;
+            repo.fetchActivity(customer.id).then(setEntries).catch(() => { /* keep what we have */ });
+        };
+        const timer = window.setInterval(refresh, 20000);
+        window.addEventListener('focus', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('focus', refresh);
+            document.removeEventListener('visibilitychange', refresh);
+        };
+    }, [customer.id]);
+
     // A conversation reads top to bottom, so the newest sits at the end and the
-    // panel opens already scrolled to it.
+    // panel opens already scrolled to it. Removing an entry should not yank the
+    // view down, so this follows the newest entry rather than the count.
+    const newestId = entries.length ? entries[entries.length - 1].id : '';
     useEffect(() => {
         if (!loading) endRef.current?.scrollIntoView({ block: 'end' });
-    }, [loading, entries.length]);
+    }, [loading, newestId]);
 
     /** Which entry, if any, settled each promise. */
     const resolutions = useMemo(() => {
@@ -150,12 +178,15 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
         setResolving(null);
     };
 
+    /** A promise or a payment may speak through its figure rather than words. */
+    const hasFigure = Number(promisedAmount) > 0 || (kind === 'promise' && Boolean(promisedOn));
+
     const post = async () => {
         const text = body.trim();
-        // A promise and a payment carry their meaning in the amount and date;
-        // every other kind needs words, or the entry tells the next person
-        // nothing.
-        if (!text && kind !== 'promise' && kind !== 'payment') return;
+        // Every entry has to say something. A promise or a payment can say it
+        // with a figure instead of words, but an empty one of either is just a
+        // blank line in somebody's history.
+        if (!text && !(hasFigure && (kind === 'promise' || kind === 'payment'))) return;
         if (kind === 'promise' && !promisedOn) return;
 
         setSaving(true);
@@ -202,7 +233,7 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
     const postDisabled =
         saving ||
         (kind === 'promise' && !promisedOn) ||
-        (!body.trim() && kind !== 'promise' && kind !== 'payment');
+        (!body.trim() && !(hasFigure && (kind === 'promise' || kind === 'payment')));
 
     return (
         <div className="flex flex-col h-full min-h-0 bg-card-2 lg:border-l border-separator">

@@ -470,6 +470,17 @@ const App = () => {
         setIsModalOpen(true);
     };
 
+    /**
+     * The follow-up dialog stays open while entries are logged against the
+     * account, and each one writes back. Handing it the row out of appData
+     * rather than the copy taken when it opened means the second entry builds
+     * on the first instead of rebuilding from a snapshot that no longer has it.
+     */
+    const liveSelectedCustomer = useMemo(
+        () => (selectedCustomer ? appData.find(c => c.id === selectedCustomer.id) || selectedCustomer : null),
+        [selectedCustomer, appData],
+    );
+
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setSelectedCustomer(null);
@@ -2541,9 +2552,9 @@ const App = () => {
             )}
         </AppShell>
 
-            {isModalOpen && selectedCustomer && (
+            {isModalOpen && liveSelectedCustomer && (
                 <FollowUpModal
-                    customer={selectedCustomer}
+                    customer={liveSelectedCustomer}
                     onClose={handleCloseModal}
                     onUpdate={handleUpdateOutstanding}
                     currentUser={currentUser}

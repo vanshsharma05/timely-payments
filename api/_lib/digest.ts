@@ -380,8 +380,9 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
 
     // A promise reads better with who took it and what was said — that is the
     // context the person ringing today actually needs.
-    const promiseRows = (list: PromiseRow[], tint: string) =>
+    const promiseRows = (list: PromiseRow[], tint: string, limit = 12) =>
         list
+            .slice(0, limit)
             .map(p => {
                 const said = p.body ? esc(p.body.slice(0, 90)) : '';
                 const taken = `taken by ${esc(p.author_name)} · due ${esc(

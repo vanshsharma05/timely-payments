@@ -623,15 +623,24 @@ const rowToActivity = (r: any): ActivityEntry => ({
     createdAt: r.created_at,
 });
 
-/** One customer's thread, oldest first, the way you would read a conversation. */
+/**
+ * One customer's thread, oldest first, the way you would read a conversation.
+ *
+ * Long-running accounts will accumulate years of calls, so this takes the most
+ * recent stretch and puts it back in reading order rather than pulling the lot
+ * down every time the dialog opens.
+ */
+const ACTIVITY_PAGE = 200;
+
 export async function fetchActivity(customerId: string): Promise<ActivityEntry[]> {
     const { data, error } = await requireSupabase()
         .from('customer_activity')
         .select('*')
         .eq('customer_id', customerId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(ACTIVITY_PAGE);
     fail('Could not load the activity for this customer', error);
-    return (data || []).map(rowToActivity);
+    return (data || []).map(rowToActivity).reverse();
 }
 
 export interface NewActivity {
