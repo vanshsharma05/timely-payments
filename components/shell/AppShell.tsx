@@ -433,9 +433,9 @@ export const AppShell = ({
                     className={cx(
                       'num text-[11.5px] font-bold leading-none px-1.5 py-[3px] rounded-full',
                       item.badgeTone === 'dang'
-                        ? 'bg-dang text-white'
+                        ? 'bg-dang text-card'
                         : item.badgeTone === 'warn'
-                        ? 'bg-warn text-white'
+                        ? 'bg-warn text-card'
                         : active
                         ? 'bg-brand-yellow text-brand-yellow-ink'
                         : 'bg-card-3 text-label-3'

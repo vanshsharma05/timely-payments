@@ -472,7 +472,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                                 placeholder="Search by name, contact, mobile, GST, city..."
-                                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 font-medium"
+                                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-accent font-medium"
                             />
                             <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
                             {searchTerm && (
@@ -494,7 +494,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         <select aria-label="Payment Rank"
                             value={rankFilter}
                             onChange={e => setRankFilter(e.target.value as any)}
-                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-green-500"
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
                         >
                             <option value="ALL">All Payment Ranks ({data.length})</option>
                             <option value="Good">Good Payment (Timely / Healthy)</option>
@@ -511,7 +511,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             value={selectedCrm}
                             onChange={e => setSelectedCrm(e.target.value)}
                             disabled={!canViewAllCrms && currentUser?.role === UserRole.CRM}
-                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-green-500 disabled:opacity-60"
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent disabled:opacity-60"
                         >
                             <option value="ALL">All CRMs ({data.length} Accounts)</option>
                             {allCrmsInDataset.map(crm => (
@@ -529,7 +529,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         <select aria-label="Status"
                             value={statusFilter}
                             onChange={e => setStatusFilter(e.target.value)}
-                            className="w-full py-1.5 px-2 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-green-500"
+                            className="w-full py-1.5 px-2 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-accent"
                         >
                             <option value="ALL">All Statuses</option>
                             <option value={FollowUpStatus.Today}>Due Today</option>
@@ -756,7 +756,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     type="checkbox"
                                                     checked={selectedCustomerIds.length === filteredData.length && filteredData.length > 0}
                                                     onChange={e => handleSelectAll(e.target.checked)}
-                                                    className="w-4 h-4 rounded text-pos focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
+                                                    className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer" style={{ outlineOffset: 6 }}
                                                     title="Select all customers on view"
                                                     aria-label="Select all customers in view"
                                                 />
@@ -800,7 +800,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                             checked={isChecked}
                                                             onChange={() => handleToggleRow(item.id)}
                                                             aria-label={`Select ${item.company}`}
-                                                            className="w-4 h-4 rounded text-pos focus:ring-green-500 cursor-pointer" style={{ outlineOffset: 6 }}
+                                                            className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer" style={{ outlineOffset: 6 }}
                                                         />
                                                     </label>
                                                 </td>
@@ -825,7 +825,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     {activePdcs.length > 0 && (
                                                         <button
                                                             onClick={() => onOpenPdcForCustomer?.(item.id)}
-                                                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 hover:bg-emerald-200 transition-colors"
+                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[28px] rounded-md text-[11px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity"
                                                             title={`Active PDCs: ₹${totalPdc.toLocaleString('en-IN')}`}
                                                         >
                                                             <ChequeIcon className="w-2.5 h-2.5" />

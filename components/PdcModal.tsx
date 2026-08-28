@@ -199,7 +199,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                             value={customerId}
                             onChange={(e) => setCustomerId(e.target.value)}
                             disabled={!!preselectedCustomerId && !chequeToEdit}
-                            className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                             required
                         >
                             <option value="" disabled>Select Customer</option>
@@ -230,7 +230,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                 placeholder="e.g. 004821"
                                 value={chequeNumber}
                                 onChange={(e) => setChequeNumber(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-mono focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                                 required
                             />
                         </div>
@@ -247,7 +247,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                 placeholder="e.g. 50000"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-semibold text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-semibold text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-accent focus:outline-none"
                                 required
                             />
                         </div>
@@ -262,7 +262,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                             <select aria-label="Bank Name"
                                 value={bankName}
                                 onChange={(e) => setBankName(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                             >
                                 {COMMON_BANKS.map((b) => (
                                     <option key={b} value={b}>{b}</option>
@@ -279,7 +279,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                     placeholder="Enter bank name"
                                     value={customBankName}
                                     onChange={(e) => setCustomBankName(e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                                     required
                                 />
                             </div>
@@ -292,7 +292,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                     type="date"
                                     value={chequeDate}
                                     onChange={(e) => setChequeDate(e.target.value)}
-                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                    className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                                     required
                                 />
                             </div>
@@ -308,7 +308,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                 type="date"
                                 value={chequeDate}
                                 onChange={(e) => setChequeDate(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                                 required
                             />
                         </div>
@@ -323,7 +323,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                             <select aria-label="Cheque Status"
                                 value={status}
                                 onChange={(e) => setStatus(e.target.value as PdcStatus)}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                             >
                                 <option value={PdcStatus.Pending}>Pending (Awaiting Date)</option>
                                 <option value={PdcStatus.DueToday}>Due Today (Present in Bank)</option>
@@ -342,7 +342,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                 type="date"
                                 value={receivedDate}
                                 onChange={(e) => setReceivedDate(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                             />
                         </div>
                     </div>
@@ -357,7 +357,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                             placeholder="e.g. Given by director against Invoice #1042, promised clear on 25th"
                             value={remarks}
                             onChange={(e) => setRemarks(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         />
                     </div>
 

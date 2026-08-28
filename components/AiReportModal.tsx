@@ -293,7 +293,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                             aria-label="Report scope"
                                             value={targetCrm}
                                             onChange={(e) => setTargetCrm(e.target.value)}
-                                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none"
                                         >
                                             <option value="ALL">Entire Company ({data.length} total accounts)</option>
                                             {users.filter(u => u.role === 'CRM').map(u => (
@@ -345,7 +345,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                                 name="ai_mode"
                                                 checked={mode === 'credit_reduction'}
                                                 onChange={() => setMode('credit_reduction')}
-                                                className="mt-1 text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500"
+                                                className="mt-1 text-emerald-600 dark:text-emerald-400 focus:ring-accent"
                                             />
                                             <div>
                                                 <span className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-1.5">
@@ -373,7 +373,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                                 name="ai_mode"
                                                 checked={mode === 'overdue_recovery'}
                                                 onChange={() => setMode('overdue_recovery')}
-                                                className="mt-1 text-red-600 dark:text-red-400 focus:ring-red-500"
+                                                className="mt-1 text-red-600 dark:text-red-400 focus:ring-dang"
                                             />
                                             <div>
                                                 <span className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-1.5">
@@ -400,7 +400,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                                 name="ai_mode"
                                                 checked={mode === 'crm_performance'}
                                                 onChange={() => setMode('crm_performance')}
-                                                className="mt-1 text-blue-600 dark:text-blue-400 focus:ring-blue-500"
+                                                className="mt-1 text-blue-600 dark:text-blue-400 focus:ring-accent"
                                             />
                                             <div>
                                                 <span className="font-bold text-sm text-gray-900 dark:text-white">
@@ -452,7 +452,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                     onChange={(e) => setCustomPrompt(e.target.value)}
                                     placeholder="e.g. Focus on customers in Gujarat area, highlight accounts with pending PDC, and suggest a 15-day recovery sprint plan..."
                                     rows={2}
-                                    className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                    className="w-full p-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-xs focus:ring-2 focus:ring-accent focus:outline-none"
                                 />
                             </div>
 

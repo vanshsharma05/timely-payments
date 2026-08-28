@@ -195,7 +195,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 placeholder="e.g. Ankur Sharma"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
                                 required
                             />
                         </div>
@@ -210,7 +210,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="e.g. ankur@yourcompany.com"
                                 autoComplete="off"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
                                 required={!userToEdit}
                             />
                         </div>
@@ -225,7 +225,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 onChange={(e) => { setCrmCodeTouched(true); setCrmCode(typeCrmCode(e.target.value)); }}
                                 placeholder="e.g. ANKUR"
                                 readOnly={!!userToEdit}
-                                className={`w-full border rounded-xl shadow-2xs border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold font-mono tracking-wide focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white ${userToEdit ? 'bg-gray-100 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800'}`}
+                                className={`w-full border rounded-xl shadow-2xs border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold font-mono tracking-wide focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white ${userToEdit ? 'bg-gray-100 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800'}`}
                             />
                             <p className="mt-1 text-[11.5px] text-gray-500 dark:text-gray-400">
                                 {userToEdit
@@ -244,7 +244,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder={userToEdit ?"Keep existing password" :"At least 6 characters"}
                                 autoComplete="new-password"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-green-500 focus:border-green-500 text-gray-900 dark:text-white"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
                             />
                         </div>
                     </div>
@@ -258,7 +258,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                             id="userRole"
                             value={role}
                             onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-                            className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                            className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-accent"
                         >
                             <option value={UserRole.Admin}>Admin (Full unrestricted access & role management)</option>
                             <option value={UserRole.Manager}>Manager / Sales Head (Can view all CRMs, add/edit customers & PDC)</option>
@@ -282,7 +282,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                         value={DataVisibility.AssignedOnly} 
                                         checked={dataVisibility === DataVisibility.AssignedOnly} 
                                         onChange={() => setDataVisibility(DataVisibility.AssignedOnly)} 
-                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div>
                                         <div className="text-xs font-semibold">Assigned Portfolio Only</div>
@@ -296,7 +296,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                         value={DataVisibility.All} 
                                         checked={dataVisibility === DataVisibility.All} 
                                         onChange={() => setDataVisibility(DataVisibility.All)} 
-                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div>
                                         <div className="text-xs font-semibold">All Company Customers</div>
@@ -369,7 +369,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canAddCustomer}
                                     onChange={() => handlePermissionToggle('canAddCustomer')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500"
+                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Add New Customers</div>
@@ -383,7 +383,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canEditCustomer}
                                     onChange={() => handlePermissionToggle('canEditCustomer')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500"
+                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Edit Customer Info</div>
@@ -411,7 +411,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canEditFollowUp}
                                     onChange={() => handlePermissionToggle('canEditFollowUp')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500"
+                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Log Follow-ups & Forecasts</div>
@@ -425,7 +425,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canManagePdc}
                                     onChange={() => handlePermissionToggle('canManagePdc')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500"
+                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Manage PDC Cheques</div>
@@ -439,7 +439,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canReassignCrm}
                                     onChange={() => handlePermissionToggle('canReassignCrm')}
-                                    className="w-4 h-4 mt-0.5 rounded text-blue-600 dark:text-blue-400 focus:ring-blue-500"
+                                    className="w-4 h-4 mt-0.5 rounded text-blue-600 dark:text-blue-400 focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Reassign CRM Owners</div>
@@ -453,7 +453,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canExportData}
                                     onChange={() => handlePermissionToggle('canExportData')}
-                                    className="w-4 h-4 mt-0.5 rounded text-purple-600 focus:ring-purple-500"
+                                    className="w-4 h-4 mt-0.5 rounded text-accent focus:ring-accent"
                                 />
                                 <div>
                                     <div className="font-bold">Export Reports & Excel</div>
@@ -467,7 +467,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                     type="checkbox"
                                     checked={permissions.canDeleteCustomer}
                                     onChange={() => handlePermissionToggle('canDeleteCustomer')}
-                                    className="w-4 h-4 mt-0.5 rounded text-red-600 dark:text-red-400 focus:ring-red-500"
+                                    className="w-4 h-4 mt-0.5 rounded text-red-600 dark:text-red-400 focus:ring-dang"
                                 />
                                 <div>
                                     <div className="font-bold">Delete Customers</div>

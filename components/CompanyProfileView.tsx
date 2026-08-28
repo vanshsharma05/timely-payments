@@ -58,7 +58,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.name || ''}
                             onChange={e => setFormData({ ...formData, name: e.target.value })}
                             placeholder="e.g. Shori Chemicals Pvt. Ltd."
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -71,7 +71,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.tagline || ''}
                             onChange={e => setFormData({ ...formData, tagline: e.target.value })}
                             placeholder="e.g. Chemical Distribution & Specialty Solutions"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -84,7 +84,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.gstin || ''}
                             onChange={e => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
                             placeholder="e.g. 07AAAAA0000A1Z5"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -97,7 +97,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.pan || ''}
                             onChange={e => setFormData({ ...formData, pan: e.target.value.toUpperCase() })}
                             placeholder="e.g. ABCDE1234F"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -110,7 +110,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.phone || ''}
                             onChange={e => setFormData({ ...formData, phone: e.target.value })}
                             placeholder="e.g. +91 9876543210"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -123,7 +123,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.email || ''}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
                             placeholder="e.g. ankur@shorichemicals.com"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -136,7 +136,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.address || ''}
                             onChange={e => setFormData({ ...formData, address: e.target.value })}
                             placeholder="Street address, office suite, industrial area"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -149,7 +149,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.city || ''}
                             onChange={e => setFormData({ ...formData, city: e.target.value })}
                             placeholder="e.g. New Delhi"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
 
@@ -163,14 +163,14 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                                 value={formData.state || ''}
                                 onChange={e => setFormData({ ...formData, state: e.target.value })}
                                 placeholder="State"
-                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                             />
                             <input
                                 type="text"
                                 value={formData.pincode || ''}
                                 onChange={e => setFormData({ ...formData, pincode: e.target.value })}
                                 placeholder="PIN Code"
-                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:outline-none"
+                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
                             />
                         </div>
                     </div>
@@ -184,7 +184,7 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
                             value={formData.bankDetails || ''}
                             onChange={e => setFormData({ ...formData, bankDetails: e.target.value })}
                             placeholder="Bank Name, Account Holder, A/C Number, IFSC Code, Branch"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono text-xs focus:ring-2 focus:ring-green-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono text-xs focus:ring-2 focus:ring-accent focus:outline-none"
                         />
                     </div>
                 </div>

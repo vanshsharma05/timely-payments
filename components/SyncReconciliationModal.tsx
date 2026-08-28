@@ -294,7 +294,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                     name="crm_strategy"
                                     checked={assignmentMode === 'keep_earlier'}
                                     onChange={() => handleModeChange('keep_earlier')}
-                                    className="text-green-600 dark:text-green-400 focus:ring-green-500"
+                                    className="text-green-600 dark:text-green-400 focus:ring-accent"
                                 />
                             </div>
                             <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
@@ -318,7 +318,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                     name="crm_strategy"
                                     checked={assignmentMode === 'use_new_sync'}
                                     onChange={() => handleModeChange('use_new_sync')}
-                                    className="text-blue-600 dark:text-blue-400 focus:ring-blue-500"
+                                    className="text-blue-600 dark:text-blue-400 focus:ring-accent"
                                 />
                             </div>
                             <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
@@ -342,7 +342,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                     name="crm_strategy"
                                     checked={assignmentMode === 'custom'}
                                     onChange={() => handleModeChange('custom')}
-                                    className="text-purple-600 focus:ring-purple-500"
+                                    className="text-accent focus:ring-accent"
                                 />
                             </div>
                             <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
@@ -396,7 +396,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                             placeholder="Search company, CRM..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full sm:w-56 px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full sm:w-56 px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
                         />
                         <button
                             type="button"
@@ -494,7 +494,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                                         aria-label="CRM owner for this account"
                                                         value={selectedCrm}
                                                         onChange={e => handleSingleCustomerCrmChange(row.id, e.target.value)}
-                                                        className="px-2.5 py-1 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                                                        className="px-2.5 py-1 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                                                     >
                                                         {row.earlierCrm && !crmUsers.some(u => u.name.toUpperCase() === row.earlierCrm.toUpperCase() || u.id.toUpperCase() === row.earlierCrm.toUpperCase()) && (
                                                             <option value={row.earlierCrm}>{row.earlierCrm} (Earlier)</option>

@@ -2188,7 +2188,7 @@ const App = () => {
                                                         value="excel" 
                                                         checked={dataSourceMode === 'excel'} 
                                                         onChange={() => setDataSourceMode('excel')}
-                                                        className="h-4 w-4 text-accent focus:ring-green-500"
+                                                        className="h-4 w-4 text-accent focus:ring-accent"
                                                     />
                                                     <span className="ml-3 font-semibold text-label">Excel Upload (Offline)</span>
                                                 </div>
@@ -2205,7 +2205,7 @@ const App = () => {
                                                         value="google" 
                                                         checked={dataSourceMode === 'google'} 
                                                         onChange={() => setDataSourceMode('google')}
-                                                        className="h-4 w-4 text-accent focus:ring-green-500"
+                                                        className="h-4 w-4 text-accent focus:ring-accent"
                                                     />
                                                     <span className="ml-3 font-semibold text-label">Live Google Sheet (Team)</span>
                                                 </div>

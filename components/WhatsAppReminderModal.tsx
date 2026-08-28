@@ -114,7 +114,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                                         name="waRecipient"
                                         checked={recipientType === 'primary'}
                                         onChange={() => setRecipientType('primary')}
-                                        className="text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div>
                                         <div>{customer.contactPerson || 'Primary Contact'} <span className="font-normal text-gray-500">({customer.contactPost || 'Primary'})</span></div>
@@ -137,7 +137,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                                             name="waRecipient"
                                             checked={recipientType === c.id}
                                             onChange={() => setRecipientType(c.id)}
-                                            className="text-green-600 dark:text-green-400 focus:ring-green-500"
+                                            className="text-green-600 dark:text-green-400 focus:ring-accent"
                                         />
                                         <div>
                                             <div>{c.name} <span className="font-normal text-gray-500">({c.post || 'Company Contact'})</span></div>
@@ -160,7 +160,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                                         name="waRecipient"
                                         checked={recipientType === 'custom'}
                                         onChange={() => setRecipientType('custom')}
-                                        className="text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div>
                                         <div>Send to Other Number</div>
@@ -204,7 +204,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                         <select aria-label="Message Template"
                             value={selectedTemplateId}
                             onChange={e => setSelectedTemplateId(e.target.value)}
-                            className="w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                            className="w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                         >
                             {templates.map(template => (
                                 <option key={template.id} value={template.id}>{template.name}</option>

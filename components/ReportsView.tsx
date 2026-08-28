@@ -355,7 +355,7 @@ export const ReportsView = ({
                             onChange={(e) => {
                                 setSelectedCrm(e.target.value);
                             }}
-                            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-green-500 focus:outline-none min-w-[200px]"
+                            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-accent focus:outline-none min-w-[200px]"
                         >
                             <option value="ALL">All CRMs (Company Overview)</option>
                             {crmOwners.map(crm => (
@@ -375,7 +375,7 @@ export const ReportsView = ({
                                 placeholder="Search by customer, phone, email, CRM..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-8 py-2 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                                className="w-full pl-10 pr-8 py-2 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                             />
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -822,7 +822,7 @@ export const ReportsView = ({
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <button
                                                         onClick={() => onFollowUp(item)}
-                                                        className="font-bold text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 text-left inline-flex items-center gap-1.5 min-h-[28px]"
+                                                        className="font-bold text-label hover:text-accent text-left inline-flex items-center gap-1.5 min-h-[28px] min-w-[28px]"
                                                     >
                                                         <span>{item.company}</span>
                                                         {item.isUrgent && <FireIcon className="text-red-500 w-3.5 h-3.5 flex-shrink-0" />}
@@ -838,7 +838,7 @@ export const ReportsView = ({
                                                                 e.stopPropagation();
                                                                 onOpenPdcForCustomer?.(item.id);
                                                             }}
-                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11.5px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 hover:bg-emerald-200 transition-colors flex-shrink-0"
+                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[28px] rounded-md text-[11.5px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity flex-shrink-0"
                                                             title={`Active PDC Cheques: ₹${totalPdcAmount.toLocaleString('en-IN')} (${activePdcs.length} cheques)`}
                                                         >
                                                             <ChequeIcon className="w-2.5 h-2.5" />
@@ -937,7 +937,7 @@ export const ReportsView = ({
                                             <td className="px-2.5 py-2.5 whitespace-nowrap">
                                                 <div className="flex flex-col gap-0.5">
                                                     {item.followUpDate ? (
-                                                        <span className={`text-xs font-semibold ${isTodayFollowUp(item) ? 'text-blue-600 font-bold' : isOverdueFollowUp(item) ? 'text-red-600 font-bold' : 'text-gray-700 dark:text-gray-300'}`}>
+                                                        <span className={`text-xs font-semibold ${isTodayFollowUp(item) ? 'text-accent font-bold' : isOverdueFollowUp(item) ? 'text-dang font-bold' : 'text-label-2'}`}>
                                                             {formatDate(item.followUpDate)}
                                                         </span>
                                                     ) : (

@@ -440,7 +440,7 @@ const FollowUpModal = ({
                                             value={newContactName}
                                             onChange={e => setNewContactName(e.target.value)}
                                             placeholder="e.g. Rajesh Verma"
-                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
                                             required
                                         />
                                     </div>
@@ -451,7 +451,7 @@ const FollowUpModal = ({
                                             value={newContactMobile}
                                             onChange={e => setNewContactMobile(e.target.value)}
                                             placeholder="e.g. 9876543210"
-                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
                                             required
                                         />
                                     </div>
@@ -462,7 +462,7 @@ const FollowUpModal = ({
                                         <select aria-label="Post / Designation"
                                             value={newContactPost}
                                             onChange={e => setNewContactPost(e.target.value)}
-                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
                                         >
                                             <option value="Accounts Manager">Accounts Manager</option>
                                             <option value="Finance Director">Finance Director</option>
@@ -481,7 +481,7 @@ const FollowUpModal = ({
                                             value={newContactEmail}
                                             onChange={e => setNewContactEmail(e.target.value)}
                                             placeholder="e.g. contact@company.com"
-                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
                                         />
                                     </div>
                                 </div>
@@ -531,7 +531,7 @@ const FollowUpModal = ({
                                         value="primary"
                                         checked={recipientType === 'primary'}
                                         onChange={() => setRecipientType('primary')}
-                                        className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div className="truncate">
                                         <div className="truncate font-bold">{primaryPerson || 'Primary Contact'} ({primaryPost})</div>
@@ -552,7 +552,7 @@ const FollowUpModal = ({
                                             value={c.id}
                                             checked={recipientType === c.id}
                                             onChange={() => setRecipientType(c.id)}
-                                            className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                            className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-accent"
                                         />
                                         <div className="truncate">
                                             <div className="truncate font-bold">{c.name} ({c.post || 'Staff'})</div>
@@ -573,7 +573,7 @@ const FollowUpModal = ({
                                         value="custom"
                                         checked={recipientType === 'custom'}
                                         onChange={() => setRecipientType('custom')}
-                                        className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-green-500"
+                                        className="mt-0.5 text-green-600 dark:text-green-400 focus:ring-accent"
                                     />
                                     <div>
                                         <div className="font-bold">Other / New Number</div>
@@ -618,7 +618,7 @@ const FollowUpModal = ({
                                 id="templateSelect"
                                 value={selectedTemplateId}
                                 onChange={e => setSelectedTemplateId(e.target.value)}
-                                className="w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                                className="w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                             >
                                 {templates.map(template => (
                                     <option key={template.id} value={template.id}>{template.name}</option>
@@ -739,7 +739,7 @@ const FollowUpModal = ({
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
                                 rows={2}
-                                className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-xs text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500"
+                                className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-xs text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
                                 placeholder="Add notes about payment promise, customer commitment, person spoken with..."
                             />
                         </div>
@@ -800,7 +800,7 @@ const FollowUpModal = ({
                                                 setNextFollowUpDate(e.target.value);
                                                 if (!forecastDate) setForecastDate(e.target.value);
                                             }}
-                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                                             required
                                         />
                                     </div>
@@ -817,7 +817,7 @@ const FollowUpModal = ({
                                                 value={forecastAmount}
                                                 onChange={e => setForecastAmount(e.target.value)}
                                                 placeholder="e.g. 500000"
-                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-accent shadow-2xs"
                                             />
                                         </div>
                                     </div>
@@ -878,7 +878,7 @@ const FollowUpModal = ({
                                     id="assignCrm"
                                     value={assignedCrmOwnerId}
                                     onChange={(e) => setAssignedCrmOwnerId(e.target.value)}
-                                    className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                                    className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                                 >
                                     <option value="">Unassigned</option>
                                     {assignedCrmOwnerId && !crmUsers.some(u => u.name.toUpperCase() === assignedCrmOwnerId.toUpperCase() || u.id.toUpperCase() === assignedCrmOwnerId.toUpperCase()) && (
@@ -899,7 +899,7 @@ const FollowUpModal = ({
                                         id="assignCollector"
                                         value={assignedCollectorId}
                                         onChange={(e) => setAssignedCollectorId(e.target.value)}
-                                        className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-green-500"
+                                        className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                                     >
                                         <option value="">None</option>
                                         {collectors.map(c => (
@@ -914,7 +914,7 @@ const FollowUpModal = ({
                                             id="isUrgent" 
                                             checked={isUrgent} 
                                             onChange={() => setIsUrgent(!isUrgent)}
-                                            className="rounded text-red-600 dark:text-red-400 focus:ring-red-500 w-4 h-4 mr-2"
+                                            className="rounded text-red-600 dark:text-red-400 focus:ring-dang w-4 h-4 mr-2"
                                         />
                                         <span className="text-xs font-bold text-red-600 dark:text-red-400">
                                             Mark as High Priority / Urgent Account

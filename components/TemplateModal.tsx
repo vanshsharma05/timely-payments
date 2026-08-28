@@ -58,7 +58,7 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
                                     type="text"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-green-500 focus:border-green-500"
+                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-accent focus:border-green-500"
                                     required
                                 />
                             </div>
@@ -69,7 +69,7 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
                                     value={content}
                                     onChange={(e) => setContent(e.target.value)}
                                     rows={10}
-                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-green-500 focus:border-green-500 font-mono text-sm"
+                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-accent focus:border-green-500 font-mono text-sm"
                                     required
                                 />
                             </div>

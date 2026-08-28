@@ -263,7 +263,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 value={company}
                                 onChange={e => setCompany(e.target.value)}
                                 placeholder="e.g. SHREE RAM INDUSTRIES PVT LTD"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-white uppercase"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold focus:ring-2 focus:ring-accent text-gray-900 dark:text-white uppercase"
                                 required
                             />
                         </div>
@@ -275,7 +275,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 <select aria-label="CRM Owner"
                                     value={crmOwnerId}
                                     onChange={e => setCrmOwnerId(e.target.value)}
-                                    className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                                    className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-accent"
                                 >
                                     <option value="">Select CRM</option>
                                     {crmUsers.map(u => (
@@ -545,7 +545,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                         type="checkbox"
                                         checked={isUrgent}
                                         onChange={e => setIsUrgent(e.target.checked)}
-                                        className="rounded text-red-600 dark:text-red-400 focus:ring-red-500"
+                                        className="rounded text-red-600 dark:text-red-400 focus:ring-dang"
                                     />
                                     <span>Mark as Critical / High Priority Recovery</span>
                                 </label>

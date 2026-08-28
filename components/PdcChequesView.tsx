@@ -514,7 +514,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             placeholder="Search by customer, cheque no, bank, remarks..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full pl-10 pr-4 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         />
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -529,7 +529,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             aria-label="Filter by customer"
                             value={selectedCustomer}
                             onChange={(e) => setSelectedCustomer(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         >
                             <option value="all">All Customers ({allowedCustomers.length})</option>
                             {allowedCustomers.map(c => (
@@ -546,7 +546,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             aria-label="Filter by CRM owner"
                             value={selectedCrm}
                             onChange={(e) => setSelectedCrm(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         >
                             <option value="all">{canViewAll ? 'All CRM Owners' : 'Assigned CRM Owners'}</option>
                             {availableCrms.map(u => (
@@ -563,7 +563,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             aria-label="Filter by bank"
                             value={bankFilter}
                             onChange={(e) => setBankFilter(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         >
                             <option value="all">All Banks ({bankList.length})</option>
                             {bankList.map(b => (
@@ -609,7 +609,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             value={dateRangeFilter}
                             onChange={(e) => setDateRangeFilter(e.target.value as any)}
                             aria-label="Filter cheques"
-                            className="px-3 py-1.5 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                            className="px-3 py-1.5 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-xs font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                         >
                             <option value="all">Any Date</option>
                             <option value="today">Due Today</option>
@@ -795,14 +795,14 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                 {!canManagePdc ? (
                                                     <span className="text-[12.5px] text-label-3">{cheque.status}</span>
                                                 ) : (
-                                                <div className="inline-flex items-center gap-0.5 bg-gray-50 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                                                <div className="inline-flex items-center gap-1 bg-card-2 p-1 rounded-lg border border-separator">
                                                     <button
                                                         onClick={() => onUpdatePdcStatus(cheque.id, PdcStatus.Cleared)}
                                                         title="Mark as Cleared in Bank"
-                                                        className={`px-1.5 py-0.5 rounded text-[12.5px] font-bold transition-colors ${
+                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
                                                             cheque.status === PdcStatus.Cleared
                                                                 ? 'bg-emerald-600 text-white shadow-xs'
-                                                                : 'hover:bg-emerald-50 text-gray-600 hover:text-emerald-600 dark:hover:bg-emerald-900/30'
+                                                                : 'hover:bg-pos-bg text-label-2 hover:text-pos'
                                                         }`}
                                                     >
                                                         ✓ Clear
@@ -810,10 +810,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                     <button
                                                         onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Hold ? PdcStatus.Pending : PdcStatus.Hold)}
                                                         title={cheque.status === PdcStatus.Hold ?"Release from Hold" :"Put on Hold"}
-                                                        className={`px-1.5 py-0.5 rounded text-[12.5px] font-bold transition-colors ${
+                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
                                                             cheque.status === PdcStatus.Hold
                                                                 ? 'bg-orange-600 text-white shadow-xs'
-                                                                : 'hover:bg-orange-50 text-gray-600 hover:text-orange-600 dark:hover:bg-orange-900/30'
+                                                                : 'hover:bg-warn-bg text-label-2 hover:text-warn'
                                                         }`}
                                                     >
                                                         Hold
@@ -821,10 +821,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                                     <button
                                                         onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Bounced ? PdcStatus.Pending : PdcStatus.Bounced)}
                                                         title="Mark as Bounced / Returned"
-                                                        className={`px-1.5 py-0.5 rounded text-[12.5px] font-bold transition-colors ${
+                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
                                                             cheque.status === PdcStatus.Bounced
                                                                 ? 'bg-rose-600 text-white shadow-xs'
-                                                                : 'hover:bg-rose-50 text-gray-600 hover:text-rose-600 dark:hover:bg-rose-900/30'
+                                                                : 'hover:bg-dang-bg text-label-2 hover:text-dang'
                                                         }`}
                                                     >
                                                         ✕ Bounce
