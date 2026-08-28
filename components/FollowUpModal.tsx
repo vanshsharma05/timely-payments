@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS } from '../types';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
-import { BalanceAmount } from './BalanceAmount';
+import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
+import CustomerActivityPanel from './CustomerActivityPanel';
 
 interface FollowUpModalProps {
     customer: Outstanding;
@@ -29,7 +30,6 @@ const FollowUpModal = ({
     onUpdatePdcStatus,
     onEditCustomer
 }: FollowUpModalProps) => {
-    const [notes, setNotes] = useState('');
     const [nextFollowUpDate, setNextFollowUpDate] = useState(() => {
         if (customer.followUpDate) {
             try {
@@ -173,13 +173,33 @@ const FollowUpModal = ({
         setForecastAmount(String(amt));
     };
 
+    /**
+     * Mirrors a new activity entry into the customer's flat notes list.
+     *
+     * The thread is the record, but search, the Excel export, the AI report and
+     * the "last note" column all read customer.notes. Writing one line per entry
+     * there keeps every one of them working, and means logging a call still
+     * counts as contact.
+     */
+    const handleActivityLogged = (entry: ActivityEntry) => {
+        const when = new Date(entry.createdAt).toLocaleString('en-IN', {
+            day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
+        });
+        const label = entry.kind === 'note' ? '' : `${ACTIVITY_LABELS[entry.kind]}: `;
+        const promised = entry.kind === 'promise' && entry.promisedOn
+            ? `${entry.promisedAmount ? formatCurrencyValue(entry.promisedAmount) + ' ' : ''}by ${new Date(entry.promisedOn).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}. `
+            : '';
+        const line = `[${when} - ${entry.authorName}] ${label}${promised}${entry.body}`.trim();
+
+        onUpdate({
+            ...customer,
+            notes: [...(customer.notes || []), line],
+            lastFollowUpOn: new Date(),
+        });
+    };
+
     const handleSave = () => {
         let updatedCustomer: Outstanding = { ...customer };
-        const newNotes = [...customer.notes];
-        if (notes) {
-            newNotes.push(`${new Date().toLocaleDateString()} (${currentUser.name}): ${notes}`);
-        }
-        updatedCustomer.notes = newNotes;
         updatedCustomer.isUrgent = isUrgent;
         updatedCustomer.lastFollowUpOn = new Date();
 
@@ -261,7 +281,7 @@ const FollowUpModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150">
                 {/* Modal Header */}
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl">
                     <div>
@@ -294,7 +314,11 @@ const FollowUpModal = ({
                     </button>
                 </div>
 
-                {/* Modal Body */}
+                {/* Body: the form on the left, the shared record on the right.
+                    Narrow screens have no room for two columns, so the record
+                    drops underneath the form instead. */}
+                <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+                  <div className="flex flex-col min-h-0 lg:flex-1 lg:border-r border-separator">
                 <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
                     
                     {/* Financial & Ageing Summary Card */}
@@ -731,18 +755,14 @@ const FollowUpModal = ({
 
                     {/* Follow-up Notes & Outcome Section */}
                     <div className="space-y-4 pt-1">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                Follow-up Conversation Notes
-                            </label>
-                            <textarea
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                rows={2}
-                                className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-xs text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-accent"
-                                placeholder="Add notes about payment promise, customer commitment, person spoken with..."
-                            />
-                        </div>
+                        {/* What happened goes in the shared record, not in a box
+                            only this form can see. One place, one history. */}
+                        <p className="text-[12.5px] text-label-3 bg-card-2 border border-separator rounded-lg px-3 py-2 leading-relaxed">
+                            Recording what happened on the call? Use <strong className="text-label-2">Account activity</strong> —
+                            <span className="lg:inline hidden"> the panel on the right.</span>
+                            <span className="lg:hidden"> the panel below.</span>{' '}
+                            It stamps the time and your name, and the whole team can see it.
+                        </p>
 
                         <div>
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">Follow-up Outcome & Next Action</label>
@@ -944,6 +964,16 @@ const FollowUpModal = ({
                     >
                         Save Follow-up & Contacts
                     </button>
+                </div>
+                  </div>
+
+                  <div className="lg:w-[380px] xl:w-[420px] flex-none min-h-0 h-[46vh] lg:h-auto border-t lg:border-t-0 border-separator">
+                    <CustomerActivityPanel
+                        customer={customer}
+                        currentUser={currentUser}
+                        onLogged={handleActivityLogged}
+                    />
+                  </div>
                 </div>
             </div>
         </div>

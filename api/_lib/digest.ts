@@ -57,11 +57,26 @@ interface ChequeRow {
     crm_owner_id: string | null;
 }
 
+/** An unanswered promise, joined to the account it was made on. */
+export interface PromiseRow {
+    id: string;
+    customer_id: string;
+    company: string;
+    author_name: string;
+    body: string;
+    promised_amount: number | null;
+    promised_on: string;
+}
+
 export interface Digest {
     recipient: Recipient;
     dueToday: CustomerRow[];
     overdue: CustomerRow[];
     promisedToday: CustomerRow[];
+    /** Someone said they would pay today, and nobody has recorded the outcome. */
+    promisesDue: PromiseRow[];
+    /** The day came and went with no answer either way. */
+    promisesBroken: PromiseRow[];
     chequesToday: ChequeRow[];
     noFollowUpCount: number;
     noFollowUpValue: number;
@@ -184,6 +199,29 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
         'id, customer_id, customer_name, cheque_number, bank_name, amount, cheque_date, status, crm_owner_id'
     );
 
+    // Promises recorded on the account, and the entries that answered them. A
+    // promise nobody has answered is still owed, whatever the follow-up date on
+    // the account happens to say.
+    const activity = await fetchAll<{
+        id: string; customer_id: string; author_name: string; kind: string;
+        body: string; promised_amount: number | null; promised_on: string | null;
+        resolves_id: string | null;
+    }>(db, 'customer_activity', 'id, customer_id, author_name, kind, body, promised_amount, promised_on, resolves_id');
+
+    const answered = new Set(activity.map(a => a.resolves_id).filter(Boolean) as string[]);
+    const companyOf = new Map(customers.map(c => [c.id, c.company]));
+    const openPromises: PromiseRow[] = activity
+        .filter(a => a.kind === 'promise' && a.promised_on && !answered.has(a.id))
+        .map(a => ({
+            id: a.id,
+            customer_id: a.customer_id,
+            company: companyOf.get(a.customer_id) || 'Unknown account',
+            author_name: a.author_name,
+            body: a.body,
+            promised_amount: a.promised_amount,
+            promised_on: a.promised_on as string,
+        }));
+
     const byValue = (a: CustomerRow, b: CustomerRow) => owes(b) - owes(a);
 
     return recipients.map(recipient => {
@@ -198,6 +236,14 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
         const noFollowUp = open.filter(c => !c.follow_up_date);
 
         const mineIds = new Set(mine.map(c => c.id));
+
+        const myPromises = openPromises.filter(p => mineIds.has(p.customer_id));
+        const byPromised = (a: PromiseRow, b: PromiseRow) =>
+            Number(b.promised_amount || 0) - Number(a.promised_amount || 0);
+        const promisesDue = myPromises.filter(p => sameDay(p.promised_on, today)).sort(byPromised);
+        const promisesBroken = myPromises
+            .filter(p => beforeDay(p.promised_on, today))
+            .sort((a, b) => a.promised_on.localeCompare(b.promised_on));
         const chequesToday = cheques.filter(q => {
             const ready = q.status === 'Pending' || q.status === 'DueToday';
             if (!ready || !sameDay(q.cheque_date, today)) return false;
@@ -226,13 +272,20 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
             dueToday,
             overdue,
             promisedToday,
+            promisesDue,
+            promisesBroken,
             chequesToday,
             noFollowUpCount: noFollowUp.length,
             noFollowUpValue: noFollowUp.reduce((s, c) => s + owes(c), 0),
             bookValue: mine.reduce((s, c) => s + owes(c), 0),
-            bookCount: mine.length,
+            // Accounts that owe something. The Customer Master sheet puts the
+            // whole customer list on the book, most of it settled; counting that
+            // told people they were carrying thousands of accounts.
+            bookCount: mine.filter(c => Math.abs(Number(c.total) || 0) > 0).length,
             perCrm,
-            taskCount: dueToday.length + overdue.length + chequesToday.length,
+            taskCount:
+                dueToday.length + overdue.length + chequesToday.length +
+                promisesDue.length + promisesBroken.length,
         };
     });
 }
@@ -294,10 +347,19 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
             ? 'Nothing needs chasing today'
             : `${d.taskCount} thing${d.taskCount === 1 ? '' : 's'} to chase today`;
 
-    const subject =
-        d.taskCount === 0
-            ? `Timely Payment · nothing due today`
-            : `Timely Payment · ${d.dueToday.length} due today, ${d.overdue.length} overdue`;
+    // The subject has to agree with the body. Counting only follow-up dates
+    // meant an email listing three promises to chase announced itself as
+    // "0 due today, 0 overdue".
+    const subject = (() => {
+        if (d.taskCount === 0) return 'Timely Payment · nothing due today';
+        const parts: string[] = [];
+        const due = d.dueToday.length + d.promisesDue.length;
+        if (due) parts.push(`${due} due today`);
+        if (d.overdue.length) parts.push(`${d.overdue.length} overdue`);
+        if (d.promisesBroken.length) parts.push(`${d.promisesBroken.length} promise${d.promisesBroken.length === 1 ? '' : 's'} unanswered`);
+        if (d.chequesToday.length) parts.push(`${d.chequesToday.length} cheque${d.chequesToday.length === 1 ? '' : 's'}`);
+        return `Timely Payment · ${parts.join(', ')}`;
+    })();
 
     const chequeRows = d.chequesToday
         .map(
@@ -315,6 +377,29 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
       </tr>`
         )
         .join('');
+
+    // A promise reads better with who took it and what was said — that is the
+    // context the person ringing today actually needs.
+    const promiseRows = (list: PromiseRow[], tint: string) =>
+        list
+            .map(p => {
+                const said = p.body ? esc(p.body.slice(0, 90)) : '';
+                const taken = `taken by ${esc(p.author_name)} · due ${esc(
+                    new Date(p.promised_on).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                )}`;
+                return `
+      <tr>
+        <td style="padding:9px 12px;border-bottom:1px solid ${LINE};font-size:14px;color:${INK};">
+          <strong>${esc(p.company)}</strong>
+          <div style="color:${MUTED};font-size:12px;margin-top:2px;">${taken}</div>
+          ${said ? `<div style="color:${MUTED};font-size:12px;margin-top:2px;font-style:italic;">&ldquo;${said}&rdquo;</div>` : ''}
+        </td>
+        <td style="padding:9px 12px;border-bottom:1px solid ${LINE};font-size:14px;color:${tint};font-weight:700;text-align:right;white-space:nowrap;">
+          ${p.promised_amount ? compact(p.promised_amount) : '—'}
+        </td>
+      </tr>`;
+            })
+            .join('');
 
     const promisedRows = d.promisedToday
         .map(
@@ -366,6 +451,8 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
 
         ${section('Due today', d.dueToday.length, NAVY, customerRows(d.dueToday, NAVY))}
         ${section('Past their promised date', d.overdue.length, DANG, customerRows(d.overdue, DANG), 'Oldest promises first — these cost the most.')}
+        ${section('They said they would pay today', d.promisesDue.length, NAVY, promiseRows(d.promisesDue, NAVY), 'Ring these and record what they say.')}
+        ${section('Promised, and the day passed', d.promisesBroken.length, DANG, promiseRows(d.promisesBroken, DANG), 'Nobody has recorded whether the money arrived.')}
         ${section('Cheques to present today', d.chequesToday.length, POS, chequeRows)}
         ${section('Money promised for today', d.promisedToday.length, POS, promisedRows)}
         ${
@@ -427,6 +514,10 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
     };
     listOut('Due today', d.dueToday.map(c => `${c.company} — ${compact(owes(c))}`));
     listOut('Past their promised date', d.overdue.map(c => `${c.company} — ${compact(owes(c))}`));
+    listOut('They said they would pay today', d.promisesDue.map(p =>
+        `${p.company} — ${p.promised_amount ? compact(p.promised_amount) : 'amount not stated'} (taken by ${p.author_name})`));
+    listOut('Promised, and the day passed', d.promisesBroken.map(p =>
+        `${p.company} — ${p.promised_amount ? compact(p.promised_amount) : 'amount not stated'}, due ${p.promised_on}`));
     listOut('Cheques to present today', d.chequesToday.map(q => `${q.customer_name} — ${compact(q.amount)} (${q.cheque_number})`));
     listOut('Promised for today', d.promisedToday.map(c => `${c.company} — ${compact(c.forecast_amount)}`));
     if (d.noFollowUpCount) {

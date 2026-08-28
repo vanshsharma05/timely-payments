@@ -1,5 +1,7 @@
 import { requireSupabase, supabase } from './supabaseClient';
 import {
+    ActivityEntry,
+    ActivityKind,
     AlertLogEntry,
     AlertSettings,
     Outstanding,
@@ -604,6 +606,75 @@ export async function authHeaders(): Promise<Record<string, string>> {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/* ----------------------------- activity log ------------------------------ */
+
+const rowToActivity = (r: any): ActivityEntry => ({
+    id: r.id,
+    customerId: r.customer_id,
+    authorId: r.author_id || undefined,
+    authorName: r.author_name || 'Unknown',
+    kind: r.kind,
+    body: r.body || '',
+    promisedAmount: r.promised_amount ?? undefined,
+    promisedOn: r.promised_on || undefined,
+    resolvesId: r.resolves_id || undefined,
+    createdAt: r.created_at,
+});
+
+/** One customer's thread, oldest first, the way you would read a conversation. */
+export async function fetchActivity(customerId: string): Promise<ActivityEntry[]> {
+    const { data, error } = await requireSupabase()
+        .from('customer_activity')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: true });
+    fail('Could not load the activity for this customer', error);
+    return (data || []).map(rowToActivity);
+}
+
+export interface NewActivity {
+    customerId: string;
+    kind: ActivityKind;
+    body: string;
+    promisedAmount?: number;
+    promisedOn?: string;
+    resolvesId?: string;
+}
+
+/**
+ * Appends one entry, stamped with the signed-in author and the server's clock.
+ *
+ * The timestamp is the database default rather than anything the browser sends:
+ * a laptop with the wrong date should not be able to file yesterday's call.
+ */
+export async function addActivity(entry: NewActivity, author: User): Promise<ActivityEntry> {
+    const db = requireSupabase();
+    const { data: session } = await db.auth.getSession();
+    const authorId = session.session?.user?.id;
+
+    const { data, error } = await db
+        .from('customer_activity')
+        .insert({
+            customer_id: entry.customerId,
+            author_id: authorId,
+            author_name: author.name,
+            kind: entry.kind,
+            body: entry.body,
+            promised_amount: entry.promisedAmount ?? null,
+            promised_on: entry.promisedOn || null,
+            resolves_id: entry.resolvesId || null,
+        })
+        .select()
+        .single();
+    fail('Could not save that entry', error);
+    return rowToActivity(data);
+}
+
+export async function deleteActivity(id: string): Promise<void> {
+    const { error } = await requireSupabase().from('customer_activity').delete().eq('id', id);
+    fail('Could not remove that entry', error);
 }
 
 /** Loads everything the dashboard needs in one pass. */

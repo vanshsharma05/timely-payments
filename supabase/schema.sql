@@ -406,3 +406,72 @@ create policy alert_log_read on public.alert_log
 drop trigger if exists touch_alert_settings on public.alert_settings;
 create trigger touch_alert_settings before update on public.alert_settings
     for each row execute function public.touch_updated_at();
+-- ============================================================================
+-- CUSTOMER ACTIVITY — the shared record of what was said, and when
+--
+-- The follow-up form captures what happens next: a date, a promised amount, an
+-- outcome. It had nowhere to put what actually happened — the call nobody
+-- answered, the one that was cut off, the accountant who asked to be rung after
+-- the 5th. That went into a free-text notes array with the date and the
+-- author's name glued into the string, so it could not be sorted, filtered or
+-- attributed.
+--
+-- This table is that record, and it is append-only. Nobody edits what a
+-- colleague wrote; a promise is settled by adding the entry that settles it,
+-- pointing back with resolves_id, so the whole history stays legible.
+-- ============================================================================
+create table if not exists public.customer_activity (
+    id              uuid primary key default gen_random_uuid(),
+    customer_id     text not null references public.customers(id) on delete cascade,
+
+    -- The name is kept alongside the id so a departed colleague's entries still
+    -- say who wrote them after the profile is gone.
+    author_id       uuid references public.profiles(id) on delete set null,
+    author_name     text not null default '',
+
+    kind            text not null default 'note'
+                    check (kind in ('note','no_answer','declined','promise','payment','visit','dispute','system')),
+    body            text not null default '',
+
+    -- Set when kind = 'promise': what they committed to, and by when.
+    promised_amount numeric,
+    promised_on     date,
+
+    -- Points at the promise this entry settles. A promise answered by a
+    -- 'payment' entry was kept; answered by anything else, it was not.
+    resolves_id     uuid references public.customer_activity(id) on delete set null,
+
+    created_at      timestamptz not null default now()
+);
+
+create index if not exists customer_activity_customer_idx
+    on public.customer_activity (customer_id, created_at);
+create index if not exists customer_activity_promise_idx
+    on public.customer_activity (promised_on)
+    where kind = 'promise';
+create index if not exists customer_activity_resolves_idx
+    on public.customer_activity (resolves_id)
+    where resolves_id is not null;
+
+alter table public.customer_activity enable row level security;
+
+drop policy if exists customer_activity_read on public.customer_activity;
+drop policy if exists customer_activity_insert on public.customer_activity;
+drop policy if exists customer_activity_delete on public.customer_activity;
+
+-- Everyone signed in reads the thread. That it is shared is the whole point:
+-- whoever picks the account up next needs to know what was already tried.
+create policy customer_activity_read on public.customer_activity
+    for select using (auth.uid() is not null);
+
+-- Writing takes the same right as logging a follow-up, and you may only write
+-- as yourself.
+create policy customer_activity_insert on public.customer_activity
+    for insert with check (
+        public.has_perm('canEditFollowUp') and author_id = auth.uid()
+    );
+
+-- No update policy at all: entries are a record, not a draft. An author can
+-- remove their own slip, and an Admin can remove anything.
+create policy customer_activity_delete on public.customer_activity
+    for delete using (author_id = auth.uid() or public.is_admin());

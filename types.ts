@@ -84,6 +84,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 export interface User {
     /** CRM code as it appears on customer rows ('ANKUR'); profiles.legacy_id. */
     id: string;
+    /** Supabase Auth user id. Set on every user loaded from the database. */
+    authId?: string;
     name: string;
     role: UserRole;
     /** Sign-in address. Held by Supabase Auth, mirrored onto the profile row. */
@@ -163,6 +165,77 @@ export function isResponsibleFor(user: Pick<User, 'id' | 'name'>, item: Pick<Out
     const owner = ownerKey(item.crmOwnerId);
     const collector = ownerKey(item.assignedCollectorId);
     return me.includes(owner) || me.includes(collector);
+}
+
+/* ------------------------------ activity log ------------------------------ */
+
+/**
+ * What kind of thing happened. The list is deliberately short — a CRM working
+ * through a call list will not pick from twenty options, and anything that does
+ * not fit is a plain note.
+ */
+export type ActivityKind =
+    | 'note'        // anything typed freehand
+    | 'no_answer'   // rang out
+    | 'declined'    // they cut the call
+    | 'promise'     // committed to pay an amount by a date
+    | 'payment'     // money actually arrived
+    | 'visit'       // someone went in person
+    | 'dispute'     // they are contesting the amount
+    | 'system';     // written by the app, not a person
+
+export interface ActivityEntry {
+    id: string;
+    customerId: string;
+    authorId?: string;
+    authorName: string;
+    kind: ActivityKind;
+    body: string;
+    /** Set on a 'promise': what they committed to, and by when. */
+    promisedAmount?: number;
+    promisedOn?: string;
+    /** On a settling entry, the id of the promise it answers. */
+    resolvesId?: string;
+    createdAt: string;
+}
+
+/** A promise, once we know how it turned out. */
+export type PromiseState = 'open' | 'due' | 'overdue' | 'kept' | 'broken';
+
+export const ACTIVITY_LABELS: Record<ActivityKind, string> = {
+    note: 'Note',
+    no_answer: 'No answer',
+    declined: 'Call declined',
+    promise: 'Promised to pay',
+    payment: 'Payment received',
+    visit: 'Visited',
+    dispute: 'Disputed',
+    system: 'System',
+};
+
+/**
+ * How a promise stands today.
+ *
+ * A promise answered by a payment was kept; answered by anything else it was
+ * not. Until something answers it, it is open, and it becomes overdue the day
+ * after the date they gave — which is the moment somebody should be ringing.
+ */
+export function promiseState(
+    entry: ActivityEntry,
+    resolvedBy: ActivityEntry | undefined,
+    today: Date = new Date(),
+): PromiseState {
+    if (resolvedBy) return resolvedBy.kind === 'payment' ? 'kept' : 'broken';
+    if (!entry.promisedOn) return 'open';
+
+    const due = new Date(entry.promisedOn);
+    due.setHours(0, 0, 0, 0);
+    const t = new Date(today);
+    t.setHours(0, 0, 0, 0);
+
+    if (due.getTime() < t.getTime()) return 'overdue';
+    if (due.getTime() === t.getTime()) return 'due';
+    return 'open';
 }
 
 export enum FollowUpStatus {
