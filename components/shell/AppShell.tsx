@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '../../types';
 import { cx, Spinner } from '../ui/Primitives';
 import { initials } from '../ui/format';
@@ -233,6 +233,38 @@ export const AppShell = ({
   const userRef = useDismiss(userOpen, () => setUserOpen(false));
   const setupRef = useDismiss(setupOpen, () => setSetupOpen(false));
 
+  /**
+   * When the book was last pulled, in words.
+   *
+   * Anyone looking at the dashboard wants one question answered — is this
+   * today's data? A timestamp alone does not answer it at a glance, so say
+   * "today" or "yesterday" where that is what it is, and mark anything older
+   * than a day so a forgotten sync is visible rather than assumed.
+   */
+  const { syncedLabel, syncIsStale } = useMemo(() => {
+    if (!lastSyncTime) return { syncedLabel: '', syncIsStale: false };
+    const at = new Date(lastSyncTime);
+    if (isNaN(at.getTime())) return { syncedLabel: '', syncIsStale: false };
+
+    const midnight = (d: Date) => {
+      const c = new Date(d);
+      c.setHours(0, 0, 0, 0);
+      return c.getTime();
+    };
+    const days = Math.round((midnight(new Date()) - midnight(at)) / 86400000);
+    const time = at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    const day =
+      days <= 0 ? 'today' :
+      days === 1 ? 'yesterday' :
+      at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    return {
+      syncedLabel: `Synced ${day}, ${time}`,
+      syncIsStale: days >= 1,
+    };
+  }, [lastSyncTime]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
@@ -462,13 +494,24 @@ export const AppShell = ({
             <h1 className="text-[32px] sm:text-[36px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
               {title}
             </h1>
-            {(subtitle || dataAsOf) && (
+            {(subtitle || dataAsOf || lastSyncTime) && (
               <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3">
                 {subtitle}
                 {dataAsOf && (
                   <>
                     {subtitle && <span className="w-1 h-1 rounded-full bg-label-3" aria-hidden="true" />}
                     <span>Book as of {dataAsOf}</span>
+                  </>
+                )}
+                {/* "Book as of" is the date the spreadsheet says its figures run
+                    to — it does not move when you press Sync, which left no way
+                    to tell a fresh pull from a stale one. State the pull. */}
+                {syncedLabel && (
+                  <>
+                    {(subtitle || dataAsOf) && <span className="w-1 h-1 rounded-full bg-label-3" aria-hidden="true" />}
+                    <span className={syncIsStale ? 'text-warn font-semibold' : 'text-pos font-semibold'}>
+                      {syncedLabel}
+                    </span>
                   </>
                 )}
               </div>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Outstanding, Template } from '../types';
 import { WhatsAppIcon } from './icons/Icons';
-import { formatBalanceText } from './BalanceAmount';
+import { renderTemplate } from '../services/messageTemplate';
 
 interface WhatsAppReminderModalProps {
     customer: Outstanding;
@@ -51,23 +51,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
         const template = templates.find(t => t.id === selectedTemplateId);
         if (!template) return '';
 
-        let content = template.content;
-        const replacements: { [key: string]: string } = {
-            '{{companyName}}': customer.company,
-            '{{contactPerson}}': activeRecipient.name,
-            '{{contactNumber}}': activeRecipient.number,
-            '{{totalDue}}': formatBalanceText(customer.total, customer.totalType),
-            '{{ageing1_45}}': formatBalanceText(customer.ageing['1-45'], customer.ageingTypes?.['1-45']),
-            '{{ageing46_90}}': formatBalanceText(customer.ageing['46-90'], customer.ageingTypes?.['46-90']),
-            '{{ageing91_135}}': formatBalanceText(customer.ageing['91-135'], customer.ageingTypes?.['91-135']),
-            '{{ageingOver135}}': formatBalanceText(customer.ageing['>135'], customer.ageingTypes?.['>135']),
-        };
-
-        Object.entries(replacements).forEach(([placeholder, value]) => {
-            content = content.replace(new RegExp(placeholder, 'g'), value);
-        });
-
-        return encodeURIComponent(content);
+        return encodeURIComponent(renderTemplate(template.content, customer, activeRecipient));
     }, [customer, selectedTemplateId, templates, activeRecipient]);
 
     const cleanWhatsAppNumber = useMemo(() => {
@@ -233,7 +217,9 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                         <label className="block text-[12.5px] font-bold text-gray-500 dark:text-gray-400 mb-1">
                             Message Preview:
                         </label>
-                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 text-[12.5px] text-gray-700 dark:text-gray-300 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto leading-relaxed">
+                        {/* Tall enough to read a whole reminder without scrolling
+                            it a few lines at a time. */}
+                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 text-[12.5px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-72 overflow-y-auto leading-relaxed">
                             {decodedPreviewMessage}
                         </div>
                     </div>

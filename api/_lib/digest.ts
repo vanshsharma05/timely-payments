@@ -131,23 +131,24 @@ function seesWholeBook(r: Recipient): boolean {
     );
 }
 
+const key = (v?: string | null): string => (v || '').trim().toUpperCase();
+
+/**
+ * Mirrors getOutstandingForUser() in the browser: an account reaches someone's
+ * digest if they own it as CRM or are the collector working it. Scoping on one
+ * field only means a handover silently empties somebody's morning email.
+ */
 function scopeFor(r: Recipient, customers: CustomerRow[]): CustomerRow[] {
     if (seesWholeBook(r)) return customers;
 
-    const id = (r.legacyId || '').trim().toUpperCase();
-    const name = (r.name || '').trim().toUpperCase();
+    const mine = new Set([key(r.legacyId), key(r.name)].filter(Boolean));
+    const allowed = new Set((r.assignedCrms || []).map(key).filter(Boolean));
 
-    if (r.role === 'Collector') {
-        return customers.filter(c => {
-            const collector = (c.assigned_collector_id || '').trim().toUpperCase();
-            return collector === id || collector === name;
-        });
-    }
-
-    const allowed = new Set((r.assignedCrms || []).map(c => c.trim().toUpperCase()));
-    allowed.add(id);
-    allowed.add(name);
-    return customers.filter(c => allowed.has((c.crm_owner_id || '').trim().toUpperCase()));
+    return customers.filter(c => {
+        const owner = key(c.crm_owner_id);
+        const collector = key(c.assigned_collector_id);
+        return mine.has(owner) || mine.has(collector) || allowed.has(owner);
+    });
 }
 
 /* ------------------------------- building ------------------------------- */

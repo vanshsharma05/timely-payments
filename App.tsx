@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -59,13 +59,13 @@ const DEFAULT_TEMPLATE: Template = {
 
 This is a friendly reminder from Timely Payment regarding your outstanding balance for {{companyName}}.
 
-Total Due: ₹{{totalDue}}
+Total Due: {{totalDue}}
 
 Ageing Details:
-- 1-45 days: ₹{{ageing1_45}}
-- 46-90 days: ₹{{ageing46_90}}
-- 91-135 days: ₹{{ageing91_135}}
-- >135 days: ₹{{ageingOver135}}
+- 1-45 days: {{ageing1_45}}
+- 46-90 days: {{ageing46_90}}
+- 91-135 days: {{ageing91_135}}
+- >135 days: {{ageingOver135}}
 
 Please let us know when we can expect the payment.
 
@@ -1004,6 +1004,10 @@ const App = () => {
         let futureAmount = 0;
 
         appData.forEach(item => {
+            // Customers who owe nothing are not work. Left in, the whole
+            // Customer Master lands in "No follow-up" and swamps the box.
+            if (!hasOutstanding(item)) return;
+
             const cat = getFollowUpCategory(item, today);
             if (cat === 'completed') return;
 
@@ -1041,10 +1045,13 @@ const App = () => {
         let noFollowUpAmount = 0;
         let futureCount = 0;
         let futureAmount = 0;
-        let totalCount = outstandingData.length;
+        let totalCount = 0;
         let totalAmount = 0;
 
         outstandingData.forEach(item => {
+            if (!hasOutstanding(item)) return;
+
+            totalCount++;
             totalAmount += item.total || 0;
             const cat = getFollowUpCategory(item, today);
             if (cat === 'completed') return;
@@ -1131,65 +1138,83 @@ const App = () => {
     }, [outstandingData]);
 
 
-    // CRM Performance Statistics Calculation (Admin View)
+    /**
+     * Per-CRM collection workload.
+     *
+     * Two things this has to get right, both of which it used to get wrong.
+     *
+     * The bucket key is normalised. The sheet writes a CRM code however the
+     * person typing it felt that day, and the user list has its own spelling;
+     * keying the map on the raw string split one person across "ANKUR",
+     * "Ankur " and "ankur", so a freshly assigned account landed in a bucket
+     * nobody was looking at and every total was short.
+     *
+     * And only accounts that actually owe money are counted. Syncing the
+     * Customer Master brings in the full customer list, most of whom owe
+     * nothing; counting them made each CRM look responsible for thousands of
+     * accounts there was nothing to chase on.
+     */
     const crmPerformanceStats = useMemo(() => {
         const today = getToday();
-        const statsMap = new Map<string, {
-            crmId: string, crmName: string, totalAssigned: number, followUpDone: number, 
-            todayFollowUp: number, overdue: number, unattended: number, timelyCount: number
-        }>();
+        type Stat = {
+            crmId: string; crmName: string; totalAssigned: number; followUpDone: number;
+            todayFollowUp: number; overdue: number; unattended: number; timelyCount: number;
+            noDues: number;
+        };
+        const statsMap = new Map<string, Stat>();
 
-        // Initialize for known CRMs and Collectors
+        const blank = (crmId: string, crmName: string): Stat => ({
+            crmId, crmName,
+            totalAssigned: 0, followUpDone: 0, todayFollowUp: 0,
+            overdue: 0, unattended: 0, timelyCount: 0, noDues: 0,
+        });
+
+        // Seed the people we know about, so a CRM with an empty book still
+        // appears rather than silently dropping off the table.
         users.filter(u => u.role === UserRole.CRM || u.role === UserRole.Collector).forEach(u => {
-            statsMap.set(u.id, {
-                crmId: u.id,
-                crmName: u.name,
-                totalAssigned: 0,
-                followUpDone: 0,
-                todayFollowUp: 0,
-                overdue: 0,
-                unattended: 0,
-                timelyCount: 0
-            });
+            const k = ownerKey(u.id);
+            if (k) statsMap.set(k, blank(u.id, u.name));
         });
 
-        // Add bucket for"Unassigned"
-        statsMap.set('Unassigned', {
-            crmId: 'Unassigned',
-            crmName: 'No CRM Assigned',
-            totalAssigned: 0,
-            followUpDone: 0,
-            todayFollowUp: 0,
-            overdue: 0,
-            unattended: 0,
-            timelyCount: 0
-        });
+        statsMap.set('UNASSIGNED', blank('Unassigned', 'No CRM Assigned'));
+
+        const bucketFor = (raw: string | undefined, key: string) => {
+            if (!statsMap.has(key)) {
+                const known = users.find(u => ownerKey(u.id) === key || ownerKey(u.name) === key);
+                const label = (raw || '').trim();
+                statsMap.set(key, blank(known?.id || label, known?.name || label));
+            }
+            return statsMap.get(key)!;
+        };
 
         outstandingData.forEach(item => {
-            const ownerId = item.crmOwnerId && item.crmOwnerId.trim() !== '' ? item.crmOwnerId : 'Unassigned';
-            
-            if (!statsMap.has(ownerId)) {
-                 statsMap.set(ownerId, {
-                    crmId: ownerId,
-                    crmName: ownerId, 
-                    totalAssigned: 0,
-                    followUpDone: 0,
-                    todayFollowUp: 0,
-                    overdue: 0,
-                    unattended: 0,
-                    timelyCount: 0
-                });
+            const ownerK = ownerKey(item.crmOwnerId) || 'UNASSIGNED';
+            const collectorK = ownerKey(item.assignedCollectorId);
+
+            // An account with a collector on it is work for two people: the CRM
+            // who owns it and the collector chasing it. Bucketing on ownership
+            // alone left every Collector sitting at zero no matter how much had
+            // been handed to them, which is exactly what a manager checks here.
+            const buckets = [bucketFor(item.crmOwnerId, ownerK)];
+            if (collectorK && collectorK !== ownerK) {
+                buckets.push(bucketFor(item.assignedCollectorId, collectorK));
             }
 
-            const stat = statsMap.get(ownerId)!;
-            stat.totalAssigned++;
-
             const cat = getFollowUpCategory(item, today);
-            if (cat === 'completed') {
-                stat.followUpDone++;
-                stat.timelyCount++; 
-            } else {
-                if (cat === 'today') {
+
+            for (const stat of buckets) {
+                // On the books but owing nothing — real customers, nothing to chase.
+                if (!hasOutstanding(item)) {
+                    stat.noDues++;
+                    continue;
+                }
+
+                stat.totalAssigned++;
+
+                if (cat === 'completed') {
+                    stat.followUpDone++;
+                    stat.timelyCount++;
+                } else if (cat === 'today') {
                     stat.todayFollowUp++;
                     stat.timelyCount++;
                 } else if (cat === 'future') {
@@ -2422,9 +2447,20 @@ const App = () => {
         source: 'Data source',
     };
 
-    const scopeLabel = wholeBook
-        ? `${appData.length} accounts company-wide`
-        : `${outstandingData.length} accounts assigned to you`;
+    /**
+     * Count what there is to collect, not how many customers exist.
+     *
+     * The Customer Master sheet brings in the whole customer list; most of them
+     * owe nothing today. Counting all of them made the dashboard claim
+     * thousands of accounts against a figure earned by a few hundred.
+     */
+    const scopeRows = wholeBook ? appData : outstandingData;
+    const withDues = scopeRows.filter(hasOutstanding).length;
+    const noDues = scopeRows.length - withDues;
+
+    const scopeLabel = `${withDues.toLocaleString('en-IN')} ${
+        wholeBook ? 'accounts with dues company-wide' : 'accounts with dues assigned to you'
+    }${noDues > 0 ? ` · ${noDues.toLocaleString('en-IN')} settled` : ''}`;
 
     const totalBook = (wholeBook ? appData : outstandingData)
         .reduce((s, r) => s + (r.totalType === 'Cr' ? 0 : (r.total || 0)), 0);

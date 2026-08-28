@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can } from '../types';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
-import { BalanceAmount, formatBalanceText } from './BalanceAmount';
+import { BalanceAmount } from './BalanceAmount';
+import { renderTemplate } from '../services/messageTemplate';
 
 interface FollowUpModalProps {
     customer: Outstanding;
@@ -246,23 +247,7 @@ const FollowUpModal = ({
         const template = templates.find(t => t.id === selectedTemplateId);
         if (!template) return '';
 
-        let content = template.content;
-        const replacements: { [key: string]: string } = {
-            '{{companyName}}': customer.company,
-            '{{contactPerson}}': activeRecipient.name,
-            '{{contactNumber}}': activeRecipient.number,
-            '{{totalDue}}': formatBalanceText(customer.total, customer.totalType),
-            '{{ageing1_45}}': formatBalanceText(customer.ageing['1-45'], customer.ageingTypes?.['1-45']),
-            '{{ageing46_90}}': formatBalanceText(customer.ageing['46-90'], customer.ageingTypes?.['46-90']),
-            '{{ageing91_135}}': formatBalanceText(customer.ageing['91-135'], customer.ageingTypes?.['91-135']),
-            '{{ageingOver135}}': formatBalanceText(customer.ageing['>135'], customer.ageingTypes?.['>135']),
-        };
-
-        Object.entries(replacements).forEach(([placeholder, value]) => {
-            content = content.replace(new RegExp(placeholder, 'g'), value);
-        });
-
-        return encodeURIComponent(content);
+        return encodeURIComponent(renderTemplate(template.content, customer, activeRecipient));
     }, [customer, selectedTemplateId, templates, activeRecipient]);
 
     // Cleaned recipient number for WhatsApp link

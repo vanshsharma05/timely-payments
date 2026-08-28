@@ -1,4 +1,4 @@
-import { Outstanding, FollowUpStatus, User, UserRole, DataVisibility, BalanceType } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, DataVisibility, BalanceType, ownerKey, isResponsibleFor } from '../types';
 
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
@@ -69,18 +69,15 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
 
     const headers = rows[0].map(h => h.trim());
     
-    // Column L (index 11) contains the date till which the sheet is updated
-    let updatedTillDate = '';
-    if (headers.length > 11 && headers[11]) {
-        updatedTillDate = headers[11];
-    } else {
-        // Look for any date header or fallback to cell L1 / today
-        const datePattern = /\d{1,2}-[A-Za-z]{3}-\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}/;
-        const found = headers.find(h => datePattern.test(h));
-        if (found) {
-            updatedTillDate = found;
-        }
-    }
+    // Column L (index 11) carries the date the sheet's figures run to. It has to
+    // look like a date before we print it under the dashboard title — taking
+    // cell L1 on faith puts whatever a column happens to be called, or last
+    // month's leftover text, up there as "Book as of".
+    const datePattern = /\d{1,2}-[A-Za-z]{3}-\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}/;
+    const updatedTillDate =
+        (headers.length > 11 && datePattern.test(headers[11] || '') ? headers[11] : '') ||
+        headers.find(h => datePattern.test(h)) ||
+        '';
 
     // Column mapping detection
     const colMap = {
@@ -307,43 +304,37 @@ export const processStatuses = (data: Outstanding[]): Outstanding[] => {
 };
 
 /**
- * filters data for the specific user based on roles, explicit permissions, and assigned CRM scopes.
+ * The slice of the book one person is responsible for.
+ *
+ * Responsibility runs two ways and either one is enough to see the account: the
+ * CRM who owns it, and the collector it has been handed to. Scoping on only one
+ * of them is how an account assigned to somebody disappears from their screen —
+ * the CRM hands it over and it vanishes for a colleague whose role happens not
+ * to be Collector, or the other way round.
  */
 export const getOutstandingForUser = (user: User, allData: Outstanding[]): Promise<Outstanding[]> => {
     return new Promise((resolve) => {
-        let userSpecificData: Outstanding[];
-        
-        // Check if user has global viewing permission (Admin, Manager, Viewer, or canViewAllCrms)
-        const canViewAll = 
-            user.role === UserRole.Admin || 
-            user.role === UserRole.Manager || 
-            user.role === UserRole.Viewer || 
-            user.dataVisibility === DataVisibility.All || 
+        // Admin, Manager, Viewer, or anyone explicitly granted the whole book.
+        const canViewAll =
+            user.role === UserRole.Admin ||
+            user.role === UserRole.Manager ||
+            user.role === UserRole.Viewer ||
+            user.dataVisibility === DataVisibility.All ||
             user.permissions?.canViewAllCrms;
 
         if (canViewAll) {
-            userSpecificData = allData;
-        } else if (user.assignedCrms && user.assignedCrms.length > 0) {
-            const allowedCrms = new Set(user.assignedCrms.map(c => c.trim().toUpperCase()));
-            userSpecificData = allData.filter(d => {
-                const ownerUpper = (d.crmOwnerId || '').trim().toUpperCase();
-                return allowedCrms.has(ownerUpper);
-            });
-        } else if (user.role === UserRole.CRM) {
-            const userIdUpper = user.id.trim().toUpperCase();
-            const userNameUpper = user.name.trim().toUpperCase();
-            userSpecificData = allData.filter(d => {
-                const ownerUpper = (d.crmOwnerId || '').trim().toUpperCase();
-                return ownerUpper === userIdUpper || ownerUpper === userNameUpper;
-            });
-        } else { // Collector with AssignedOnly visibility
-            const userIdUpper = user.id.trim().toUpperCase();
-            const userNameUpper = user.name.trim().toUpperCase();
-            userSpecificData = allData.filter(d => {
-                const collectorUpper = (d.assignedCollectorId || '').trim().toUpperCase();
-                return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
-            });
+            resolve(processStatuses(allData));
+            return;
         }
+
+        // An explicit CRM scope widens what they own; it never takes away an
+        // account handed to them personally.
+        const allowedCrms = new Set((user.assignedCrms || []).map(ownerKey).filter(Boolean));
+
+        const userSpecificData = allData.filter(d =>
+            isResponsibleFor(user, d) || allowedCrms.has(ownerKey(d.crmOwnerId))
+        );
+
         resolve(processStatuses(userSpecificData));
     });
 };

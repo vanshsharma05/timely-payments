@@ -136,6 +136,35 @@ export function seesWholeBook(user: User | null | undefined): boolean {
     );
 }
 
+/**
+ * One CRM code, written one way.
+ *
+ * The sheet, the user list and anything typed by hand disagree about case and
+ * stray spaces — "ANKUR", "Ankur" and "ankur " are the same person. Every
+ * comparison of ownership goes through here so they land in one bucket instead
+ * of three.
+ */
+export const ownerKey = (value?: string | null): string => (value || '').trim().toUpperCase();
+
+/**
+ * Whether an account belongs in a collections count.
+ *
+ * The Customer Master sheet carries the whole customer list, including accounts
+ * that owe nothing; syncing it adds them to the book with a zero balance. They
+ * are real customers and belong in search and in their ledger, but counting
+ * them as things to chase overstates every CRM's workload.
+ */
+export const hasOutstanding = (item: Pick<Outstanding, 'total'>): boolean =>
+    Math.abs(Number(item.total) || 0) > 0;
+
+/** True when this person owns the account, or is the collector working it. */
+export function isResponsibleFor(user: Pick<User, 'id' | 'name'>, item: Pick<Outstanding, 'crmOwnerId' | 'assignedCollectorId'>): boolean {
+    const me = [ownerKey(user.id), ownerKey(user.name)].filter(Boolean);
+    const owner = ownerKey(item.crmOwnerId);
+    const collector = ownerKey(item.assignedCollectorId);
+    return me.includes(owner) || me.includes(collector);
+}
+
 export enum FollowUpStatus {
     Today = 'Today',
     Upcoming = 'Upcoming',

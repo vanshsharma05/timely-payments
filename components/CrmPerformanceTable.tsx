@@ -10,6 +10,8 @@ interface CrmStat {
     overdue: number;
     unattended: number; // Pending or Overdue > 7 days
     score: number; // Percentage of timely follow-ups
+    /** On this CRM's books but owing nothing — counted separately, never chased. */
+    noDues?: number;
 }
 
 interface CrmPerformanceTableProps {
@@ -21,19 +23,22 @@ const CrmPerformanceTable = ({ stats }: CrmPerformanceTableProps) => {
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xs border border-gray-200 dark:border-gray-800 overflow-hidden mb-6">
             <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                 <div>
-                    <h3 className="text-base font-bold text-gray-900 dark:text-white">CRM Team Performance & Portfolio Allocation</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Account distribution, daily task completion rates, and timely score per owner</p>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">Team Performance &amp; Portfolio Allocation</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Accounts carrying a balance, daily task completion and timely score per person.
+                        An account handed to a collector counts for both them and its CRM owner.
+                    </p>
                 </div>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-slate-300">
-                    {stats.length} Active Owners
+                    {stats.length} people
                 </span>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs sm:text-sm">
                     <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                         <tr>
-                            <th className="px-3.5 py-2.5 text-left">CRM / Owner</th>
-                            <th className="px-3 py-2.5 text-center">Total Assigned</th>
+                            <th className="px-3.5 py-2.5 text-left">CRM / Collector</th>
+                            <th className="px-3 py-2.5 text-center">Accounts With Dues</th>
                             <th className="px-3 py-2.5 text-center">Follow-up Done</th>
                             <th className="px-3 py-2.5 text-center">Today's Tasks</th>
                             <th className="px-3 py-2.5 text-center">Overdue</th>
@@ -59,6 +64,14 @@ const CrmPerformanceTable = ({ stats }: CrmPerformanceTableProps) => {
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs sm:text-sm text-gray-900 dark:text-white font-bold">
                                     {stat.totalAssigned}
+                                    {/* The rest of their book: real customers from the Customer
+                                        Master who owe nothing today. Shown so the number above
+                                        reconciles with the account list. */}
+                                    {!!stat.noDues && (
+                                        <span className="block font-normal text-[11.5px] text-gray-500 dark:text-gray-400">
+                                            +{stat.noDues} no dues
+                                        </span>
+                                    )}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 font-semibold">
                                     {stat.followUpDone}
