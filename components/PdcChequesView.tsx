@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, PdcCheque, PdcStatus, User, UserRole, DataVisibility, can } from '../types';
+import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE } from '../types';
 import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
 interface PdcChequesViewProps {
@@ -53,31 +53,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     const canExport = can(currentUser, 'canExportData');
 
     // Permission and Data Scoping
-    const canViewAll = 
-        currentUser?.role === UserRole.Admin || 
-        currentUser?.role === UserRole.Manager || 
-        currentUser?.role === UserRole.Viewer || 
-        currentUser?.dataVisibility === DataVisibility.All || 
-        Boolean(currentUser?.permissions?.canViewAllCrms);
+    const canViewAll = seesWholeBook(currentUser);
 
-    const allowedCustomers = useMemo(() => {
-        if (canViewAll || !currentUser) return customers;
-        const userIdUpper = (currentUser.id || '').trim().toUpperCase();
-        const userNameUpper = (currentUser.name || '').trim().toUpperCase();
-        const allowedCrms = new Set((currentUser.assignedCrms || []).map(c => c.trim().toUpperCase()));
-        if (currentUser.role === UserRole.CRM) {
-            allowedCrms.add(userIdUpper);
-            allowedCrms.add(userNameUpper);
-        }
-        return customers.filter(c => {
-            if (currentUser.role === UserRole.Collector) {
-                const collectorUpper = (c.assignedCollectorId || '').trim().toUpperCase();
-                return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
-            }
-            const ownerUpper = (c.crmOwnerId || '').trim().toUpperCase();
-            return allowedCrms.has(ownerUpper);
-        });
-    }, [customers, currentUser, canViewAll]);
+    const allowedCustomers = useMemo(() => scopeTo(currentUser, customers), [customers, currentUser]);
 
     const allowedCustomerIds = useMemo(() => new Set(allowedCustomers.map(c => c.id)), [allowedCustomers]);
 
@@ -111,90 +89,45 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
         return d instanceof Date ? d : new Date(d);
     };
 
-    // Calculate Dynamic Status for each cheque (e.g. if Pending and date is today, it's Due Today)
-    const chequesWithComputedStatus = useMemo(() => {
-        return allowedCheques.map(c => {
-            const cDate = normalizeDate(c.chequeDate);
-            // A cheque still in hand is due when its date arrives and overdue
-            // once it has passed. Reading that off the date rather than a stored
-            // status is what stops a cheque entered days ago from insisting it
-            // is due today for the rest of its life.
-            const inHand = c.status === PdcStatus.Pending || c.status === PdcStatus.DueToday;
-            let effectiveStatus = c.status;
-            if (inHand) {
-                effectiveStatus = isSameDay(cDate, today)
-                    ? PdcStatus.DueToday
-                    : PdcStatus.Pending;
-            }
-            return {
-                ...c,
-                chequeDate: cDate,
-                effectiveStatus
-            };
-        });
-    }, [allowedCheques, today]);
+    // Where each cheque stands today, worked out from its date every render.
+    // chequeState() in types.ts is the only place that decision is made, so the
+    // register, the dashboard badge and the morning email cannot disagree.
+    const chequesWithComputedStatus = useMemo(
+        () => allowedCheques.map(c => ({
+            ...c,
+            chequeDate: normalizeDate(c.chequeDate),
+            state: chequeState({ ...c, chequeDate: normalizeDate(c.chequeDate) }, today),
+        })),
+        [allowedCheques, today],
+    );
+
+    const metricsByState = useMemo(() => {
+        const blank = () => ({ count: 0, amount: 0 });
+        const acc: Record<ChequeState, { count: number; amount: number }> = {
+            due: blank(), overdue: blank(), upcoming: blank(),
+            hold: blank(), cleared: blank(), bounced: blank(),
+        };
+        for (const c of chequesWithComputedStatus) {
+            acc[c.state].count++;
+            acc[c.state].amount += c.amount;
+        }
+        return acc;
+    }, [chequesWithComputedStatus]);
 
     // Metric Calculations
     const metrics = useMemo(() => {
-        let todayCount = 0;
-        let todayAmount = 0;
-        let overdueCount = 0;
-        let overdueAmount = 0;
-        let pendingCount = 0;
-        let pendingAmount = 0;
-        let holdCount = 0;
-        let holdAmount = 0;
-        let clearedCount = 0;
-        let clearedAmount = 0;
-        let bouncedCount = 0;
-        let bouncedAmount = 0;
-
-        chequesWithComputedStatus.forEach(c => {
-            const cDate = c.chequeDate;
-            const isToday = isSameDay(cDate, today);
-
-            if (c.status === PdcStatus.Cleared) {
-                clearedCount++;
-                clearedAmount += c.amount;
-            } else if (c.status === PdcStatus.Hold) {
-                holdCount++;
-                holdAmount += c.amount;
-            } else if (c.status === PdcStatus.Bounced) {
-                bouncedCount++;
-                bouncedAmount += c.amount;
-            } else if (isToday) {
-                todayCount++;
-                todayAmount += c.amount;
-            } else if (cDate < today) {
-                // Its date has gone and it is still in hand — somebody has to
-                // bank it or find out why they cannot. This had nowhere to go
-                // before and sat quietly among the cheques awaiting their date.
-                overdueCount++;
-                overdueAmount += c.amount;
-            } else {
-                pendingCount++;
-                pendingAmount += c.amount;
-            }
-        });
-
-        const activeTotalAmount = todayAmount + overdueAmount + pendingAmount + holdAmount;
-
+        const m = metricsByState;
         return {
-            todayCount,
-            todayAmount,
-            overdueCount,
-            overdueAmount,
-            pendingCount,
-            pendingAmount,
-            holdCount,
-            holdAmount,
-            clearedCount,
-            clearedAmount,
-            bouncedCount,
-            bouncedAmount,
-            activeTotalAmount
+            todayCount: m.due.count,        todayAmount: m.due.amount,
+            overdueCount: m.overdue.count,  overdueAmount: m.overdue.amount,
+            pendingCount: m.upcoming.count, pendingAmount: m.upcoming.amount,
+            holdCount: m.hold.count,        holdAmount: m.hold.amount,
+            clearedCount: m.cleared.count,  clearedAmount: m.cleared.amount,
+            bouncedCount: m.bounced.count,  bouncedAmount: m.bounced.amount,
+            // Everything still with us, whether or not its date has come.
+            activeTotalAmount: m.due.amount + m.overdue.amount + m.upcoming.amount + m.hold.amount,
         };
-    }, [chequesWithComputedStatus, today]);
+    }, [metricsByState]);
 
     // Extract unique banks for filter
     const bankList = useMemo(() => {
@@ -228,12 +161,11 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             // Status Filter
             if (statusFilter !== 'all') {
                 if (statusFilter === 'today') {
-                    if (!isSameDay(c.chequeDate, today)) return false;
+                    if (c.state !== 'due') return false;
                 } else if (statusFilter === 'overdue') {
-                    const inHand = c.status === PdcStatus.Pending || c.status === PdcStatus.DueToday;
-                    if (!inHand || c.chequeDate >= today || isSameDay(c.chequeDate, today)) return false;
+                    if (c.state !== 'overdue') return false;
                 } else if (statusFilter === 'active') {
-                    if (c.status === PdcStatus.Cleared || c.status === PdcStatus.Bounced) return false;
+                    if (!CHEQUE_ACTIVE.includes(c.state)) return false;
                 } else if (c.status !== statusFilter) {
                     return false;
                 }
@@ -243,7 +175,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             if (dateRangeFilter !== 'all') {
                 const cDate = c.chequeDate;
                 if (dateRangeFilter === 'today') {
-                    if (!isSameDay(cDate, today)) return false;
+                    if (c.state !== 'due') return false;
                 } else if (dateRangeFilter === 'this_week') {
                     const startOfWeek = new Date(today);
                     startOfWeek.setDate(today.getDate() - today.getDay());
@@ -727,8 +659,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             ) : (
                                 filteredCheques.map(cheque => {
                                     const customer = customers.find(c => c.id === cheque.customerId);
-                                    const isDueToday = isSameDay(cheque.chequeDate, today);
-                                    const isPastDue = cheque.chequeDate < today && !isDueToday && cheque.status === PdcStatus.Pending;
+                                    const isDueToday = cheque.state === 'due';
+                                    const isPastDue = cheque.state === 'overdue';
 
                                     return (
                                         <tr key={cheque.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors">

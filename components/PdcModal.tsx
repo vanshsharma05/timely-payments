@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outstanding, PdcCheque, PdcStatus, User } from '../types';
+import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User } from '../types';
 import { ChequeIcon } from './icons/Icons';
 
 interface PdcModalProps {
@@ -329,10 +329,9 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                     is decided by its date, every morning. Storing it as a
                                     status froze it, so a cheque entered as due today was
                                     still claiming it a week later. */}
-                                <option value={PdcStatus.Pending}>Pending — waiting for its date</option>
-                                <option value={PdcStatus.Hold}>On Hold (Customer Request)</option>
-                                <option value={PdcStatus.Cleared}>Cleared</option>
-                                <option value={PdcStatus.Bounced}>Bounced / Returned</option>
+                                {PDC_STATUS_CHOICES.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
                             </select>
                         </div>
 

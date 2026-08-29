@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, PdcStatus, CompanyProfile, DataVisibility, getFollowUpCategory, can, DEFAULT_COMPANY_PROFILE } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -64,35 +64,13 @@ export const ReportsView = ({
     }, []);
 
     // Strict access control / role-based scoping
-    const canViewAll = 
-        currentUser?.role === UserRole.Admin || 
-        currentUser?.role === UserRole.Manager || 
-        currentUser?.role === UserRole.Viewer || 
-        currentUser?.dataVisibility === DataVisibility.All || 
-        Boolean(currentUser?.permissions?.canViewAllCrms);
+    const canViewAll = seesWholeBook(currentUser);
 
     // Downloading the book and spending money on an AI report are both rights
     // a Viewer or Collector is not given.
     const canExport = can(currentUser, 'canExportData');
 
-    const userAllowedData = useMemo(() => {
-        if (canViewAll || !currentUser) return data;
-        const userIdUpper = (currentUser.id || '').trim().toUpperCase();
-        const userNameUpper = (currentUser.name || '').trim().toUpperCase();
-        const allowedCrms = new Set((currentUser.assignedCrms || []).map(c => c.trim().toUpperCase()));
-        if (currentUser.role === UserRole.CRM) {
-            allowedCrms.add(userIdUpper);
-            allowedCrms.add(userNameUpper);
-        }
-        return data.filter(item => {
-            if (currentUser.role === UserRole.Collector) {
-                const collectorUpper = (item.assignedCollectorId || '').trim().toUpperCase();
-                return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
-            }
-            const ownerUpper = (item.crmOwnerId || '').trim().toUpperCase();
-            return allowedCrms.has(ownerUpper);
-        });
-    }, [data, currentUser, canViewAll]);
+    const userAllowedData = useMemo(() => scopeTo(currentUser, data), [data, currentUser]);
 
     // Get list of distinct CRM owners allowed for this user
     const crmOwners = useMemo(() => {
@@ -820,7 +798,7 @@ export const ReportsView = ({
 
                                     // Customer PDC Summary
                                     const customerPdcs = pdcCheques.filter(p => p.customerId === item.id);
-                                    const activePdcs = customerPdcs.filter(p => p.status !== PdcStatus.Cleared && p.status !== PdcStatus.Bounced);
+                                    const activePdcs = customerPdcs.filter(p => CHEQUE_ACTIVE.includes(chequeState(p, today)));
                                     const totalPdcAmount = activePdcs.reduce((sum, p) => sum + p.amount, 0);
 
                                     return (

@@ -1,0 +1,1327 @@
+# Timely Payment — engineering reference
+
+Deep reference for the whole system: what it is, how it is built, the rules it
+enforces, what the live data actually looks like, and what is still open.
+
+Written against commit `24452ec` on branch `restore-and-fix`, verified against
+the live database on **29 August 2026**.
+
+- **Live app:** https://timely-payment.vercel.app
+- **Customer:** Shori Chemicals Pvt. Ltd., Ludhiana
+- **Status:** in production, real money, real staff, used daily
+
+---
+
+## 1. What the product is
+
+A receivables collection book. Every account that owes Shori Chemicals money,
+who is chasing it, what was said on the last call, what was promised, and which
+post-dated cheques are held against it — shared by the whole team, one dataset.
+
+Three jobs it does that a spreadsheet could not:
+
+1. **Splits the book by responsibility** so each CRM/collector opens the app and
+   sees only their own work, while managers see everything.
+2. **Keeps a shared, append-only record** of what happened on each account, so
+   whoever rings tomorrow knows what was tried today.
+3. **Tells people what to do this morning** — a worklist on screen and a 9 a.m.
+   email per person.
+
+The Google Sheet is an **import source only**. Supabase is the master record.
+
+---
+
+## 2. Live state (29 Aug 2026)
+
+Read straight from production. These numbers are the reason several design
+decisions below exist.
+
+### The book
+
+| | |
+|---|---|
+| Customer rows | **4,048** |
+| …of which owe something | **687** |
+| …of which owe nothing (Customer Master) | **3,361** |
+| Total outstanding (Dr) | **₹11,20,56,112** (₹11.21 Cr) |
+| Credit balances held (Cr) | ₹3,19,149 |
+| Duplicate company names | 0 |
+
+### Ageing (Dr accounts only)
+
+| Bucket | Amount | Share |
+|---|---|---|
+| 1–45 days | ₹2,93,48,879 | 26% |
+| 46–90 days | ₹2,03,81,588 | 18% |
+| 91–135 days | ₹1,22,31,064 | 11% |
+| **> 135 days** | **₹5,01,96,986** | **45%** |
+
+Nearly half the book is over 135 days old. That single fact is what the whole
+"Bad debt" rank and the agency-list export exist to act on.
+
+### Follow-up coverage (accounts with dues)
+
+| | Count |
+|---|---|
+| No follow-up planned | **607** |
+| Due today | 1 |
+| Overdue | 3 |
+| Scheduled ahead | 76 |
+
+**88% of the accounts that owe money have nothing planned against them.** This
+is the biggest operational gap in the system today — the software works, the
+habit is not there yet.
+
+### Per-CRM book (accounts with dues)
+
+| CRM code | Accounts | Amount |
+|---|---:|---:|
+| PRIKSHIT | 181 | ₹3,89,51,176 |
+| VISHNU | 200 | ₹3,22,87,131 |
+| POONAM | 94 | ₹1,57,42,135 |
+| ANKUR | 19 | ₹82,14,109 |
+| SANDEEP | 66 | ₹77,65,710 |
+| KAPIL | 15 | ₹51,88,644 |
+| SAVIA | 58 | ₹18,77,095 |
+| RAKESH | 9 | ₹5,10,272 |
+| ROHINI | 5 | ₹1,28,391 |
+| GARRY | 7 | ₹35,719 |
+| *(unassigned)* | 1 | ₹8,780 |
+
+Plus a lowercase shadow of most of those — see [§13.2](#132-crm-code-case-drift).
+
+### Collectors
+
+| Collector | Accounts handed over |
+|---|---:|
+| ATUL_BERRY | 19 |
+| MUNSHI_RAM | 7 |
+| *(none)* | 661 |
+
+### PDC cheques (67 total)
+
+| Status | Count | Amount |
+|---|---:|---:|
+| Pending (in hand) | 63 | ₹40,22,075 |
+| Hold | 3 | ₹4,70,799 |
+| Cleared | 1 | ₹30,066 |
+
+By date: **5 due today**, **1 past its date and still Pending**
+(RANKESHWAR COLLECTION LLP, ₹31,926, dated 28 Aug), **57 future-dated**.
+
+The three on Hold are the three that were found past their date on 28 Aug
+(ANSH FABRICS ₹3,80,799, CHAHAL EMBROIDERY ₹50,000, SHAH KNIT FAB ₹40,000) —
+somebody has since parked them deliberately, which is the correct use of Hold.
+
+**65 of 67 cheques were entered by Rawat.** One by kapil, one by Sandeep.
+
+### Team (17 profiles)
+
+| Role | People |
+|---|---|
+| Admin | `Admin`, `ANKUR` |
+| Manager | `RAWAT` |
+| CRM | GARRY, KAPIL, POONAM, PRIKSHIT, RAKESH, ROHINI, SANDEEP, SAVIA, SUNNY, VANSH_SHARMA, VISHNU |
+| Collector | AMRIT, ATUL_BERRY, MUNSHI_RAM |
+
+`ATUL_BERRY` and `MUNSHI_RAM` are Collectors with `data_visibility = All` —
+they see the whole book, not just what is assigned to them.
+
+### Activity log
+
+30 entries, all created 29 Aug — 26 notes, 2 "no answer", 2 system. Real usage,
+mostly by `Admin` and `ANKUR`. Sample entries: *"as discuss with Atul, will give
+30000 on monday"*, *"assign to atul to visit"*, *"we will follow in 14Sept for
+payment"*.
+
+Only 28 customers have anything in the legacy `notes` array.
+
+### Alerts
+
+`daily_email` is **ON**, all four roles selected, `skip_when_empty` on.
+The cron fires at 03:30 UTC daily and **every run fails**:
+
+```
+2026-08-29 04:16  daily_email  9 recipients  0 delivered  9 failed
+                  provider: none
+                  "No email provider configured. Set RESEND_API_KEY or SMTP_URL"
+```
+
+This is launch step 1 and it is still open. See [§13.1](#131-the-daily-email-cannot-send).
+
+### Data source
+
+```
+data_source_mode        google
+sheet_updated_till_date 28-Aug-2026
+last_sync_time          2026-08-29T08:19:24Z
+```
+
+---
+
+## 3. Architecture
+
+```
+                      ┌──────────────────────────────┐
+   Google Sheets ────▶│  /api/fetch-sheet  (proxy)   │
+   (import source)    └──────────────┬───────────────┘
+                                     │ CSV
+                                     ▼
+   Browser  ──────────────▶  React 18 + Vite SPA
+      │                          │        │
+      │  anon key + RLS          │        │  Bearer session token
+      ▼                          ▼        ▼
+   ┌────────────────┐   ┌──────────────────────────┐
+   │   Supabase     │◀──│  /api/team               │ service_role
+   │  Postgres+Auth │   │  /api/daily-report       │ service_role
+   │      RLS       │   │  /api/gemini-report      │ GEMINI_API_KEY
+   └────────────────┘   │  /api/alert-status       │
+            ▲           │  /api/ai-status /health  │
+            │           └──────────────────────────┘
+            │                        ▲
+            └── Vercel Cron 03:30 UTC (CRON_SECRET) ┘
+```
+
+**Stack**
+
+| Layer | Choice |
+|---|---|
+| UI | React 18, TypeScript strict, Vite 5 |
+| Styling | Tailwind v4 (`@tailwindcss/vite`) over CSS custom properties |
+| Data | Supabase — Postgres, Auth, Row Level Security |
+| Server | Vercel serverless functions in `api/` |
+| Local dev | `server.ts` — Express 5 mirroring every route, Vite in middleware mode |
+| Spreadsheets | SheetJS (`xlsx`) pinned to the CDN tarball 0.20.3 |
+| AI | `@google/genai`, model `gemini-3.7-flash`, optional |
+| Mail | Resend HTTP API *or* SMTP via nodemailer |
+| QA | puppeteer-core scripts against real Chrome |
+
+**The mirroring rule.** Every route exists twice: once as a Vercel function in
+`api/*.ts`, once as an Express handler in `server.ts`. Both call the *same*
+module in `api/_lib/`. Adding a route means adding it in both places and never
+re-implementing the logic. This is why `api/_lib/` exists at all.
+
+### Bundle splitting
+
+`vite.config.ts` forces three vendor chunks so app edits do not invalidate them:
+`react`, `sheets` (xlsx), `markdown` (react-markdown). Warning limit 700 kB.
+
+---
+
+## 4. Data model
+
+Defined in [supabase/schema.sql](supabase/schema.sql). Eight tables, all with
+RLS on.
+
+### 4.1 `profiles`
+
+One row per auth user. **`id` is the Supabase Auth UUID; `legacy_id` is the CRM
+code that appears on customer rows** (`ANKUR`, `PRIKSHIT`, `ATUL_BERRY`). The
+whole ownership model hangs on `legacy_id`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | FK → `auth.users(id)` ON DELETE CASCADE |
+| `legacy_id` | text UNIQUE NOT NULL | the CRM code |
+| `name`, `email` | text | |
+| `role` | text | `Admin` / `Manager` / `CRM` / `Collector` / `Viewer` |
+| `data_visibility` | text | `All` / `AssignedOnly` |
+| `permissions` | jsonb | overrides on top of the role default |
+| `assigned_crms` | text[] | extra CRM codes this person may read |
+
+**In the app, `User.id` is the `legacy_id`, not the UUID.** The auth UUID rides
+along as `User.authId`. `repo.rowToUser()` does that mapping. Getting this
+backwards breaks every ownership comparison in the codebase.
+
+### 4.2 `customers`
+
+One row per account. `id` is text, not a uuid.
+
+Groups of columns:
+
+- **Identity** — `id`, `company`
+- **Contact** — `contact_person`, `contact_number`, `contact_post`,
+  `additional_contacts` (jsonb array), `email`
+- **Master data** — `city`, `state`, `address`, `gstin`, `pan`,
+  `credit_limit`, `payment_terms_days`
+- **Grade** — `payment_rank` ∈ `Good` / `Late` / `Bad`, nullable
+- **Money** — `total`, `total_type` (`Dr`/`Cr`), `ageing` jsonb
+  (`1-45`, `46-90`, `91-135`, `>135`), `ageing_types` jsonb,
+  `over90` + `over90_type`, `due_over45` + `due_over45_type`
+- **Ownership** — `crm_owner_id` (text, matched to `profiles.legacy_id`),
+  `assigned_collector_id`
+- **Work** — `follow_up_date`, `forecast_amount`, `forecast_date`, `status`,
+  `notes` jsonb array, `is_urgent`, `is_new_customer`, `added_at`,
+  `creation_date`, `last_follow_up_on`
+
+Indexes: `upper(crm_owner_id)`, `upper(assigned_collector_id)`,
+`follow_up_date`.
+
+**Two id formats live in production side by side:**
+
+| Format | Count | Origin |
+|---|---:|---|
+| `cust_<slug>` | 3,376 | `customerIdFor()`, deterministic from company name |
+| `out_<row>_<NAME>` | 672 | legacy, carried the sheet's row number |
+
+Legacy ids survive because `mergeWithExistingFollowUps()` deliberately keeps the
+id a matched customer already has. Changing an id would delete the row and
+insert a copy — taking its PDC cheques with it, since those cascade.
+
+### 4.3 `pdc_cheques`
+
+`id` text, `customer_id` → `customers(id)` **ON DELETE CASCADE**.
+Fields: `customer_name`, `cheque_number`, `bank_name`, `cheque_date`, `amount`,
+`status`, `received_date`, `cleared_date`, `remarks`, `crm_owner_id`,
+`added_by`.
+
+`status` check allows `Pending | DueToday | Cleared | Hold | Bounced`.
+**`DueToday` is legacy and must never be written again** — see
+[§7.5](#75-when-a-cheque-is-due). The constraint still accepts it so old rows
+stay valid.
+
+### 4.4 `customer_activity` — the shared thread
+
+Append-only by design. **There is no UPDATE policy at all.**
+
+| Column | Notes |
+|---|---|
+| `id` | uuid, `gen_random_uuid()` |
+| `customer_id` | → `customers(id)` cascade |
+| `author_id` | → `profiles(id)` ON DELETE SET NULL |
+| `author_name` | kept alongside the id so a departed colleague's entries still say who wrote them |
+| `kind` | `note` `no_answer` `declined` `promise` `payment` `visit` `dispute` `system` |
+| `body` | free text |
+| `promised_amount`, `promised_on` | set when `kind = 'promise'` |
+| `resolves_id` | → `customer_activity(id)`, points at the promise this entry settles |
+| `created_at` | **database default `now()`** — never the browser's clock, so a laptop with the wrong date cannot file yesterday's call |
+
+Partial indexes on `promised_on WHERE kind='promise'` and on
+`resolves_id WHERE resolves_id IS NOT NULL`.
+
+A promise is never edited. It is **answered** by inserting a new row whose
+`resolves_id` points back at it. Answered by a `payment` → kept. Answered by
+anything else → broken.
+
+### 4.5 Singletons
+
+`company_profile` and `app_settings` are pinned to `id = 1` by a check
+constraint, so there can only ever be one row.
+
+`app_settings`: `data_source_mode`, `google_sheet_url`,
+`customer_master_sheet_url`, `sheet_updated_till_date`, `last_sync_time`.
+
+### 4.6 `alert_settings` + `alert_log`
+
+`alert_settings` (id=1): `daily_email`, `recipient_roles[]`, `skip_when_empty`,
+`extra_recipients[]`.
+
+`alert_log` is what makes the Alerts screen honest — it records every run
+including the ones that sent nothing and why. **Only the server writes it**
+(service role); there is a read policy and no write policy.
+
+### 4.7 `templates`
+
+`id`, `name`, `content`. Admin/Manager write only.
+
+### 4.8 Triggers
+
+- `touch_updated_at()` on all six original tables.
+- `handle_new_user()` on `auth.users` insert — creates the profile, derives a
+  unique `legacy_id`, and **makes the very first account Admin** so you can
+  never be locked out.
+
+---
+
+## 5. Security model
+
+### 5.1 Roles and default rights
+
+`DEFAULT_ROLE_PERMISSIONS` in [types.ts](types.ts) is the source of truth in
+the app; `has_perm()` in the schema mirrors it in the database.
+
+| Right | Admin | Manager | CRM | Collector | Viewer |
+|---|:-:|:-:|:-:|:-:|:-:|
+| `canViewAllCrms` | ● | ● | – | – | ● |
+| `canAddCustomer` | ● | ● | ● | – | – |
+| `canEditCustomer` | ● | ● | ● | ● | – |
+| `canEditFinancials` | ● | ● | – | – | – |
+| `canDeleteCustomer` | ● | – | – | – | – |
+| `canEditFollowUp` | ● | ● | ● | ● | – |
+| `canReassignCrm` | ● | ● | – | – | – |
+| `canManagePdc` | ● | ● | ● | ● | – |
+| `canExportData` | ● | ● | ● | – | – |
+
+Plus two rules not in the matrix:
+
+- `can()` short-circuits: **an Admin is never restricted by the matrix**,
+  whatever it happens to contain.
+- `canSyncSheets` (importing a sheet, editing templates, changing the data
+  source, alerts) is Admin *or* Manager only, computed in `App.tsx`'s `rights`
+  memo. It matches the `templates` / `app_settings` / `alert_settings` policies.
+
+### 5.2 Row Level Security
+
+Three `SECURITY DEFINER` helpers avoid recursive RLS on `profiles`:
+`current_role()`, `can_write()`, `is_admin()`, plus `has_perm(text)`.
+
+| Table | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| `profiles` | any authenticated | admin | admin | admin |
+| `customers` | any authenticated | `can_write() AND has_perm('canAddCustomer')` | `can_write()` | Admin/Manager `AND has_perm('canDeleteCustomer')` |
+| `pdc_cheques` | any authenticated | `can_write() AND has_perm('canManagePdc')` (FOR ALL) | ↑ | ↑ |
+| `customer_activity` | signed in | `has_perm('canEditFollowUp') AND author_id = auth.uid()` | **none** | own row, or admin |
+| `templates` | any authenticated | Admin/Manager | ↑ | ↑ |
+| `company_profile` | any authenticated | admin | ↑ | ↑ |
+| `app_settings` | any authenticated | Admin/Manager | ↑ | ↑ |
+| `alert_settings` | any authenticated | Admin/Manager | ↑ | ↑ |
+| `alert_log` | any authenticated | **none** (server writes with service role) | – | – |
+
+**There is deliberately no self-update policy on `profiles`.** RLS policies are
+permissive — a rule letting you edit your own row would also let you set your
+own role to `Admin` straight from the browser with the anon key. Profiles are
+changed only by an Admin, through `/api/team`, on the server.
+
+**Insert and update on `customers` are split on purpose.** The change-detecting
+sync updates existing rows and only inserts genuinely new ones, so `INSERT` can
+demand `canAddCustomer` while `UPDATE` stays on `can_write()` — because
+recording a note upserts a whole row.
+
+### 5.3 Secrets
+
+| Variable | Where | Notes |
+|---|---|---|
+| `VITE_SUPABASE_URL` | browser | safe; RLS decides reach |
+| `VITE_SUPABASE_ANON_KEY` | browser | safe; RLS decides reach |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server only** | bypasses RLS entirely |
+| `GEMINI_API_KEY` | server only | optional |
+| `RESEND_API_KEY` / `SMTP_URL` + `ALERT_FROM` | server only | one is required to send mail |
+| `CRON_SECRET` | server only | proves a `/api/daily-report` call came from Vercel |
+
+**Hard rules, enforced by convention and reviewed on every change:**
+
+- The service role key must **never** carry a `VITE_` prefix.
+- It must **never** be referenced from anything under `components/` or
+  `services/` — those ship to every visitor.
+- `.deploy.local` holds live deploy tokens and is gitignored. Secrets go in
+  files, never into chat or command output.
+
+Currently present in `.env.local`: `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`,
+`VERCEL_OIDC_TOKEN`. **`SMTP_URL` and `ALERT_FROM` are absent** — that is why
+the digest fails.
+
+### 5.4 Other hardening
+
+- `/api/fetch-sheet` allow-lists `docs.google.com` and
+  `spreadsheets.google.com` only. Without that host check it is an open proxy
+  anyone could point at an internal address.
+- `/api/daily-report` accepts either the cron secret or an Admin/Manager
+  session token. Left open it would let anyone mail the whole team.
+- `/api/gemini-report` requires a signed-in caller — the endpoint spends real
+  money per call and the URL is public.
+- The sign-in screen **never lists the staff roster**. Printing every
+  colleague's name, role and CRM code on a page anyone can open hands a stranger
+  the org chart. `scripts/smoke.cjs` asserts this.
+- `readableAuthError()` makes a wrong password indistinguishable from an unknown
+  address — that difference is how an attacker enumerates who works here.
+
+---
+
+## 6. Ownership and scoping — the rule everything depends on
+
+This is the single most load-bearing piece of domain logic in the app, and it
+is implemented in **four** places that must agree.
+
+### The rule
+
+> An account reaches you if **you own it as CRM**, **or** you are the
+> **collector** working it, **or** its CRM code is in your `assigned_crms`.
+> Anyone who reads the whole book (Admin, Manager, Viewer, `data_visibility =
+> All`, or `canViewAllCrms`) sees everything.
+
+Responsibility runs two ways and **either one is enough**. Scoping on only one
+of them is how an account assigned to somebody disappears from their screen —
+the CRM hands it over and it vanishes for a colleague whose role happens not to
+be `Collector`, or the other way round.
+
+### `ownerKey()` — one CRM code, written one way
+
+```ts
+export const ownerKey = (v?: string | null) => (v || '').trim().toUpperCase();
+```
+
+The sheet, the user list and anything typed by hand disagree about case and
+stray spaces. `"ANKUR"`, `"Ankur"` and `"ankur "` are the same person. Every
+ownership comparison goes through `ownerKey()` so they land in one bucket
+instead of three.
+
+### Where the rule lives
+
+| Location | Function | Used by |
+|---|---|---|
+| [types.ts](types.ts) | `isResponsibleFor()`, `seesWholeBook()` | shared helper |
+| [services/googleSheetService.ts](services/googleSheetService.ts) | `getOutstandingForUser()` | the main `outstandingData` view |
+| [api/_lib/digest.ts](api/_lib/digest.ts) | `scopeFor()` | the daily email |
+| `CustomerDashboardView` / `ReportsView` / `PdcChequesView` | inline `userAllowedData` memos | each view's own second filter |
+
+⚠️ The three view-level memos are **not** identical to
+`getOutstandingForUser()`. They branch on `role === Collector` and check
+`assigned_collector_id` *instead of* CRM ownership, rather than in addition to
+it. See [§13.3](#133-scoping-is-implemented-four-times).
+
+### `hasOutstanding()` — what counts as work
+
+```ts
+export const hasOutstanding = (item) => Math.abs(Number(item.total) || 0) > 0;
+```
+
+The Customer Master sheet carries the whole customer list, including 3,361
+accounts that owe nothing. They are real customers and belong in search and in
+their ledger, **but counting them as things to chase overstates every CRM's
+workload**. Before this gate, Ankur's dashboard said 3,378 accounts; the truth
+is 19.
+
+Applied in: `fourBoxesSummary`, `userBoxMetrics`, `crmPerformanceStats`, the
+shell's `scopeLabel`, and `digest.bookCount`.
+
+---
+
+## 7. Domain rules
+
+### 7.1 Dr and Cr
+
+`Dr` = they owe us. `Cr` = we are holding their money (advance / excess).
+
+`parseAmountAndType()` detects credit from any of: the string containing `CR`,
+parentheses `(1,234)`, a leading minus, or a negative number. Amounts are always
+stored as **absolute values** with the type in a sibling column.
+
+Everything that sums the book excludes `Cr`:
+
+```ts
+if (item.totalType === 'Cr') return;   // portfolioAgeing, myAgeing
+totalType === 'Cr' ? 0 : (total || 0)  // totalBook, digest.owes()
+```
+
+Money sitting with us is not a receivable and must not inflate the outstanding
+figure.
+
+### 7.2 Ageing buckets
+
+Four buckets: `1-45`, `46-90`, `91-135`, `>135`. Two derived roll-ups the sheet
+supplies directly when it has them, computed otherwise:
+
+- `over90` = `91-135` + `>135`
+- `dueOver45` = `46-90` + `over90`
+
+Each bucket carries its own `Dr`/`Cr` type in `ageingTypes`.
+
+### 7.3 Follow-up category
+
+`getFollowUpCategory(item, today)` → `completed | today | future | overdue |
+no_follow_up`.
+
+**The date wins over the stored status.** If `followUpDate` parses, the category
+comes from comparing it to today at midnight. Only when there is no usable date
+does it fall back to `item.status`. `processStatuses()` then rewrites `status`
+to match, and is run after every mutation and every import.
+
+This is the same principle as the PDC fix in §7.5: a stored label goes stale, a
+date does not.
+
+### 7.4 Payment rank
+
+Three grades, because the business uses three:
+
+| Rank | Meaning |
+|---|---|
+| `Good` | pays to terms |
+| `Late` | pays, but late — chase normally |
+| `Bad` | old money stuck — **this is the list the recovery agency gets** |
+
+`getCustomerPaymentRank()`, in order:
+
+1. A manual `paymentRank` on the record wins over any rule. Somebody who knows
+   the account has said what it is.
+2. `Cr` or `total <= 0` → `Good` (owes nothing).
+3. Anything in `>135` → **`Bad`**.
+4. `over90 > total × 0.35` → **`Bad`**.
+5. Any `over90` or `dueOver45` → `Late`.
+6. Otherwise `Good`.
+
+The `Bad` list must not be diluted with people who are merely slow — that is
+what rule 3 and the 35% threshold are for.
+
+Live: 685 accounts on the automatic rule, 1 manually `Good`, 1 manually `Late`.
+The bulk-grading tool (`handleBulkSetRank`) exists because grading 400+ accounts
+one dialog at a time is not a workflow.
+
+### 7.5 When a cheque is due
+
+**"Due today" is not a status. It is what the calendar says.**
+
+The `PdcModal` form once offered `Due Today (Present in Bank)` as a selectable
+status. Rawat picked it — reasonably, he was entering a cheque that was due. It
+was stored and never expired, so a cheque dated 25 Aug was still announcing
+itself as due on 29 Aug, and the day's total kept adding it in. Today's tile read
+₹12,05,437 against a true ₹7,74,638.
+
+Second fault: a past-dated `Pending` cheque fell into the final `else` and was
+counted as "Upcoming", so nothing ever prompted anyone to bank it. ₹4.7 lakh sat
+in a drawer unflagged.
+
+**The fix, in three parts:**
+
+1. `PdcModal` no longer offers `DueToday`. Options are now
+   `Pending — waiting for its date | On Hold | Cleared | Bounced / Returned`.
+2. `PdcChequesView` derives an `effectiveStatus` from the date every render:
+
+   ```ts
+   const inHand = c.status === Pending || c.status === DueToday;
+   if (inHand) effectiveStatus = isSameDay(cDate, today) ? DueToday : Pending;
+   ```
+
+3. The metrics loop gained an explicit past-date branch and a
+   **"Date passed, not banked"** tile:
+
+   ```
+   Cleared → cleared
+   Hold    → hold
+   Bounced → bounced
+   else if isToday(cDate)  → today
+   else if cDate < today   → overdue      ← new
+   else                    → pending (upcoming)
+   ```
+
+`chequesOverdue` was added to the daily email as "Cheques past their date, still
+in hand".
+
+**The instruction given to Rawat:** enter the cheque with its real cheque date
+and leave the status as *Pending — waiting for its date*. Never mark it due. Use
+Cleared / Hold / Bounced only after the bank has acted.
+
+### 7.6 Promise states
+
+```ts
+promiseState(entry, resolvedBy, today) →
+  resolvedBy?.kind === 'payment'  → 'kept'
+  resolvedBy (anything else)      → 'broken'
+  no promisedOn                   → 'open'
+  promisedOn <  today             → 'overdue'
+  promisedOn == today             → 'due'
+  promisedOn >  today             → 'open'
+```
+
+Overdue is the day after the date they gave — which is the moment somebody
+should be ringing.
+
+### 7.7 Urgency
+
+Set on import: `dueOver45 > ₹10,00,000` (Dr) **or** `>135 > ₹5,00,000` (Dr).
+Editable by hand in the follow-up dialog.
+
+---
+
+## 8. Data flow
+
+### 8.1 Import — Google Sheet → app
+
+Two sheets, two shapes.
+
+**Transactions sheet** (`parseGoogleSheetCsv`) — positional column map with
+header-name override:
+
+| Idx | Field |
+|---|---|
+| 0 | company |
+| 1 | total |
+| 2–5 | ageing 1-45 / 46-90 / 91-135 / >135 |
+| 6 | over90 |
+| 7 | dueOver45 |
+| 8 | CRM |
+| 9 | mobile |
+| 10 | email |
+| **11** | **"updated till" date** — read from the *header row* |
+
+Column L (index 11) carries the date the figures run to. It is validated against
+a date regex before being displayed as "Book as of", because taking cell L1 on
+faith once put a column heading up there.
+
+**Customer Master sheet** (`parseCustomerMasterSheetCsv`) — fuzzy header
+matching for company, contact, designation, mobile, alt phone, email, city,
+state, address, GSTIN, CRM, credit limit, payment terms, notes. Imports with
+`total = 0` and `isNewCustomer = true`.
+
+Both go through `/api/fetch-sheet`, which tries a ladder of candidate CSV URL
+shapes (gviz, `/export?format=csv`, `/pub?output=csv`, published-to-web variants)
+and detects Google's HTML login page as a failure rather than data.
+
+### 8.2 Merge rules — what an import may and may not touch
+
+`financialsFromSheet()` names the only columns an invoice sheet is the authority
+on:
+
+```
+company, total, totalType, ageing, ageingTypes,
+over90, over90Type, dueOver45, dueOver45Type
+```
+
+Everything else — contacts, master data, follow-ups, notes, forecasts, cheques,
+activity — belongs to the app and survives an import untouched.
+
+`mergeWithExistingFollowUps()` then enforces two rules that matter against a
+shared database:
+
+1. **A matched customer keeps the id it already has.** Old ids carried the
+   sheet's row number, so re-ordering the sheet gave the same customer a new id
+   — which against a database means deleting the row and inserting a copy,
+   taking its PDC cheques with it.
+2. **A customer the sheet no longer lists is kept, not dropped.** Dropping it
+   here would delete the row and its history on the next sync. Removing a
+   customer is a deliberate act, done from the customer list.
+
+Contact details from the sheet **fill gaps only** — they never overwrite what
+somebody took the trouble to record:
+
+```ts
+contactPerson: existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
+    ? existing.contactPerson : item.contactPerson,
+contactNumber: existing.contactNumber || item.contactNumber,
+email:         existing.email || item.email,
+```
+
+`mergeCustomerMasterIntoAppData()` enriches by company name, indexed once
+(scanning per master row is quadratic and locked the tab for seconds at this
+size).
+
+### 8.3 Reconciliation
+
+When `appData` is non-empty, a transactions sync does **not** apply directly —
+it opens `SyncReconciliationModal`, which shows matched / CRM-changed / new
+counts and lets an Admin choose a CRM assignment mode
+(`keep_earlier | use_new_sync | custom`) before anything is written.
+
+### 8.4 Write-back — the change-detecting sync
+
+There is no Save button. `services/useSupabaseSync.ts` provides two hooks:
+
+**`useCollectionSync<T>`** watches an array and diffs it against the last synced
+snapshot.
+
+- Keeps `Map<id, signature>` of what the server has.
+- **First pass after load seeds the baseline without writing**, so reading data
+  back does not immediately write it all again.
+- 800 ms debounce, then diff: changed rows, ids never seen (`created`), and ids
+  that vanished (`removed`).
+- On error the baseline is left untouched, so the next edit retries.
+
+`App.tsx` mutates `appData` from ~20 handlers. Adding a write call to each one
+would inevitably miss some; one effect covers every mutation path.
+
+**`useValueSync<T>`** does the same for a single JSON value (company profile,
+app settings).
+
+The customer adapter splits the write deliberately:
+
+```ts
+const fresh  = rows.filter(r =>  created.has(r.id));  // upsert — needs canAddCustomer
+const edited = rows.filter(r => !created.has(r.id));  // update — needs can_write only
+```
+
+`repo.updateCustomers()` writes rows one at a time because PostgREST has no
+multi-row update, and an edit touches a handful of rows at most.
+
+### 8.5 Paging
+
+PostgREST answers a plain `select` with **at most 1,000 rows, silently** — which
+had the app showing the first 1,000 of 4,048 customers as if that were the whole
+book. `fetchAllRows()` pages by `id` (unique, so no row is skipped or repeated
+between pages) until a short page arrives. `digest.ts` has its own copy of the
+same loop.
+
+### 8.6 Activity log flow
+
+1. `CustomerActivityPanel` posts through `repo.addActivity()`, which stamps
+   `author_id` from the live session and lets the database set `created_at`.
+2. `onLogged` fires `handleActivityLogged` in `FollowUpModal`, which mirrors one
+   formatted line into `customer.notes` — because search, the Excel export, the
+   AI report and the "last note" column all read `notes`.
+3. The panel re-reads every 20 s, and on `focus` and `visibilitychange` —
+   guarded by `savingRef` so an in-flight post is not clobbered by a reply that
+   does not contain it yet.
+
+**The data-loss bug this caused, and the fix.** `FollowUpModal` was handed the
+`selectedCustomer` snapshot taken when the dialog opened. The second logged
+entry rebuilt `notes` from that stale snapshot and erased the first. Fixed in
+`App.tsx`:
+
+```tsx
+const liveSelectedCustomer = useMemo(
+    () => (selectedCustomer ? appData.find(c => c.id === selectedCustomer.id) || selectedCustomer : null),
+    [selectedCustomer, appData],
+);
+```
+
+---
+
+## 9. Screens
+
+Navigation is built in `App.tsx` from `workItems` + `setupItems` and rendered by
+`AppShell`. A tab not in this person's navigation **will not render either**,
+whatever the tab state holds (`allowedKeys` / `safeKey`).
+
+Which dashboard you get follows from **what you can see**, not your job title:
+`rights.seesWholeBook ? renderCompanyDashboard() : renderUserDashboard()`.
+Switching on the role name is what once left Manager and Viewer staring at an
+"invalid role" page.
+
+### Work tabs (everyone)
+
+| Key | Label | Badge |
+|---|---|---|
+| `overview` | Today | `todayCount + overdueCount`, red if any overdue |
+| `customers` | Customers / My customers | – |
+| `pdc` | PDC cheques | cheques due today, amber |
+| `reports` | Reports / My performance | – |
+
+### Setup tabs
+
+| Key | Who |
+|---|---|
+| `users` — Team & access | Admin only |
+| `alerts` — Alerts & reminders | Admin + Manager |
+| `templates` — Message templates | Admin + Manager |
+| `source` — Data source | Admin + Manager |
+
+### 9.1 Today (overview)
+
+Four clickable Stat cards — Due today / Overdue / No follow-up / Scheduled.
+**Clicking one sets the category filter and navigates to `reports`**, which now
+receives `initialCategoryFilter` and re-filters on the prop (not just on mount),
+so a second press works even when the view never unmounted.
+
+Below: portfolio ageing (compact total, past-45, past-90, `AgeingBar`, per-band
+tiles), cash-flow forecast, and `CrmPerformanceTable`.
+
+### 9.2 Customer book (`CustomerDashboardView`)
+
+The densest screen. Table or card view; filters for rank, CRM, status, ageing
+bracket, balance type, origin (new vs from-sheet); bulk selection driving
+**bulk CRM reassign** and **bulk rank grading**.
+
+Columns: Customer & contact · Balance · Ageing (bar + every bucket in rupees) ·
+Due >45 · Follow-up/Status · CRM owner · Actions (pinned right).
+
+**Export exports what is on screen.** `onExportExcel(filteredData)` — filtering
+to the bad debts and pressing Export used to hand you all 4,048 customers, which
+made the one job it exists for (a defaulter list for the recovery agency)
+impossible. Columns include City, State, GSTIN and Payment Rank.
+
+### 9.3 Follow-up dialog (`FollowUpModal`)
+
+Two columns at `lg` and above: **the form on the left, the shared record on the
+right**. Narrow screens stack them.
+
+Left column: balances and ageing · company contacts (add/remove additional
+people) · WhatsApp reminder (recipient picker incl. "other number", template
+picker, live preview) · PDC section · outcome radio
+(`follow_up | collected | no_follow_up`) · next follow-up date · forecast amount
++ date with quick presets · **payment rank** · assign CRM · assign collector ·
+urgent flag.
+
+Right column: `CustomerActivityPanel`.
+
+Two access nuances:
+
+- `canAssignCollector = canReassignCrm || role === CRM`.
+- `mayClaimForSelf` — a CRM may put **their own** name on an account, and may
+  pick up one nobody owns, because the team's own written instructions tell them
+  to. What they cannot do is move a colleague's account to a third person.
+- Changing the payment rank writes a `system` activity entry naming who changed
+  it and from what. A judgement about a customer belongs in the shared record,
+  not silently in a column.
+
+### 9.4 Activity panel (`CustomerActivityPanel`)
+
+- Chat order, oldest first, auto-scrolled to the newest (follows the newest
+  **id**, not the count, so deleting an entry does not yank the view).
+- Quick chips: No answer · Call declined · Promised to pay · Payment received ·
+  Visited · Disputed.
+- Open promises are pinned above the thread with **Paid** / **Did not pay**
+  buttons that pre-load the composer pointing back at the promise.
+- `Ctrl/⌘ + Enter` posts.
+- An entry must say something — except a promise or payment, which may speak
+  through its figure (`hasFigure`).
+- Delete is offered to the author (`entry.authorId === currentUser.authId`) and
+  to any Admin.
+- A Viewer sees *"You can read this record but not add to it."*
+
+### 9.5 PDC cheques (`PdcChequesView`)
+
+Tiles: Due today · **Date passed, not banked** · Upcoming · On hold · Cleared ·
+Bounced. Filters: search, customer, CRM, bank, status, date range
+(`all | today | this_week | this_month | passed`). Excel export of the filtered
+set.
+
+### 9.6 Reports (`ReportsView`)
+
+CRM selector (incl. "Unassigned"), search, four instant-report cards (>90 days,
+>135 days, and two more), category and ageing filters, Excel export with the
+full ageing breakdown, and the AI report modal.
+
+### 9.7 Alerts & reminders (`AlertsView`)
+
+Switch, recipient roles, skip-when-empty, extra addresses, **Send me a test
+now**, and the last runs from `alert_log` — what was actually delivered, not
+what was scheduled. Channels are stated honestly: email is Ready or Off; SMS and
+WhatsApp say *Not connected*. A switch that pretends to send a message nobody
+receives is worse than no switch.
+
+### 9.8 Team & access
+
+Add/edit/remove teammates. Creates the Supabase Auth login **and** the profile in
+one go, via `/api/team`. The CRM code is fixed once created — it is what links a
+customer row to its owner.
+
+### 9.9 Data source
+
+Format help, expected headers, template download, the two sheet URLs, individual
+and combined sync, and a **factory reset** that clears cheques, templates and
+profile and re-imports the sheet — but never touches logins.
+
+### 9.10 Sign-in (`LoginScreen`)
+
+Four screens, one journey: `email → password → in`, `email → reset link sent`,
+and `recovery link → choose a new password`. Remembers the last email in
+`localStorage`.
+
+> Supabase's built-in mailer sends **2 emails an hour for the whole project**.
+> That is enough to test with and not enough for a team. Point Supabase at your
+> own SMTP under **Authentication → Emails → SMTP Settings**.
+
+---
+
+## 10. API surface
+
+| Route | Method | Auth | Does |
+|---|---|---|---|
+| `/api/health` | GET | none | liveness |
+| `/api/ai-status` | GET | none | is `GEMINI_API_KEY` set |
+| `/api/alert-status` | GET | session | which mail provider the server has |
+| `/api/fetch-sheet` | GET/POST | none | proxy a Google Sheet CSV (host allow-list) |
+| `/api/team` | POST | **Admin** session | create / update / delete a teammate |
+| `/api/daily-report` | GET/POST | `CRON_SECRET` **or** Admin/Manager session | run the reminder |
+| `/api/gemini-report` | POST | session | AI collection report |
+
+### `/api/team` details
+
+Verifies the bearer token resolves to an **Admin** profile before touching
+anything. Returns `501 service_key_missing` when the deployment has no service
+role key, so the client can say so plainly instead of failing obscurely.
+
+- **create** — checks the CRM code is free, creates the auth user with
+  `email_confirm: true` (an Admin set the password, so skip the confirmation
+  mail), then upserts the profile. **If the profile fails, the auth user is
+  deleted** — never leave a login behind that has no profile to sign in with.
+- **update** — profile columns and credentials are updated separately, because
+  they live in different places.
+- **delete** — refuses to delete yourself, and refuses to delete the last Admin.
+  `profiles.id` cascades from `auth.users`, so one delete clears both.
+
+### `/api/gemini-report`
+
+Five modes: `credit_reduction`, `overdue_recovery`, `crm_performance`,
+`cash_forecast`, `custom`. **Without a Gemini key it returns a full rule-based
+report rather than an error**, so the feature works on a deployment that has not
+bought AI credits.
+
+---
+
+## 11. The daily reminder email
+
+`vercel.json` → `{ "path": "/api/daily-report", "schedule": "30 3 * * *" }` =
+03:30 UTC = **9:00 a.m. IST**.
+
+`runDailyReminders()` in [api/_lib/reminders.ts](api/_lib/reminders.ts):
+
+1. Service client; refuse without one.
+2. Read `alert_settings`. If off and not a test, log "switched off" and stop.
+3. Load recipients; filter by role, or to one address for a test.
+4. `buildDigests()`.
+5. Skip anyone with `taskCount === 0` when `skip_when_empty` (never for a test).
+6. Send; count delivered/failed.
+7. Extra addresses get the company-wide view.
+8. **Write the outcome to `alert_log` either way.**
+
+### What a digest contains
+
+Per recipient, scoped by `scopeFor()`:
+
+| Section | Source |
+|---|---|
+| Due today | `follow_up_date` = today |
+| Past their promised date | `follow_up_date` < today |
+| They said they would pay today | open promises with `promised_on` = today |
+| Promised, and the day passed | open promises with `promised_on` < today |
+| Cheques to present today | in-hand cheques dated today |
+| **Cheques past their date, still in hand** | in-hand cheques dated before today |
+| Money promised for today | `forecast_amount` with `forecast_date` = today |
+| Accounts with no follow-up planned | count + value |
+| By CRM | whole-book readers only |
+
+`taskCount` is the sum of the six actionable sections and drives both the
+headline and the skip rule.
+
+**The subject line is built from the same numbers as the body.** Counting only
+follow-up dates meant an email listing three promises to chase announced itself
+as "0 due today, 0 overdue".
+
+Rows carry a `BAD DEBT` / `LATE PAY` tag from `payment_rank`, and `URGENT` from
+`is_urgent`.
+
+`bookCount` filters to accounts with dues — otherwise the email told people they
+were carrying thousands of accounts.
+
+---
+
+## 12. Design system
+
+`styles/theme.css`. Stated intent: **Apple's structure, Google's affordances.**
+
+> Colour has exactly two jobs: **accent = "you can touch this"**, and **the
+> ageing ramp = "this is how old the money is"**. Those are the only two colour
+> languages in the product.
+
+### Tokens
+
+Everything is a CSS custom property on `:root`, redefined in three places so the
+theme cannot fight itself:
+
+1. `:root` — light
+2. `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }`
+3. `[data-theme="dark"]`
+
+`index.html` stamps `data-theme` **before first paint** from
+`localStorage.timely_theme`, so there is no flash of the wrong theme.
+
+**Brand:** navy `#183C6C` (from the Shori logo), yellow `#FCF000` as a fill only,
+always with navy on top. In dark mode the accent lifts to `#7FA8E0` and
+`--on-accent` inverts to `#0B1A2E`.
+
+**Ageing ramp:** `--age-1` green → `--age-2` amber → `--age-3` orange →
+`--age-4` red, each with a `-bg` fill and an `-ink` text-safe tone. Dark mode
+gets its own ramp, not a filter.
+
+### The palette remap
+
+The original code was written against stock Tailwind colours across thousands of
+lines. Rather than rewrite every class, `@theme inline` remaps the stock scales:
+
+```
+gray / slate / zinc              → neutral ramp
+green / blue / indigo / purple   → accent navy   (these were the actions)
+emerald / teal                   → current (green)
+amber / yellow / orange          → watch
+red / rose                       → risk / critical
+```
+
+So `text-blue-600` in an old component paints Shori navy, and `#24518F` in dark
+mode where white text still clears contrast on it.
+
+### Notable rules
+
+- The universal `border-color` reset lives **inside `@layer base`**. Unlayered
+  CSS outranks everything Tailwind emits, so an unlayered universal
+  border-colour silently overrode every `border-{colour}` utility in the app.
+- `.num` uses tabular figures in the UI face. A monospace here reads as a
+  developer tool, not a finance app.
+- `:focus-visible` is a 2 px accent halo with 2 px offset.
+- `@media (prefers-reduced-motion: reduce)` kills animation globally.
+
+### Money formatting
+
+`components/ui/format.ts` — the people using this think in lakhs and crores, and
+the tables are dense:
+
+- `groupIndian(4029276)` → `"40,29,276"`
+- `formatINR()` → `"₹40,29,276"` — used wherever a number is acted on
+- `formatCompact()` → `"₹40.3 L"`, `"₹1.13 Cr"` — the default in tables, with
+  the exact figure always in a tooltip
+- `relativeDays()` → `"today"` / `"in 3 days"` / `"4 days ago"`
+
+`digest.ts` carries its own copies because it cannot import browser code.
+
+### Message templates
+
+`services/messageTemplate.ts`, shared by the WhatsApp dialog and the follow-up
+screen (which used to carry a copy each and had drifted apart). Three rules
+beyond substitution:
+
+1. **Placeholders are replaced literally**, with `split`/`join`. The old code
+   compiled `"{{totalDue}}"` into a regular expression, where braces are
+   quantifier syntax — a template written a little differently silently matched
+   nothing.
+2. **A currency symbol in front of an amount placeholder is dropped.** Amounts
+   format with their own symbol, so `"Total Due: ₹{{totalDue}}"` was reaching
+   customers as `"₹₹1,25,000"`. Fixed at render time, because templates are
+   hand-edited and stored in the database.
+3. **A breakdown line whose figures are all nil is dropped** — but `{{totalDue}}`
+   is always kept, since a reminder with no total leaves the customer guessing
+   what it is about.
+
+---
+
+## 13. Known issues and open work
+
+### 13.1 The daily email cannot send
+
+**Severity: high. Client is waiting.**
+
+`daily_email` is ON, the cron runs on time, and every run fails with
+`provider: none`. Nine people got nothing this morning and the log has recorded
+it honestly each time.
+
+**Fix:** a Gmail app password → `SMTP_URL` and `ALERT_FROM` in `.env.local`,
+pushed to Vercel with `vercel env add`, then redeploy and press *Send me a test
+now*. `SMTP_URL` shape:
+
+```
+smtps://user@domain:APP_PASSWORD@smtp.gmail.com:465
+```
+
+### 13.2 CRM code case drift
+
+Eight CRM codes exist in `customers.crm_owner_id` in **two spellings each**:
+
+```
+GARRY/Garry   KAPIL/kapil   POONAM/Poonam   PRIKSHIT/Prikshit
+ROHINI/Rohini SANDEEP/Sandeep SAVIA/Savia   VISHNU/Vishnu
+```
+
+Together the lowercase variants hold **32 accounts and ₹16,66,100**.
+
+`ownerKey()` means **scoping, the digest and the CRM performance table are all
+correct** — nobody loses work. What breaks is anything that groups on the raw
+string:
+
+- `CustomerDashboardView` → `allCrmsInDataset` builds its dropdown from raw
+  distinct values, so the CRM filter lists `KAPIL` and `kapil` as two entries,
+  each showing part of the book.
+- `PdcChequesView` compares `crmId !== selectedCrm` on raw strings.
+- `digest.ts` `perCrm` keys on `(c.crm_owner_id || '').trim()`, so a manager's
+  "By CRM" table can show one person twice.
+
+**Fix:** one `UPDATE customers SET crm_owner_id = upper(trim(crm_owner_id))`,
+plus normalising on write in the sync path so the sheet cannot reintroduce it.
+
+### 13.3 Scoping is implemented four times
+
+`getOutstandingForUser()` and `digest.scopeFor()` implement the union rule
+correctly. The three view-level `userAllowedData` memos in
+`CustomerDashboardView`, `ReportsView` and `PdcChequesView` do **not** — they
+branch:
+
+```ts
+if (currentUser.role === UserRole.Collector) {
+    return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
+}
+return allowedCrms.has(ownerUpper);
+```
+
+A Collector therefore sees only accounts assigned to them and never one they own
+as CRM; a CRM never sees an account handed to them as collector. In production
+this is currently masked — `ATUL_BERRY` and `MUNSHI_RAM` both have
+`data_visibility = All` — but it will bite the moment a scoped collector is
+added.
+
+**Fix:** export one `scopeTo(user, rows)` helper and have all five call sites use
+it.
+
+### 13.4 `todayPdcMetrics` scopes only CRMs
+
+In `App.tsx`, the PDC nav badge narrows the cheque list only when
+`role === UserRole.CRM`. A scoped Collector gets a badge counting the whole
+company's cheques, while the PDC screen itself shows only theirs.
+
+### 13.5 One account nobody can see
+
+`out_519_A.B_ENTERPRISES` — **A.B ENTERPRISES (DERA BASSI), ₹8,780** — has an
+empty `crm_owner_id`. It appears only to whole-book readers. It needs an owner.
+
+### 13.6 `DueToday` still exists in the type and the constraint
+
+`PdcStatus.DueToday` remains in the enum, the schema check and the read paths
+(`inHand`, `effectiveStatus`) so historical rows stay valid. It is no longer
+writable from the UI. Removing it entirely needs a data migration first.
+
+### 13.7 GSTIN is imported but always empty
+
+`gstin` is parsed by the master sheet reader, stored, exported and searched —
+and **0 of 4,048 rows have one**. Either the master sheet has no GSTIN column or
+the fuzzy header match is missing it.
+
+### 13.8 Residual accessibility finding
+
+One 262×19 `<input>` in the Add-customer dialog that `scripts/audit.cjs`
+reaches but a direct probe cannot reproduce. Audit otherwise sits at 1 issue,
+down from 61 light / 73 dark.
+
+### 13.9 Truncated instructions from the client
+
+The boss's "How to use" WhatsApp message is still cut off at *"...than assign
+collector- if you want to assign to collect or follow up ( Atul/Amr… **Read
+more**"*. The rest has not been received.
+
+### 13.10 Remaining launch steps
+
+| # | Step | Blocked on |
+|---|---|---|
+| 1 | Gmail SMTP app password → `SMTP_URL` + `ALERT_FROM` → Vercel → redeploy → test send | credentials |
+| 2 | Supabase custom SMTP (lifts the 2-emails-per-hour cap) | same credentials |
+| 3 | Password-reset round trip end to end | step 2 |
+| 4 | Create the Manager and Viewer accounts | — |
+| 5 | Confirm the real 9 a.m. cron delivers | step 1 |
+| 6 | Optional `GEMINI_API_KEY`, **then revoke `.deploy.local` tokens last** | — |
+
+⚠️ Step 6's revocation is deliberately last: revoking ends the ability to deploy
+or run migrations.
+
+---
+
+## 14. Building, testing, deploying
+
+```bash
+npm run dev          # tsx server.ts → http://localhost:3000 (Vite middleware)
+npm run typecheck    # tsc --noEmit          ← currently CLEAN
+npm run build        # typecheck + vite build + esbuild the server
+npm run build:web    # what Vercel runs
+npm run smoke        # sign in, screenshot every screen
+npm run audit        # accessibility + contrast sweep (light)
+npm run audit:dark   # same, dark
+node scripts/interact.cjs   # click things, assert they did something
+npm run check:classes       # dead Tailwind classes
+npm run check:empty         # controls with no accessible name
+```
+
+`tsconfig.json` is strict, plus `noUnusedLocals`, `noUnusedParameters`,
+`noFallthroughCasesInSwitch`.
+
+**The browser scripts need a real account.** They read `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` from `.deploy.local`, or `TIMELY_EMAIL` / `TIMELY_PASSWORD`
+from the environment — never from source. They drive real Chrome at
+`C:\Program Files\Google\Chrome\Application\chrome.exe`.
+
+`scripts/audit.cjs` is worth knowing about: Tailwind v4 mixes colours in oklab,
+so `getComputedStyle` hands back `oklab(...)` strings whose numbers are not RGB
+channels. The script paints each colour to a 1×1 canvas over the real backdrop
+and reads the pixel back — the only reading that is correct for every colour
+space, alpha included. Hit-target threshold is `min(w, h) < 28`.
+
+### Deploy
+
+```bash
+npx vercel deploy --prod --yes
+```
+
+Uses the CLI's existing session. (`VERCEL_TOKEN` in `.deploy.local` is empty;
+passing `--token ""` fails with "Not authorized".)
+
+**Before any deploy that touches data:** snapshot the database, run read-only
+`SELECT` audits, and compare row counts before and after. Any probe row written
+during testing gets deleted.
+
+---
+
+## 15. File map
+
+```
+App.tsx                     2,676 lines. All state, all handlers, both dashboards,
+                            every derived metric. The centre of gravity.
+types.ts                      498. Types, roles, permissions, and the domain
+                            helpers: ownerKey, hasOutstanding, isResponsibleFor,
+                            getFollowUpCategory, getCustomerPaymentRank,
+                            promiseState.
+index.tsx / index.html      Mount + pre-paint theme stamp.
+styles/theme.css              389. The whole design system.
+
+services/
+  supabaseClient.ts         Browser client. requireSupabase() throws rather than
+                            silently no-opping.
+  repository.ts               700. Every read and write. Row↔model mappers,
+                            paging, team API calls, activity log.
+  googleSheetService.ts       605. CSV parsing, merge rules, getOutstandingForUser.
+  useSupabaseSync.ts          137. The two change-detecting sync hooks.
+  messageTemplate.ts          102. Template rendering.
+
+api/
+  _lib/supabase.ts          serviceClient / userClient / currentProfile / bearerToken
+  _lib/team.ts                223. Team administration.
+  _lib/digest.ts              569. Digest building + HTML/text rendering.
+  _lib/reminders.ts           151. The run, and the log.
+  _lib/report.ts              213. AI report + rule-based fallback.
+  _lib/mailer.ts              100. Resend / SMTP / honest "none".
+  _lib/sheet.ts               119. Google CSV URL ladder + host allow-list.
+  *.ts                      Thin Vercel handlers over the above.
+server.ts                     143. Express mirror of every route.
+
+components/
+  shell/AppShell.tsx          529. App bar, search, theme toggle, pill tabs,
+                            settings menu, large title, sync freshness.
+  shell/NavIcons.tsx        Nav glyphs.
+  ui/Primitives.tsx           320. Button, Badge, Card, SectionHeader, Money,
+                            AgeingBar, AgeingLegend, Stat, EmptyState, Spinner.
+  ui/format.ts                 87. Indian money and date formatting.
+
+  CustomerDashboardView.tsx 1,269. The customer book.
+  FollowUpModal.tsx         1,033. The follow-up dialog.
+  ReportsView.tsx           1,015. Reports and instant-report cards.
+  PdcChequesView.tsx          920. Cheque register.
+  CustomerEditModal.tsx       649. Add / edit a customer.
+  SyncReconciliationModal.tsx 580. Review an import before applying it.
+  AiReportModal.tsx           575. AI report UI.
+  LoginScreen.tsx             535. Sign in / forgot / recovery.
+  UserModal.tsx               512. Team & access form.
+  CustomerActivityPanel.tsx   462. The shared thread.
+  PdcModal.tsx                389. Add / edit a cheque.
+  AlertsView.tsx              325. Reminder settings + run history.
+  WhatsAppReminderModal.tsx   257.
+  ChangePasswordModal.tsx     126. Own password, every role.
+  CrmPerformanceTable.tsx     115.
+  CompanyProfileView.tsx      205.
+  TemplateModal.tsx            95.
+  NotificationBanner.tsx       74.
+  BalanceAmount.tsx            74. Dr/Cr rendering.
+  StatusBadge.tsx              25.
+  icons/                    Icons.tsx, AppLogo.tsx
+
+scripts/                    audit · interact · smoke · signin · contrast ·
+                            contrastfix · deadclasses · emptycontrols · tour
+
+supabase/schema.sql           479. Tables, RLS, helpers, triggers.
+vercel.json                 Build, SPA rewrite, cron.
+README.md / SETUP.md / DEPLOYMENT.md
+```
+
+---
+
+## 16. Conventions worth keeping
+
+1. **A date beats a stored status.** Both real calculation bugs found in this
+   codebase were a label going stale while the calendar moved on. Derive
+   due/overdue at render time.
+2. **Say what actually happened.** `alert_log` records failed sends. The mailer
+   returns `provider: 'none'` instead of pretending. `requireSupabase()` throws.
+   The app never reports success it did not achieve.
+3. **Normalise ownership through `ownerKey()`.** Never compare raw CRM strings.
+4. **The sheet owns money; the app owns everything else.** `financialsFromSheet()`
+   is the whole contract. An import never deletes a customer.
+5. **Hide what the database would refuse.** Every button is gated on the same
+   right the RLS policy checks, so the UI and the server can never disagree.
+6. **Comments say *why*, not *what*.** Nearly every non-obvious block in this
+   codebase carries the bug that caused it. Keep that up — it is why the history
+   is legible.
+7. **Server-side and client-side routes are mirrors, never re-implementations.**
+   Shared logic goes in `api/_lib/`.
+8. **Read-only audits before writes on production.** Snapshot, count, act,
+   re-count.

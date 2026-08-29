@@ -167,6 +167,45 @@ export function isResponsibleFor(user: Pick<User, 'id' | 'name'>, item: Pick<Out
     return me.includes(owner) || me.includes(collector);
 }
 
+/** The shape any record needs before it can be scoped to a person. */
+export type Owned = Pick<Outstanding, 'crmOwnerId' | 'assignedCollectorId'>;
+
+/**
+ * The slice of the book one person is responsible for. The only copy.
+ *
+ * This rule was written out by hand in five places — the dashboard, the
+ * customer book, the reports, the cheque register and the digest — and they had
+ * drifted apart. The view-level copies branched on the role instead of taking
+ * the union, so a Collector saw only what was handed to them and never an
+ * account they owned as CRM, and a CRM never saw one handed to them as
+ * collector. Responsibility runs both ways and either direction is enough.
+ *
+ * An explicit CRM scope widens what somebody reads; it never takes away an
+ * account handed to them personally.
+ */
+export function scopeTo<T extends Owned>(user: User | null | undefined, rows: T[]): T[] {
+    if (!user) return [];
+    if (seesWholeBook(user)) return rows;
+
+    const allowed = new Set((user.assignedCrms || []).map(ownerKey).filter(Boolean));
+    return rows.filter(row => isResponsibleFor(user, row) || allowed.has(ownerKey(row.crmOwnerId)));
+}
+
+/**
+ * One company, written one way.
+ *
+ * "HARIOM TRADERS", "HARI OM TRADERS" and "HARI OM TRADERS," are one firm. The
+ * imports matched on the trimmed lowercase name, which let all three through as
+ * separate customers when the Customer Master was loaded alongside the invoice
+ * sheet — the book ended up carrying 33 shadow accounts at zero balance, each
+ * splitting one customer's contact details and history from their money.
+ *
+ * Punctuation and spacing carry no meaning in a company name here, so they are
+ * dropped before anything is compared.
+ */
+export const companyKey = (name?: string | null): string =>
+    (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
 /* ------------------------------ activity log ------------------------------ */
 
 /**
@@ -413,13 +452,70 @@ export interface Template {
     content: string;
 }
 
+/**
+ * What somebody has decided about a cheque — never what the calendar says.
+ *
+ * `DueToday` used to be offered in the Add Cheque form, and it was chosen for
+ * cheques that were genuinely due that morning. It was then stored and never
+ * expired, so a cheque dated the 25th was still announcing itself as due on the
+ * 29th and the day's presentation total kept adding it in. It is kept here only
+ * so a historical row still parses; nothing writes it. Whether a cheque is due
+ * is worked out from its date by chequeState(), every time it is read.
+ */
 export enum PdcStatus {
-    Pending = 'Pending',       // Awaiting deposit / presentation date
-    DueToday = 'DueToday',     // Cheque date is today - ready for presentation
-    Cleared = 'Cleared',       // Successfully cleared in bank
-    Hold = 'Hold',             // Put on hold upon customer/CRM request
-    Bounced = 'Bounced',       // Returned / Bounced
+    Pending = 'Pending',       // In hand, waiting for its date
+    Cleared = 'Cleared',       // The bank paid it
+    Hold = 'Hold',             // Deliberately not being presented
+    Bounced = 'Bounced',       // Returned unpaid
+    /** @deprecated Read-only. Treated as Pending everywhere. */
+    DueToday = 'DueToday',
 }
+
+/** The statuses a person may actually choose, in the order they happen. */
+export const PDC_STATUS_CHOICES: { value: PdcStatus; label: string }[] = [
+    { value: PdcStatus.Pending, label: 'Pending — waiting for its date' },
+    { value: PdcStatus.Hold, label: 'On hold (customer request)' },
+    { value: PdcStatus.Cleared, label: 'Cleared' },
+    { value: PdcStatus.Bounced, label: 'Bounced / returned' },
+];
+
+/** A cheque still with us, whatever a stale stored status claims. */
+export const isInHand = (status: PdcStatus): boolean =>
+    status === PdcStatus.Pending || status === PdcStatus.DueToday;
+
+/**
+ * Where a cheque stands today.
+ *
+ *   cleared / bounced / hold  — somebody decided; the date no longer matters
+ *   due                       — in hand, dated today: present it
+ *   overdue                   — in hand, its date has gone: bank it or say why
+ *   upcoming                  — in hand, still waiting for its date
+ *
+ * "overdue" had nowhere to go before this, so a past-dated cheque fell in with
+ * the ones still waiting and nothing ever prompted anyone to bank it.
+ */
+export type ChequeState = 'due' | 'overdue' | 'upcoming' | 'hold' | 'cleared' | 'bounced';
+
+export function chequeState(
+    cheque: Pick<PdcCheque, 'status' | 'chequeDate'>,
+    today: Date = new Date(),
+): ChequeState {
+    if (cheque.status === PdcStatus.Cleared) return 'cleared';
+    if (cheque.status === PdcStatus.Bounced) return 'bounced';
+    if (cheque.status === PdcStatus.Hold) return 'hold';
+
+    const on = new Date(cheque.chequeDate);
+    if (isNaN(on.getTime())) return 'upcoming';
+    on.setHours(0, 0, 0, 0);
+    const t = new Date(today);
+    t.setHours(0, 0, 0, 0);
+
+    if (on.getTime() === t.getTime()) return 'due';
+    return on.getTime() < t.getTime() ? 'overdue' : 'upcoming';
+}
+
+/** A cheque state still counts as money in hand until the bank acts. */
+export const CHEQUE_ACTIVE: ChequeState[] = ['due', 'overdue', 'upcoming', 'hold'];
 
 export interface PdcCheque {
     id: string;

@@ -1,4 +1,4 @@
-import { Outstanding, FollowUpStatus, User, UserRole, DataVisibility, BalanceType, ownerKey, isResponsibleFor } from '../types';
+import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo } from '../types';
 
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
@@ -133,7 +133,7 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
             ? parseAmountAndType(r[colMap.dueOver45])
             : { amount: a2Parsed.amount + over90Parsed.amount, type: 'Dr' as BalanceType };
 
-        const crm = r[colMap.crm] ? r[colMap.crm].trim() : '';
+        const crm = ownerKey(r[colMap.crm]);
         const explicitContact = (colMap.contactPerson >= 0 && colMap.contactPerson < r.length) ? r[colMap.contactPerson]?.trim() : '';
         const mobile = r[colMap.mobile] ? r[colMap.mobile].trim() : '';
         const email = r[colMap.email] ? r[colMap.email].trim() : '';
@@ -188,13 +188,9 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
  * company, same id, every import, in every browser.
  */
 export function customerIdFor(company: string): string {
-    const slug = (company || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 60);
-    return `cust_${slug || 'unnamed'}`;
+    // Same key the merge matches on, so "HARI OM TRADERS" and "HARIOM TRADERS"
+    // cannot mint two ids for one firm even if the merge is ever bypassed.
+    return `cust_${companyKey(company).slice(0, 60) || 'unnamed'}`;
 }
 
 /**
@@ -236,14 +232,14 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
     const existingMap = new Map<string, Outstanding>();
     existingRecords.forEach(item => {
         // Match by company name (normalized) or id
-        const key = item.company.trim().toLowerCase();
+        const key = companyKey(item.company);
         existingMap.set(key, item);
         existingMap.set(item.id, item);
     });
 
     const matchedIds = new Set<string>();
     const merged = newRecords.map(item => {
-        const key = item.company.trim().toLowerCase();
+        const key = companyKey(item.company);
         const existing = existingMap.get(key) || existingMap.get(item.id);
 
         if (existing) {
@@ -312,32 +308,8 @@ export const processStatuses = (data: Outstanding[]): Outstanding[] => {
  * the CRM hands it over and it vanishes for a colleague whose role happens not
  * to be Collector, or the other way round.
  */
-export const getOutstandingForUser = (user: User, allData: Outstanding[]): Promise<Outstanding[]> => {
-    return new Promise((resolve) => {
-        // Admin, Manager, Viewer, or anyone explicitly granted the whole book.
-        const canViewAll =
-            user.role === UserRole.Admin ||
-            user.role === UserRole.Manager ||
-            user.role === UserRole.Viewer ||
-            user.dataVisibility === DataVisibility.All ||
-            user.permissions?.canViewAllCrms;
-
-        if (canViewAll) {
-            resolve(processStatuses(allData));
-            return;
-        }
-
-        // An explicit CRM scope widens what they own; it never takes away an
-        // account handed to them personally.
-        const allowedCrms = new Set((user.assignedCrms || []).map(ownerKey).filter(Boolean));
-
-        const userSpecificData = allData.filter(d =>
-            isResponsibleFor(user, d) || allowedCrms.has(ownerKey(d.crmOwnerId))
-        );
-
-        resolve(processStatuses(userSpecificData));
-    });
-};
+export const getOutstandingForUser = (user: User, allData: Outstanding[]): Promise<Outstanding[]> =>
+    Promise.resolve(processStatuses(scopeTo(user, allData)));
 
 
 // Helper to fetch Google Sheet data reliably using backend proxy or direct fallback
@@ -381,6 +353,114 @@ export async function fetchGoogleSheetData(sheetUrl: string): Promise<{ data: Ou
 
 
 // Parse Customer Master Data CSV
+/**
+ * Which column of the Customer Master is which.
+ *
+ * The old matcher was one long if/else chain, so a header containing a generic
+ * word was claimed by the generic rule and never tested against anything more
+ * specific. Against the real sheet that lost two columns of live data outright:
+ *
+ *   "SALESPERSON name"     contains "person", so it was taken for the customer's
+ *                          contact, found that slot already filled, and was
+ *                          dropped — leaving every imported account with no
+ *                          owner, which is why 3,262 of them ended up on one
+ *                          person's name.
+ *   "Customer Emails Id"   contains "customer", so it was taken for the company
+ *                          name, found that slot filled, and was dropped. The
+ *                          plain "sales email" column matched the email rule
+ *                          instead, and every customer in the book was given a
+ *                          Shori staff address as their own.
+ *
+ * So: rules are ordered most specific first, each header is claimed by at most
+ * one field, and each field takes the first header that claims it. A header
+ * whose field is already taken falls to its natural second slot, which is how a
+ * sheet with two "CONTACT PERSON" columns keeps both.
+ */
+export type MasterField =
+    | 'company' | 'contactPerson' | 'contactPost' | 'mobile' | 'altPhone' | 'altPerson'
+    | 'email' | 'city' | 'state' | 'address' | 'gstin' | 'crm'
+    | 'creditLimit' | 'paymentTermsDays' | 'rank' | 'notes';
+
+const headerKey = (h: string): string => (h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** `null` means "recognised, and deliberately not imported". */
+const HEADER_RULES: { field: MasterField | null; any: string[] }[] = [
+    // Our own staff, wearing a customer field's name. Must be first.
+    { field: null, any: ['salesemail', 'staffemail', 'ouremail', 'companyemail'] },
+
+    // Who owns the account. Before anything matching "person".
+    { field: 'crm', any: ['salesperson', 'salesman', 'salesexecutive', 'salesname', 'crm', 'accountowner', 'executive', 'owner'] },
+
+    // A second contact pair, before the plain contact/mobile rules claim them.
+    { field: 'altPerson', any: ['contactperson2', 'person2', 'contact2', 'altcontact', 'secondarycontact'] },
+    { field: 'altPhone', any: ['mobile2', 'phone2', 'altmobile', 'altphone', 'alternate', 'secondary'] },
+
+    // The customer's own address, now that ours has been excluded above.
+    { field: 'email', any: ['email', 'mail'] },
+
+    // "Ranking" is the grade the business keeps by hand. "Payment status" holds
+    // payment mode (cash / advance / A / B / C), which is not a grade, so it is
+    // left out rather than mapped to something it does not mean.
+    { field: 'rank', any: ['ranking', 'creditrating'] },
+
+    { field: 'creditLimit', any: ['creditlimit', 'limitamount', 'sanctionedlimit'] },
+    { field: 'paymentTermsDays', any: ['creditday', 'creditperiod', 'paymentterm', 'term'] },
+    { field: 'gstin', any: ['gstin', 'gstno', 'gst', 'taxid'] },
+    { field: 'contactPost', any: ['designation', 'post', 'role', 'position'] },
+    { field: 'mobile', any: ['mobile', 'phone', 'contactno', 'contactnumber', 'tel'] },
+    { field: 'address', any: ['address', 'street'] },
+    { field: 'city', any: ['city', 'district', 'location', 'town'] },
+    { field: 'state', any: ['state', 'province'] },
+    { field: 'notes', any: ['note', 'remark', 'comment'] },
+    { field: 'contactPerson', any: ['contactperson', 'contactname', 'person', 'contact'] },
+
+    // Last: the name of the account itself, the most generic thing on the sheet.
+    { field: 'company', any: ['partyname', 'companyname', 'customername', 'clientname', 'firmname', 'company', 'party', 'client', 'customer'] },
+];
+
+/** A duplicate header falls to the natural second slot rather than being lost. */
+const SECOND_CHOICE: Partial<Record<MasterField, MasterField>> = {
+    contactPerson: 'altPerson',
+    mobile: 'altPhone',
+};
+
+export function mapMasterColumns(headers: string[]): Record<MasterField, number> {
+    const map = {} as Record<MasterField, number>;
+    for (const rule of HEADER_RULES) if (rule.field) map[rule.field] = -1;
+    map.altPerson = -1;
+
+    headers.forEach((raw, idx) => {
+        const key = headerKey(raw);
+        if (!key) return;
+        const rule = HEADER_RULES.find(r => r.any.some(n => key.includes(n)));
+        if (!rule || !rule.field) return;
+
+        const field = map[rule.field] === -1 ? rule.field : SECOND_CHOICE[rule.field];
+        if (field && map[field] === -1) map[field] = idx;
+    });
+
+    // Without a recognisable name column the first one is the only sensible guess.
+    if (map.company === -1) map.company = 0;
+    return map;
+}
+
+/**
+ * The grades the sheet uses, translated into the three the app works in.
+ *
+ * Only an unambiguous "bad debt" is carried across. "Active", "Inactive" and
+ * "Dead" describe whether we still sell to them, not how they pay, and reading
+ * them as a payment grade would put quiet customers on the recovery agency's
+ * list.
+ */
+export function rankFromSheet(value?: string): PaymentRank | undefined {
+    const v = (value || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (!v) return undefined;
+    if (v.includes('baddebt') || v.includes('defaulter') || v.includes('writeoff')) return 'Bad';
+    if (v.includes('latepay') || v.includes('slowpay')) return 'Late';
+    if (v === 'good' || v.includes('goodpay') || v.includes('prompt')) return 'Good';
+    return undefined;
+}
+
 export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstanding[]; count: number } {
     const rows = parseCSVMatrix(csvText);
     if (rows.length === 0) {
@@ -389,59 +469,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
 
     const headers = rows[0].map(h => h.trim());
     
-    // Column detection mapping
-    const colMap: Record<string, number> = {
-        company: -1,
-        contactPerson: -1,
-        contactPost: -1,
-        mobile: -1,
-        altPhone: -1,
-        email: -1,
-        city: -1,
-        state: -1,
-        address: -1,
-        gstin: -1,
-        crm: -1,
-        creditLimit: -1,
-        paymentTermsDays: -1,
-        notes: -1
-    };
-
-    headers.forEach((h, idx) => {
-        const lower = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (lower.includes('company') || lower.includes('customer') || lower.includes('party') || lower.includes('client')) {
-            if (colMap.company === -1) colMap.company = idx;
-        } else if (lower.includes('contactperson') || lower.includes('contactname') || lower.includes('person') || lower === 'contact') {
-            if (colMap.contactPerson === -1) colMap.contactPerson = idx;
-        } else if (lower.includes('designation') || lower.includes('post') || lower.includes('role') || lower.includes('position')) {
-            if (colMap.contactPost === -1) colMap.contactPost = idx;
-        } else if (lower.includes('alt') || lower.includes('secondary') || lower.includes('phone2') || lower.includes('mobile2')) {
-            if (colMap.altPhone === -1) colMap.altPhone = idx;
-        } else if (lower.includes('mobile') || lower.includes('phone') || lower.includes('contactno') || lower.includes('tel')) {
-            if (colMap.mobile === -1) colMap.mobile = idx;
-        } else if (lower.includes('email') || lower.includes('mail')) {
-            if (colMap.email === -1) colMap.email = idx;
-        } else if (lower.includes('city') || lower.includes('district') || lower.includes('location')) {
-            if (colMap.city === -1) colMap.city = idx;
-        } else if (lower.includes('state') || lower.includes('province')) {
-            if (colMap.state === -1) colMap.state = idx;
-        } else if (lower.includes('address') || lower.includes('street')) {
-            if (colMap.address === -1) colMap.address = idx;
-        } else if (lower.includes('gst') || lower.includes('taxid')) {
-            if (colMap.gstin === -1) colMap.gstin = idx;
-        } else if (lower.includes('crm') || lower.includes('salesperson') || lower.includes('owner') || lower.includes('executive')) {
-            if (colMap.crm === -1) colMap.crm = idx;
-        } else if (lower.includes('creditlimit') || lower.includes('limit')) {
-            if (colMap.creditLimit === -1) colMap.creditLimit = idx;
-        } else if (lower.includes('term') || lower.includes('creditdays') || lower.includes('period')) {
-            if (colMap.paymentTermsDays === -1) colMap.paymentTermsDays = idx;
-        } else if (lower.includes('note') || lower.includes('remark') || lower.includes('comment')) {
-            if (colMap.notes === -1) colMap.notes = idx;
-        }
-    });
-
-    // Fallback if company column wasn't identified
-    if (colMap.company === -1) colMap.company = 0;
+    const colMap = mapMasterColumns(headers);
 
     const parsed: Outstanding[] = [];
 
@@ -459,12 +487,14 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
         const state = (colMap.state >= 0 && colMap.state < r.length) ? r[colMap.state]?.trim() : '';
         const address = (colMap.address >= 0 && colMap.address < r.length) ? r[colMap.address]?.trim() : '';
         const gstin = (colMap.gstin >= 0 && colMap.gstin < r.length) ? r[colMap.gstin]?.trim() : '';
-        const crm = (colMap.crm >= 0 && colMap.crm < r.length) ? r[colMap.crm]?.trim() : '';
+        const crm = ownerKey((colMap.crm >= 0 && colMap.crm < r.length) ? r[colMap.crm] : '');
         const rawLimit = (colMap.creditLimit >= 0 && colMap.creditLimit < r.length) ? r[colMap.creditLimit] : '';
         const creditLimit = rawLimit ? parseFloat(String(rawLimit).replace(/[^0-9.]/g, '')) || undefined : undefined;
         const rawTerms = (colMap.paymentTermsDays >= 0 && colMap.paymentTermsDays < r.length) ? r[colMap.paymentTermsDays] : '';
         const paymentTermsDays = rawTerms ? parseInt(String(rawTerms).replace(/[^0-9]/g, ''), 10) || undefined : undefined;
         const noteStr = (colMap.notes >= 0 && colMap.notes < r.length) ? r[colMap.notes]?.trim() : '';
+        const altPerson = (colMap.altPerson >= 0 && colMap.altPerson < r.length) ? r[colMap.altPerson]?.trim() : '';
+        const rankRaw = (colMap.rank >= 0 && colMap.rank < r.length) ? r[colMap.rank]?.trim() : '';
 
         const item: Outstanding = {
             id: customerIdFor(companyName),
@@ -487,11 +517,12 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
             dueOver45: 0,
             status: FollowUpStatus.Pending,
             notes: noteStr ? [noteStr] : [],
-            additionalContacts: altPhone ? [{
-                id: `alt_${Date.now()}_${i}`,
-                name: contactPerson ? `${contactPerson} (Alt)` : 'Alternate Contact',
+            paymentRank: rankFromSheet(rankRaw),
+            additionalContacts: (altPhone || altPerson) ? [{
+                id: `alt_${customerIdFor(companyName)}_2`,
+                name: altPerson || (contactPerson ? `${contactPerson} (Alt)` : 'Alternate Contact'),
                 mobile: altPhone,
-                post: 'Secondary Contact'
+                post: 'Second Contact'
             }] : [],
             creationDate: new Date(),
             isNewCustomer: true
@@ -546,7 +577,7 @@ export async function fetchCustomerMasterSheetData(sheetUrl: string): Promise<{ 
 export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], masterData: Outstanding[]): { updatedData: Outstanding[]; enrichedCount: number; newAccountsCount: number } {
     const existingMap = new Map<string, Outstanding>();
     existingData.forEach(item => {
-        const key = item.company.trim().toLowerCase();
+        const key = companyKey(item.company);
         existingMap.set(key, item);
     });
 
@@ -557,10 +588,10 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
     // Index once. Scanning the list per master row is quadratic, and with a few
     // thousand accounts on each side that locks the tab for seconds.
     const indexByCompany = new Map<string, number>();
-    mergedList.forEach((item, idx) => indexByCompany.set(item.company.trim().toLowerCase(), idx));
+    mergedList.forEach((item, idx) => indexByCompany.set(companyKey(item.company), idx));
 
     masterData.forEach(masterItem => {
-        const key = masterItem.company.trim().toLowerCase();
+        const key = companyKey(masterItem.company);
         const existingIdx = indexByCompany.has(key) ? indexByCompany.get(key)! : -1;
 
         if (existingIdx >= 0) {
@@ -579,6 +610,9 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
                 creditLimit: masterItem.creditLimit !== undefined ? masterItem.creditLimit : current.creditLimit,
                 paymentTermsDays: masterItem.paymentTermsDays !== undefined ? masterItem.paymentTermsDays : current.paymentTermsDays,
                 crmOwnerId: masterItem.crmOwnerId || current.crmOwnerId,
+                // A grade somebody set in the app is a judgement about the
+                // account; the sheet only fills the gap where nobody has.
+                paymentRank: current.paymentRank || masterItem.paymentRank,
                 additionalContacts: [
                     ...(current.additionalContacts || []),
                     ...(masterItem.additionalContacts || []).filter(mc => 

@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -1282,35 +1282,34 @@ const App = () => {
 
 
     // PDC Cheque Handlers & Calculations
+    /**
+     * Cheques this person is responsible for, and where they stand today.
+     *
+     * This narrowed the list only for a CRM, so a scoped Collector was shown a
+     * badge counting the whole company's cheques while the register itself
+     * showed only theirs. It now uses the same scoping rule as everything else,
+     * and the same date-derived state as the register.
+     */
     const todayPdcMetrics = useMemo(() => {
         const today = new Date();
-        
-        let visiblePdcs = pdcCheques;
-        if (currentUser?.role === UserRole.CRM) {
-            const userCustIds = new Set(appData.filter(a => a.crmOwnerId?.toUpperCase() === currentUser.id?.toUpperCase() || a.crmOwnerId?.toUpperCase() === currentUser.name?.toUpperCase()).map(a => a.id));
-            visiblePdcs = pdcCheques.filter(p => userCustIds.has(p.customerId) || p.crmOwnerId?.toUpperCase() === currentUser.id?.toUpperCase() || p.crmOwnerId?.toUpperCase() === currentUser.name?.toUpperCase());
+        const mine = new Set(scopeTo(currentUser, appData).map(a => a.id));
+        const visible = seesWholeBook(currentUser)
+            ? pdcCheques
+            : pdcCheques.filter(p => mine.has(p.customerId) || isResponsibleFor(currentUser!, { crmOwnerId: p.crmOwnerId || '' }));
+
+        let todayCount = 0, todayAmount = 0, overdueCount = 0, overdueAmount = 0;
+        let activeCount = 0, activeAmount = 0;
+
+        for (const cheque of visible) {
+            const state = chequeState(cheque, today);
+            if (!CHEQUE_ACTIVE.includes(state)) continue;
+            activeCount++;
+            activeAmount += cheque.amount;
+            if (state === 'due') { todayCount++; todayAmount += cheque.amount; }
+            if (state === 'overdue') { overdueCount++; overdueAmount += cheque.amount; }
         }
 
-        const todayCheques = visiblePdcs.filter(p => {
-            const cDate = p.chequeDate instanceof Date ? p.chequeDate : new Date(p.chequeDate);
-            return (
-                (p.status === PdcStatus.DueToday || p.status === PdcStatus.Pending) &&
-                cDate.getFullYear() === today.getFullYear() &&
-                cDate.getMonth() === today.getMonth() &&
-                cDate.getDate() === today.getDate()
-            );
-        });
-
-        const totalTodayAmount = todayCheques.reduce((sum, c) => sum + c.amount, 0);
-        const activePdcs = visiblePdcs.filter(p => p.status !== PdcStatus.Cleared && p.status !== PdcStatus.Bounced);
-        const activeAmount = activePdcs.reduce((sum, c) => sum + c.amount, 0);
-
-        return {
-            todayCount: todayCheques.length,
-            todayAmount: totalTodayAmount,
-            activeCount: activePdcs.length,
-            activeAmount,
-        };
+        return { todayCount, todayAmount, overdueCount, overdueAmount, activeCount, activeAmount };
     }, [pdcCheques, currentUser, appData]);
 
     const handleOpenAddPdc = (customerId?: string) => {

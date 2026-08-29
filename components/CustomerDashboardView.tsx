@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, DataVisibility, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -62,29 +62,11 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const canManagePdc = isAdmin || Boolean(permissions?.canManagePdc);
     const canReassignCrm = isAdmin || Boolean(permissions?.canReassignCrm);
     const canExport = isAdmin || Boolean(permissions?.canExportData);
-    const canViewAllCrms = isAdmin || currentUser?.role === UserRole.Manager || currentUser?.role === UserRole.Viewer || Boolean(permissions?.canViewAllCrms) || currentUser?.dataVisibility === DataVisibility.All;
+    const canViewAllCrms = seesWholeBook(currentUser);
 
     // Filter raw data strictly based on user roles and assigned access rights
-    const userAllowedData = useMemo(() => {
-        if (canViewAllCrms || !currentUser) return data;
-
-        const userIdUpper = (currentUser.id || '').trim().toUpperCase();
-        const userNameUpper = (currentUser.name || '').trim().toUpperCase();
-        const allowedCrms = new Set((currentUser.assignedCrms || []).map(c => c.trim().toUpperCase()));
-        if (currentUser.role === UserRole.CRM) {
-            allowedCrms.add(userIdUpper);
-            allowedCrms.add(userNameUpper);
-        }
-
-        return data.filter(item => {
-            if (currentUser.role === UserRole.Collector) {
-                const collectorUpper = (item.assignedCollectorId || '').trim().toUpperCase();
-                return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
-            }
-            const ownerUpper = (item.crmOwnerId || '').trim().toUpperCase();
-            return allowedCrms.has(ownerUpper);
-        });
-    }, [data, currentUser, canViewAllCrms]);
+    // One scoping rule for the whole app — see scopeTo() in types.ts.
+    const userAllowedData = useMemo(() => scopeTo(currentUser, data), [data, currentUser]);
 
     // Filters State
     const [searchTerm, setSearchTerm] = useState('');

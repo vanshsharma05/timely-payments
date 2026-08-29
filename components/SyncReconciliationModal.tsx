@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, User, UserRole } from '../types';
+import { Outstanding, User, UserRole, companyKey } from '../types';
 import { financialsFromSheet, processStatuses } from '../services/googleSheetService';
 
 export interface SyncReconciliationModalProps {
@@ -29,7 +29,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
     const existingMap = useMemo(() => {
         const map = new Map<string, Outstanding>();
         existingRecords.forEach(item => {
-            map.set(item.company.trim().toLowerCase(), item);
+            map.set(companyKey(item.company), item);
             map.set(item.id, item);
         });
         return map;
@@ -42,7 +42,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
         let newAccountsCount = 0;
 
         const customerRows = incomingRecords.map(incoming => {
-            const key = incoming.company.trim().toLowerCase();
+            const key = companyKey(incoming.company);
             const existing = existingMap.get(key) || existingMap.get(incoming.id);
 
             const earlierCrm = existing?.crmOwnerId?.trim() || '';
@@ -79,7 +79,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
             diffCrmCount,
             newAccountsCount,
             retainedCount: existingRecords.filter(
-                e => !incomingRecords.some(i => i.company.trim().toLowerCase() === e.company.trim().toLowerCase())
+                e => !incomingRecords.some(i => companyKey(i.company) === companyKey(e.company))
             ).length,
         };
     }, [incomingRecords, existingMap]);
@@ -162,7 +162,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
         // Construct final merged list
         const matchedIds = new Set<string>();
         const merged: Outstanding[] = incomingRecords.map(item => {
-            const key = item.company.trim().toLowerCase();
+            const key = companyKey(item.company);
             const existing = existingMap.get(key) || existingMap.get(item.id);
             if (existing) matchedIds.add(existing.id);
 
