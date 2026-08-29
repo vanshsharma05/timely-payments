@@ -3,7 +3,7 @@
 Deep reference for the whole system: what it is, how it is built, the rules it
 enforces, what the live data actually looks like, and what is still open.
 
-Written against commit `24452ec` on branch `restore-and-fix`, verified against
+Written against commit `a9556bd` on branch `restore-and-fix`, verified against
 the live database on **29 August 2026**.
 
 - **Live app:** https://timely-payment.vercel.app
@@ -40,12 +40,12 @@ decisions below exist.
 
 | | |
 |---|---|
-| Customer rows | **4,048** |
+| Customer rows | **4,015** |
 | …of which owe something | **687** |
-| …of which owe nothing (Customer Master) | **3,361** |
+| …of which owe nothing (Customer Master) | **3,328** |
 | Total outstanding (Dr) | **₹11,20,56,112** (₹11.21 Cr) |
 | Credit balances held (Cr) | ₹3,19,149 |
-| Duplicate company names | 0 |
+| Duplicate company names | 0 *(33 merged away, 29 Aug)* |
 
 ### Ageing (Dr accounts only)
 
@@ -794,89 +794,113 @@ Switching on the role name is what once left Manager and Viewer staring at an
 | `templates` — Message templates | Admin + Manager |
 | `source` — Data source | Admin + Manager |
 
-### 9.1 Today (overview)
+### 9.1 Today — the workspace
 
-Four clickable Stat cards — Due today / Overdue / No follow-up / Scheduled.
-**Clicking one sets the category filter and navigates to `reports`**, which now
-receives `initialCategoryFilter` and re-filters on the prop (not just on mount),
-so a second press works even when the view never unmounted.
+The landing screen is the **queue**, not a summary of it. `Workspace` composes
+two panes:
 
-Below: portfolio ageing (compact total, past-45, past-90, `AgeingBar`, per-band
-tiles), cash-flow forecast, and `CrmPerformanceTable`.
+```
+┌─ Worklist ──────────────┬─ AccountPanel ───────────────────────┐
+│ [Due today 0] [Overdue 3]│  ANSH FABRICS       [Bad debt] [Edit]│
+│ [Promised 69] [Cheques 6]│  Prikshit · Ludhiana · 60 day terms  │
+│ [No plan 607] [All 687]  │  ₹3.80 L  past45 ₹2.1L  past90 ₹1.2L │
+│ ─────────────────────────│  ▓▓▓▓▒▒▒░ ageing                     │
+│ FIRST LOOK…    ₹61,405   ├──────────────────┬───────────────────┤
+│  Bad debt yesterday      │ WHAT HAPPENS NEXT│ ACCOUNT ACTIVITY  │
+│ INDO TRADERS   ₹22,920   │  outcome chips   │  Ankur · 2 hr ago │
+│  Bad debt yesterday      │  next date       │  Rang, no answer  │
+│ KNITKARI…      ₹22,716   │  expect / grade  │                   │
+│  Bad debt Urgent         │  owner/collector │  [chips][compose] │
+│                          │ WHO TO CALL      │  [Log it]         │
+│                          │ CHEQUES HELD     │                   │
+└──────────────────────────┴──────────────────┴───────────────────┘
+```
 
-### 9.2 Customer book (`CustomerDashboardView`)
+**`components/work/Worklist.tsx`** — six queues, built once by `buildQueues()`
+so the count on a chip and the rows behind it can never disagree:
 
-The densest screen. Table or card view; filters for rank, CRM, status, ageing
-bracket, balance type, origin (new vs from-sheet); bulk selection driving
-**bulk CRM reassign** and **bulk rank grading**.
+| Queue | Contents |
+|---|---|
+| Due today | follow-up date is today |
+| Overdue | follow-up date has passed, oldest first |
+| Promised | a forecast amount is set, largest first |
+| Cheques | a cheque against the account is due or past its date |
+| No plan | owes money, nothing scheduled |
+| Everything | every account with a balance |
 
-Columns: Customer & contact · Balance · Ageing (bar + every bucket in rupees) ·
-Due >45 · Follow-up/Status · CRM owner · Actions (pinned right).
+Each row shows the company, the amount, the grade, the follow-up in words
+("yesterday", "in 2 days") and **the last thing anybody recorded** — the fact
+that decides what you say when they pick up.
 
-**Export exports what is on screen.** `onExportExcel(filteredData)` — filtering
-to the bad debts and pressing Export used to hand you all 4,048 customers, which
-made the one job it exists for (a defaulter list for the recovery agency)
-impossible. Columns include City, State, GSTIN and Payment Rank.
+`Workspace` **opens on the first queue that has work in it**. "Due today" is the
+right place to start on a day when something is due and an empty screen on a day
+when nothing is, which with 607 unplanned accounts is most days.
 
-### 9.3 Follow-up dialog (`FollowUpModal`)
+### 9.2 The account panel
 
-Two columns at `lg` and above: **the form on the left, the shared record on the
-right**. Narrow screens stack them.
+`components/work/AccountPanel.tsx` — everything the old follow-up dialog did,
+without being a dialog:
 
-Left column: balances and ageing · company contacts (add/remove additional
-people) · WhatsApp reminder (recipient picker incl. "other number", template
-picker, live preview) · PDC section · outcome radio
-(`follow_up | collected | no_follow_up`) · next follow-up date · forecast amount
-+ date with quick presets · **payment rank** · assign CRM · assign collector ·
-urgent flag.
+- **Identity** — name, owner, collector, city, terms, grade, urgent flag, Edit
+- **Money** — outstanding, past 45, past 90, follow-up in words, ageing bar
+- **What happens next** — outcome (`follow up again` / `payment collected` /
+  `no follow-up`), next date, expected amount and date, payment grade, CRM
+  owner, collector, urgent toggle, Save
+- **Who to call** — primary and additional contacts, each with call and WhatsApp;
+  add and remove people; the full template picker opens `WhatsAppReminderModal`
+- **Cheques held** — every cheque with its derived state, and Cleared / Bounced
+  in place
+- **Account activity** — `CustomerActivityPanel`, always visible beside the form
 
-Right column: `CustomerActivityPanel`.
+Two rules carried over intact:
 
-Two access nuances:
+- `mayClaimForSelf` — a CRM may put their own name on an account and may pick up
+  one nobody owns; moving a colleague's account to a third person stays with a
+  Manager.
+- Changing the grade writes a `system` activity entry naming who changed it and
+  from what.
 
-- `canAssignCollector = canReassignCrm || role === CRM`.
-- `mayClaimForSelf` — a CRM may put **their own** name on an account, and may
-  pick up one nobody owns, because the team's own written instructions tell them
-  to. What they cannot do is move a colleague's account to a third person.
-- Changing the payment rank writes a `system` activity entry naming who changed
-  it and from what. A judgement about a customer belongs in the shared record,
-  not silently in a column.
+The owner dropdown is built from the CRMs **plus whoever owns the account now**,
+because an account owned by an Admin showed "Unassigned" beside a header naming
+them.
 
-### 9.4 Activity panel (`CustomerActivityPanel`)
+### 9.3 Reaching an account from anywhere
 
-- Chat order, oldest first, auto-scrolled to the newest (follows the newest
-  **id**, not the count, so deleting an entry does not yank the view).
-- Quick chips: No answer · Call declined · Promised to pay · Payment received ·
-  Visited · Disputed.
-- Open promises are pinned above the thread with **Paid** / **Did not pay**
-  buttons that pre-load the composer pointing back at the promise.
-- `Ctrl/⌘ + Enter` posts.
-- An entry must say something — except a promise or payment, which may speak
-  through its figure (`hasFigure`).
-- Delete is offered to the author (`entry.authorId === currentUser.authId`) and
-  to any Admin.
-- A Viewer sees *"You can read this record but not add to it."*
+`handleOpenFollowUp` is navigation now, not a dialog. The customer book, the
+reports table and the cheque register all call it; it sets `focusAccountId`,
+switches to Today, and the workspace opens that account — widening the queue to
+Everything if the account is not in the current one, so it appears in the list
+beside the panel.
+
+### 9.4 Customer book (`CustomerDashboardView`)
+
+The whole book as a table: filters for rank, CRM, status, ageing bracket,
+balance type and origin; bulk CRM reassign and bulk grading; export of the rows
+**currently on screen**, which is what makes the recovery-agency defaulter list
+possible. Rows open in the workspace.
 
 ### 9.5 PDC cheques (`PdcChequesView`)
 
 Tiles: Due today · **Date passed, not banked** · Upcoming · On hold · Cleared ·
-Bounced. Filters: search, customer, CRM, bank, status, date range
-(`all | today | this_week | this_month | passed`). Excel export of the filtered
-set.
+Bounced. Filters for search, customer, CRM, bank, status and date range. Excel
+export of the filtered set. All states come from `chequeState()`.
 
-### 9.6 Reports (`ReportsView`)
+### 9.6 Reports — the management read
 
-CRM selector (incl. "Unassigned"), search, four instant-report cards (>90 days,
->135 days, and two more), category and ageing filters, Excel export with the
-full ageing breakdown, and the AI report modal.
+Where the aggregates live now: portfolio ageing, cheques to present, committed
+collections, the team performance table, then the report itself — CRM selector,
+instant-report cards (>90 days, >135 days), category and ageing filters, Excel
+export with the full breakdown, and the AI report.
+
+They used to be the landing screen, which meant a CRM opening the app at nine in
+the morning met a wall of aggregates before a single customer name.
 
 ### 9.7 Alerts & reminders (`AlertsView`)
 
 Switch, recipient roles, skip-when-empty, extra addresses, **Send me a test
-now**, and the last runs from `alert_log` — what was actually delivered, not
-what was scheduled. Channels are stated honestly: email is Ready or Off; SMS and
-WhatsApp say *Not connected*. A switch that pretends to send a message nobody
-receives is worse than no switch.
+now**, and the last runs from `alert_log` — what was actually delivered, not what
+was scheduled. Channels are stated honestly: email is Ready or Off; SMS and
+WhatsApp say *Not connected*.
 
 ### 9.8 Team & access
 
@@ -893,12 +917,11 @@ profile and re-imports the sheet — but never touches logins.
 ### 9.10 Sign-in (`LoginScreen`)
 
 Four screens, one journey: `email → password → in`, `email → reset link sent`,
-and `recovery link → choose a new password`. Remembers the last email in
-`localStorage`.
+and `recovery link → choose a new password`.
 
 > Supabase's built-in mailer sends **2 emails an hour for the whole project**.
-> That is enough to test with and not enough for a team. Point Supabase at your
-> own SMTP under **Authentication → Emails → SMTP Settings**.
+> Point Supabase at your own SMTP under **Authentication → Emails → SMTP
+> Settings**.
 
 ---
 
@@ -1074,106 +1097,114 @@ beyond substitution:
 
 ## 13. Known issues and open work
 
-### 13.1 The daily email cannot send
-
-**Severity: high. Client is waiting.**
+### 13.1 The daily email cannot send — **OPEN, high**
 
 `daily_email` is ON, the cron runs on time, and every run fails with
-`provider: none`. Nine people got nothing this morning and the log has recorded
-it honestly each time.
+`provider: none`. Nine people got nothing on 29 Aug and the log has recorded it
+honestly each time.
 
 **Fix:** a Gmail app password → `SMTP_URL` and `ALERT_FROM` in `.env.local`,
 pushed to Vercel with `vercel env add`, then redeploy and press *Send me a test
-now*. `SMTP_URL` shape:
+now*:
 
 ```
 smtps://user@domain:APP_PASSWORD@smtp.gmail.com:465
 ```
 
-### 13.2 CRM code case drift
+### 13.2 Duplicate clients — **FIXED**
 
-Eight CRM codes exist in `customers.crm_owner_id` in **two spellings each**:
+The imports matched company names on the trimmed lowercase string, so
+"HARIOM TRADERS", "HARI OM TRADERS" and "HARI OM TRADERS," were three customers.
+`companyKey()` now drops punctuation and spacing before anything is compared,
+`customerIdFor()` derives the id from the same key, and the reconciliation
+modal uses it too.
 
+Thirty-three shadow accounts were merged away in the database on 29 Aug. Every
+one carried ₹0, no cheques and no activity; contact details were folded into the
+row that carried the money before the shadow was removed. Book unchanged at
+₹11,20,56,112 across 687 accounts with dues.
+
+### 13.3 The Customer Master parser lost two columns — **FIXED**
+
+The column matcher was an if/else chain in which a generic word won.
+
+| Header | What happened | Cost |
+|---|---|---|
+| `SALESPERSON name` | contains "person" → taken for the contact, slot full, dropped | every imported account had **no owner**; 3,262 settled on one name |
+| `Customer Emails Id` | contains "customer" → taken for the company name, dropped | `sales email` matched instead: **3,991 of 3,992** customer emails were Shori staff addresses |
+| `Ranking` | no rule matched | 406 grades ignored, including 33 explicit **Bad-Debts** |
+
+`mapMasterColumns()` now runs most-specific first, claims each header once, and
+falls to a natural second slot for a duplicate header. Against the live sheet it
+recovers the owner on all 4,068 rows and stops inventing emails. Only an
+unambiguous bad debt is carried from Ranking — "Inactive" and "Dead" say whether
+we still sell to someone, not how they pay.
+
+⚠️ **The database still holds the wrong values.** The next Customer Master sync
+applies the correct owner and clears the invented emails, and it will reassign
+roughly 3,300 accounts in one go — worth doing deliberately rather than by
+accident.
+
+### 13.4 CRM code case drift — **CODE FIXED, DATA OPEN**
+
+Eight codes exist in two spellings (`KAPIL`/`kapil`, `VISHNU`/`Vishnu`, …),
+together holding 32 accounts and ₹16,66,100. `ownerKey()` means scoping, the
+digest and the performance table are all correct; what breaks is anything that
+groups on the raw string — the CRM filter lists one person twice.
+
+Imports now settle the code with `ownerKey()` on the way in, so it cannot be
+reintroduced. **The one-off `UPDATE` over the existing rows has not been run**
+— it was blocked mid-session and needs re-running:
+
+```sql
+update customers c set crm_owner_id = p.legacy_id
+from profiles p
+where upper(trim(p.legacy_id)) = upper(trim(c.crm_owner_id))
+  and c.crm_owner_id <> p.legacy_id;
+-- and the same for assigned_collector_id and pdc_cheques.crm_owner_id
 ```
-GARRY/Garry   KAPIL/kapil   POONAM/Poonam   PRIKSHIT/Prikshit
-ROHINI/Rohini SANDEEP/Sandeep SAVIA/Savia   VISHNU/Vishnu
-```
 
-Together the lowercase variants hold **32 accounts and ₹16,66,100**.
+### 13.5 Scoping written five times — **FIXED**
 
-`ownerKey()` means **scoping, the digest and the CRM performance table are all
-correct** — nobody loses work. What breaks is anything that groups on the raw
-string:
+`getOutstandingForUser()` and `digest.scopeFor()` had the union rule; the three
+view-level copies branched on the role, so a Collector never saw an account they
+owned as CRM and a CRM never saw one handed to them as collector. There is now
+one `scopeTo()` in [types.ts](types.ts), used by all four client call sites.
 
-- `CustomerDashboardView` → `allCrmsInDataset` builds its dropdown from raw
-  distinct values, so the CRM filter lists `KAPIL` and `kapil` as two entries,
-  each showing part of the book.
-- `PdcChequesView` compares `crmId !== selectedCrm` on raw strings.
-- `digest.ts` `perCrm` keys on `(c.crm_owner_id || '').trim()`, so a manager's
-  "By CRM" table can show one person twice.
+### 13.6 The cheque badge counted the whole company — **FIXED**
 
-**Fix:** one `UPDATE customers SET crm_owner_id = upper(trim(crm_owner_id))`,
-plus normalising on write in the sync path so the sheet cannot reintroduce it.
+`todayPdcMetrics` narrowed only for a CRM, so a scoped Collector saw a badge
+counting everyone's cheques beside a register showing only theirs. It uses
+`scopeTo()` and `chequeState()` now, and also reports overdue.
 
-### 13.3 Scoping is implemented four times
-
-`getOutstandingForUser()` and `digest.scopeFor()` implement the union rule
-correctly. The three view-level `userAllowedData` memos in
-`CustomerDashboardView`, `ReportsView` and `PdcChequesView` do **not** — they
-branch:
-
-```ts
-if (currentUser.role === UserRole.Collector) {
-    return collectorUpper === userIdUpper || collectorUpper === userNameUpper;
-}
-return allowedCrms.has(ownerUpper);
-```
-
-A Collector therefore sees only accounts assigned to them and never one they own
-as CRM; a CRM never sees an account handed to them as collector. In production
-this is currently masked — `ATUL_BERRY` and `MUNSHI_RAM` both have
-`data_visibility = All` — but it will bite the moment a scoped collector is
-added.
-
-**Fix:** export one `scopeTo(user, rows)` helper and have all five call sites use
-it.
-
-### 13.4 `todayPdcMetrics` scopes only CRMs
-
-In `App.tsx`, the PDC nav badge narrows the cheque list only when
-`role === UserRole.CRM`. A scoped Collector gets a badge counting the whole
-company's cheques, while the PDC screen itself shows only theirs.
-
-### 13.5 One account nobody can see
+### 13.7 One account nobody can see — **OPEN, needs a decision**
 
 `out_519_A.B_ENTERPRISES` — **A.B ENTERPRISES (DERA BASSI), ₹8,780** — has an
-empty `crm_owner_id`. It appears only to whole-book readers. It needs an owner.
+empty `crm_owner_id`, so only whole-book readers see it. Who owns it is a
+business call, not a code fix.
 
-### 13.6 `DueToday` still exists in the type and the constraint
+### 13.8 GSTIN is always empty — **NOT A BUG**
 
-`PdcStatus.DueToday` remains in the enum, the schema check and the read paths
-(`inHand`, `effectiveStatus`) so historical rows stay valid. It is no longer
-writable from the UI. Removing it entirely needs a data migration first.
+The Customer Master sheet has no GSTIN column. The field is parsed, stored,
+exported and searched correctly; there is simply no source data.
 
-### 13.7 GSTIN is imported but always empty
+### 13.9 `DueToday` in the type and the constraint — **contained**
 
-`gstin` is parsed by the master sheet reader, stored, exported and searched —
-and **0 of 4,048 rows have one**. Either the master sheet has no GSTIN column or
-the fuzzy header match is missing it.
+Kept in the enum and the schema check so a historical row still parses; nothing
+writes it, and `PDC_STATUS_CHOICES` is what the form offers. Zero rows hold it.
 
-### 13.8 Residual accessibility finding
+### 13.10 Residual accessibility finding — **OPEN, minor**
 
-One 262×19 `<input>` in the Add-customer dialog that `scripts/audit.cjs`
-reaches but a direct probe cannot reproduce. Audit otherwise sits at 1 issue,
-down from 61 light / 73 dark.
+One 262×19 `<input>` that `scripts/audit.cjs` reaches in the Add-customer dialog
+but a direct probe cannot reproduce. Both themes otherwise sweep clean.
 
-### 13.9 Truncated instructions from the client
+### 13.11 Ageing sums and the total disagree by ₹69,535
 
-The boss's "How to use" WhatsApp message is still cut off at *"...than assign
-collector- if you want to assign to collect or follow up ( Atul/Amr… **Read
-more**"*. The rest has not been received.
+`portfolioAgeing` sums the four buckets (₹11.20 Cr); the header sums `total`
+(₹11.21 Cr). The two columns disagree in the source sheet for a handful of rows.
+The sheet is the authority, so this is reported rather than reconciled.
 
-### 13.10 Remaining launch steps
+### 13.12 Remaining launch steps
 
 | # | Step | Blocked on |
 |---|---|---|
@@ -1273,8 +1304,10 @@ components/
                             AgeingBar, AgeingLegend, Stat, EmptyState, Spinner.
   ui/format.ts                 87. Indian money and date formatting.
 
+  work/Workspace.tsx          Master-detail: the queue and the account together.
+  work/Worklist.tsx           The six queues, their counts and their rows.
+  work/AccountPanel.tsx       One account: money, form, contacts, cheques, thread.
   CustomerDashboardView.tsx 1,269. The customer book.
-  FollowUpModal.tsx         1,033. The follow-up dialog.
   ReportsView.tsx           1,015. Reports and instant-report cards.
   PdcChequesView.tsx          920. Cheque register.
   CustomerEditModal.tsx       649. Add / edit a customer.
