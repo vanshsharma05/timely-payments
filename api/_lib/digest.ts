@@ -35,6 +35,7 @@ interface CustomerRow {
     total_type: string | null;
     crm_owner_id: string | null;
     assigned_collector_id: string | null;
+    payment_rank: string | null;
     follow_up_date: string | null;
     forecast_amount: number | null;
     forecast_date: string | null;
@@ -191,7 +192,7 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
     const customers = await fetchAll<CustomerRow>(
         db,
         'customers',
-        'id, company, contact_person, contact_number, total, total_type, crm_owner_id, assigned_collector_id, follow_up_date, forecast_amount, forecast_date, status, notes, is_urgent, over90, due_over45'
+        'id, company, contact_person, contact_number, total, total_type, crm_owner_id, assigned_collector_id, payment_rank, follow_up_date, forecast_amount, forecast_date, status, notes, is_urgent, over90, due_over45'
     );
     const cheques = await fetchAll<ChequeRow>(
         db,
@@ -304,6 +305,13 @@ const POS = '#0D6F4D';
 const esc = (s: string | null | undefined) =>
     (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** The grade somebody put on the account, if they put one. */
+function rankTag(rank: string | null): string {
+    if (rank === 'Bad') return ` <span style="color:${DANG};font-size:11px;font-weight:700;">BAD DEBT</span>`;
+    if (rank === 'Late') return ` <span style="color:${WARN};font-size:11px;font-weight:700;">LATE PAY</span>`;
+    return '';
+}
+
 function customerRows(list: CustomerRow[], accent: string, limit = 12): string {
     return list
         .slice(0, limit)
@@ -311,7 +319,7 @@ function customerRows(list: CustomerRow[], accent: string, limit = 12): string {
             c => `
       <tr>
         <td style="padding:9px 12px;border-bottom:1px solid ${LINE};font-size:14px;color:${INK};">
-          <strong>${esc(c.company)}</strong>${c.is_urgent ? ` <span style="color:${DANG};font-size:11px;font-weight:700;">URGENT</span>` : ''}
+          <strong>${esc(c.company)}</strong>${c.is_urgent ? ` <span style="color:${DANG};font-size:11px;font-weight:700;">URGENT</span>` : ''}${rankTag(c.payment_rank)}
           <div style="color:${MUTED};font-size:12px;margin-top:2px;">
             ${esc(c.contact_person) || 'No contact'}${c.contact_number ? ' · ' + esc(c.contact_number) : ''}
           </div>

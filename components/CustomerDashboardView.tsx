@@ -18,6 +18,8 @@ interface CustomerDashboardViewProps {
     onOpenPdcForCustomer?: (customerId: string) => void;
     onReassignCrm?: (customerId: string, newCrm: string) => void;
     onBulkReassignCrm?: (customerIds: string[], newCrm: string) => void;
+    /** Grading 417 bad debts one dialog at a time is not a workflow. */
+    onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
     pdcCheques?: PdcCheque[];
     onSyncSheet?: () => void;
     isSyncing?: boolean;
@@ -42,6 +44,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     onOpenPdcForCustomer,
     onReassignCrm,
     onBulkReassignCrm,
+    onBulkSetRank,
     pdcCheques = [],
     onSyncSheet,
     isSyncing = false,
@@ -111,6 +114,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
     // Bulk selection
     const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+    const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
     const [bulkCrm, setBulkCrm] = useState('');
 
     // List of CRM options (Scoped to user rights)
@@ -713,29 +717,67 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             </div>
 
             {/* Bulk Reassign CRM Bar (If selected) */}
-            {canReassignCrm && selectedCustomerIds.length > 0 && (
-                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-300 dark:border-emerald-700 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
-                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                        <span>✓ {selectedCustomerIds.length} customer(s) selected</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <select
-                            aria-label="Filter by follow-up status"
-                            value={bulkCrm}
-                            onChange={e => setBulkCrm(e.target.value)}
-                            className="px-2 py-1 text-xs rounded-lg border border-emerald-400 bg-white dark:bg-gray-800 font-bold text-gray-900 dark:text-white"
-                        >
-                            <option value="">Select CRM to Reassign...</option>
-                            {crmUsers.map(u => (
-                                <option key={u.id} value={u.name}>{u.name}</option>
-                            ))}
-                        </select>
+            {(canReassignCrm || canEditCustomer) && selectedCustomerIds.length > 0 && (
+                <div className="p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-xs font-bold text-label">
+                        <span>{selectedCustomerIds.length} selected</span>
                         <button
-                            onClick={handleApplyBulkCrm}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs"
+                            type="button"
+                            onClick={() => setSelectedCustomerIds([])}
+                            className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-label-2 hover:bg-hover"
                         >
-                            Reassign Selected
+                            Clear
                         </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {canEditCustomer && onBulkSetRank && (
+                            <>
+                                <select
+                                    aria-label="Set payment rank on the selected customers"
+                                    value={bulkRank}
+                                    onChange={e => setBulkRank(e.target.value as PaymentRank | '')}
+                                    className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                >
+                                    <option value="">Set rank…</option>
+                                    <option value="Good">Good</option>
+                                    <option value="Late">Late pay</option>
+                                    <option value="Bad">Bad debt</option>
+                                </select>
+                                <button
+                                    onClick={() => {
+                                        if (!bulkRank) return;
+                                        onBulkSetRank(selectedCustomerIds, bulkRank);
+                                        setBulkRank('');
+                                        setSelectedCustomerIds([]);
+                                    }}
+                                    disabled={!bulkRank}
+                                    className="px-3 py-1.5 min-h-[32px] bg-accent text-card text-xs font-bold rounded-lg disabled:opacity-40"
+                                >
+                                    Apply rank
+                                </button>
+                            </>
+                        )}
+                        {canReassignCrm && (
+                            <>
+                                <select
+                                    aria-label="Reassign the selected customers to a CRM"
+                                    value={bulkCrm}
+                                    onChange={e => setBulkCrm(e.target.value)}
+                                    className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                >
+                                    <option value="">Reassign to…</option>
+                                    {crmUsers.map(u => (
+                                        <option key={u.id} value={u.name}>{u.name}</option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={handleApplyBulkCrm}
+                                    className="px-3 py-1.5 min-h-[32px] bg-accent text-card text-xs font-bold rounded-lg"
+                                >
+                                    Reassign
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -781,7 +823,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         <table className="min-w-[1040px] w-full text-xs text-left border-collapse table-auto">
                             <thead className="bg-slate-100/95 dark:bg-gray-800/95 text-gray-700 dark:text-gray-300 font-bold uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-[11.5px] sticky top-0 z-10 backdrop-blur-xs">
                                 <tr>
-                                    {canReassignCrm && (
+                                    {(canReassignCrm || canEditCustomer) && (
                                         <th className="px-2.5 py-2.5 w-12 text-center">
                                             <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
                                                 <input
@@ -824,7 +866,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             key={item.id} 
                                             className={`group hover:bg-slate-50/90 dark:hover:bg-gray-800/60 transition-colors ${isChecked ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}`}
                                         >
-                                            {canReassignCrm && (
+                                            {(canReassignCrm || canEditCustomer) && (
                                                 <td className="px-2.5 py-2.5 text-center">
                                                     <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
                                                         <input
@@ -857,7 +899,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     {activePdcs.length > 0 && (
                                                         <button
                                                             onClick={() => onOpenPdcForCustomer?.(item.id)}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[28px] rounded-md text-[11px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity"
+                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[30px] rounded-md text-[11px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity"
                                                             title={`Active PDCs: ₹${totalPdc.toLocaleString('en-IN')}`}
                                                         >
                                                             <ChequeIcon className="w-2.5 h-2.5" />
@@ -893,7 +935,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                         </span>
                                                     )}
                                                     {item.contactNumber && (dialable(item.contactNumber) ? (
-                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap">
+                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[30px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap">
                                                             {item.contactNumber}
                                                         </a>
                                                     ) : (
@@ -1143,7 +1185,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                         </div>
                                         {item.contactNumber && (
                                             <div className="flex items-center justify-between text-[12.5px]">
-                                                <a href={dialable(item.contactNumber) ? `tel:${item.contactNumber}` : undefined} className="inline-flex items-center min-h-[28px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
+                                                <a href={dialable(item.contactNumber) ? `tel:${item.contactNumber}` : undefined} className="inline-flex items-center min-h-[30px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline">
                                                     {item.contactNumber}
                                                 </a>
                                                 <button

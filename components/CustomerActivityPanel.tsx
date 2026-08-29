@@ -266,14 +266,14 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
                                         <button
                                             type="button"
                                             onClick={() => answerPromise(p, true)}
-                                            className="px-2.5 py-1 min-h-[28px] rounded-md text-[12px] font-bold bg-pos-bg text-pos hover:opacity-80"
+                                            className="px-2.5 py-1 min-h-[30px] rounded-md text-[12px] font-bold bg-pos-bg text-pos hover:opacity-80"
                                         >
                                             Paid
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => answerPromise(p, false)}
-                                            className="px-2.5 py-1 min-h-[28px] rounded-md text-[12px] font-bold bg-dang-bg text-dang hover:opacity-80"
+                                            className="px-2.5 py-1 min-h-[30px] rounded-md text-[12px] font-bold bg-dang-bg text-dang hover:opacity-80"
                                         >
                                             Did not pay
                                         </button>
@@ -382,7 +382,7 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
                                     if (q.prefill && !body.trim()) setBody(q.prefill);
                                     boxRef.current?.focus();
                                 }}
-                                className={`px-2.5 py-1 min-h-[28px] rounded-full text-[12px] font-semibold border transition-colors ${
+                                className={`px-2.5 py-1 min-h-[30px] rounded-full text-[12px] font-semibold border transition-colors ${
                                     kind === q.kind
                                         ? 'bg-accent text-card border-accent'
                                         : 'bg-card-2 text-label-2 border-separator hover:bg-hover'

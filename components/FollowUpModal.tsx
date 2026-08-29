@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank } from '../types';
+import * as repo from '../services/repository';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
@@ -43,6 +44,7 @@ const FollowUpModal = ({
     });
     const [assignedCollectorId, setAssignedCollectorId] = useState(customer.assignedCollectorId || '');
     const [assignedCrmOwnerId, setAssignedCrmOwnerId] = useState(customer.crmOwnerId || '');
+    const [paymentRank, setPaymentRank] = useState<PaymentRank | ''>(customer.paymentRank || '');
     const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>('follow_up');
     const [isUrgent, setIsUrgent] = useState(customer.isUrgent || false);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
@@ -97,6 +99,7 @@ const FollowUpModal = ({
     // may read this panel but not record anything on it.
     const canEditFollowUp = can(currentUser, 'canEditFollowUp');
     const canReassignCrm = can(currentUser, 'canReassignCrm');
+    const canEditCustomer = can(currentUser, 'canEditCustomer');
     const canAssignCollector = canReassignCrm || currentUser.role === UserRole.CRM;
 
     /**
@@ -271,6 +274,19 @@ const FollowUpModal = ({
         }
         if ((canReassignCrm || mayClaimForSelf) && assignedCrmOwnerId) {
             updatedCustomer.crmOwnerId = assignedCrmOwnerId;
+        }
+
+        // Regrading an account is a judgement about a customer, so it belongs in
+        // the shared record with a name against it, not silently in a column.
+        if (canEditCustomer && (paymentRank || '') !== (customer.paymentRank || '')) {
+            updatedCustomer.paymentRank = paymentRank || undefined;
+            const before = customer.paymentRank ? PAYMENT_RANK_LABELS[customer.paymentRank] : 'automatic';
+            const after = paymentRank ? PAYMENT_RANK_LABELS[paymentRank] : 'automatic';
+            repo.addActivity({
+                customerId: customer.id,
+                kind: 'system',
+                body: `Payment rank changed from ${before} to ${after}.`,
+            }, currentUser).catch(() => { /* the rank still saves; the note is a courtesy */ });
         }
         
         onUpdate(updatedCustomer);
@@ -903,6 +919,26 @@ const FollowUpModal = ({
                             </div>
                         )}
                        
+                        {canEditCustomer && (
+                            <div className="relative">
+                                <label htmlFor="paymentRank" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                    Payment rank
+                                </label>
+                                <select
+                                    id="paymentRank"
+                                    aria-label="Payment rank"
+                                    value={paymentRank}
+                                    onChange={e => setPaymentRank(e.target.value as PaymentRank | '')}
+                                    className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
+                                >
+                                    <option value="">Automatic — {PAYMENT_RANK_LABELS[getCustomerPaymentRank({ ...customer, paymentRank: undefined })]} from ageing</option>
+                                    <option value="Good">Good — pays to terms</option>
+                                    <option value="Late">Late pay — slow but paying</option>
+                                    <option value="Bad">Bad debt — old money stuck</option>
+                                </select>
+                            </div>
+                        )}
+
                         {(canReassignCrm || mayClaimForSelf) && (
                             <div className="relative">
                                 <label htmlFor="assignCrm" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">

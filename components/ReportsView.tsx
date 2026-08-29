@@ -845,7 +845,7 @@ export const ReportsView = ({
                                                                 e.stopPropagation();
                                                                 onOpenPdcForCustomer?.(item.id);
                                                             }}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[28px] rounded-md text-[11.5px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity flex-shrink-0"
+                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[30px] rounded-md text-[11.5px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity flex-shrink-0"
                                                             title={`Active PDC Cheques: ₹${totalPdcAmount.toLocaleString('en-IN')} (${activePdcs.length} cheques)`}
                                                         >
                                                             <ChequeIcon className="w-2.5 h-2.5" />
@@ -855,7 +855,7 @@ export const ReportsView = ({
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
                                                     {item.contactNumber && (dialable(item.contactNumber) ? (
-                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[28px] px-1 -mx-1 hover:text-pos font-medium">
+                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[30px] px-1 -mx-1 hover:text-pos font-medium">
                                                             {item.contactNumber}
                                                         </a>
                                                     ) : (

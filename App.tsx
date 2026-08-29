@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding, getCustomerPaymentRank, PAYMENT_RANK_LABELS } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -704,6 +704,27 @@ const App = () => {
     };
 
     // Bulk reassign multiple customers to a CRM
+    /**
+     * Grades a whole selection at once.
+     *
+     * The agency list is hundreds of accounts; deciding which of them are truly
+     * stuck is a sit-down job done against a filtered list, not one dialog at a
+     * time.
+     */
+    const handleBulkSetRank = (customerIds: string[], rank: PaymentRank | '') => {
+        const idSet = new Set(customerIds);
+        setAppData(current => current.map(item =>
+            idSet.has(item.id) ? { ...item, paymentRank: rank || undefined } : item
+        ));
+        setSyncMessage({
+            type: 'success',
+            text: rank
+                ? `Marked ${customerIds.length} account${customerIds.length === 1 ? '' : 's'} as ${PAYMENT_RANK_LABELS[rank]}.`
+                : `Cleared the rank on ${customerIds.length} account${customerIds.length === 1 ? '' : 's'}; they go back to being worked out from ageing.`,
+        });
+        setTimeout(() => setSyncMessage(null), 4000);
+    };
+
     const handleBulkReassignCrm = (customerIds: string[], newCrmId: string) => {
         const idSet = new Set(customerIds);
         const updated = appData.map(item =>
@@ -1558,6 +1579,7 @@ const App = () => {
             onOpenPdcForCustomer={handleOpenPdcForCustomer}
             onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
+            onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
             pdcCheques={pdcCheques}
             onSyncSheet={rights.canSyncSheets ? handleCombinedSync : undefined}
             isSyncing={isSyncing}
