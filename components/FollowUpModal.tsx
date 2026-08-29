@@ -99,6 +99,20 @@ const FollowUpModal = ({
     const canReassignCrm = can(currentUser, 'canReassignCrm');
     const canAssignCollector = canReassignCrm || currentUser.role === UserRole.CRM;
 
+    /**
+     * A CRM may put their own name on an account, and may pick up one nobody
+     * owns — the team's own instructions walk them through doing exactly that.
+     * What they cannot do is move a colleague's account to a third person;
+     * that stays with a Manager.
+     */
+    const mayClaimForSelf =
+        !canReassignCrm &&
+        currentUser.role === UserRole.CRM &&
+        (!customer.crmOwnerId?.trim() ||
+            [currentUser.id, currentUser.name].some(
+                v => v.trim().toUpperCase() === customer.crmOwnerId.trim().toUpperCase(),
+            ));
+
     // Add new contact to list
     const handleAddContact = (e: React.FormEvent) => {
         e.preventDefault();
@@ -255,7 +269,7 @@ const FollowUpModal = ({
         if (canAssignCollector) {
             updatedCustomer.assignedCollectorId = assignedCollectorId || undefined;
         }
-        if (canReassignCrm && assignedCrmOwnerId) {
+        if ((canReassignCrm || mayClaimForSelf) && assignedCrmOwnerId) {
             updatedCustomer.crmOwnerId = assignedCrmOwnerId;
         }
         
@@ -889,12 +903,12 @@ const FollowUpModal = ({
                             </div>
                         )}
                        
-                        {canReassignCrm && (
+                        {(canReassignCrm || mayClaimForSelf) && (
                             <div className="relative">
                                 <label htmlFor="assignCrm" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                    Assigned CRM Owner (Admin Rights)
+                                    {canReassignCrm ? 'Assigned CRM Owner' : 'CRM Owner (you can put your own name on it)'}
                                 </label>
-                                <select aria-label="Assigned CRM Owner (Admin Rights)"
+                                <select aria-label="Assigned CRM Owner"
                                     id="assignCrm"
                                     value={assignedCrmOwnerId}
                                     onChange={(e) => setAssignedCrmOwnerId(e.target.value)}
@@ -904,7 +918,7 @@ const FollowUpModal = ({
                                     {assignedCrmOwnerId && !crmUsers.some(u => u.name.toUpperCase() === assignedCrmOwnerId.toUpperCase() || u.id.toUpperCase() === assignedCrmOwnerId.toUpperCase()) && (
                                         <option value={assignedCrmOwnerId}>{assignedCrmOwnerId}</option>
                                     )}
-                                    {crmUsers.map(c => (
+                                    {(canReassignCrm ? crmUsers : crmUsers.filter(c => c.id === currentUser.id)).map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                 </select>
