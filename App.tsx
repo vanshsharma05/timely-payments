@@ -21,7 +21,7 @@ import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 import { formatCompact, formatDateShort, formatINR, relativeDays } from './components/ui/format';
-import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState } from './components/ui/Primitives';
+import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
@@ -524,12 +524,27 @@ const App = () => {
         setSearchTerm('');
     };
 
+    /**
+     * "Show them" on the attention banner.
+     *
+     * It used to set priorityFilter, which only the personal dashboard's list
+     * reads. On the company dashboard nothing rendered that list, so the banner
+     * vanished and nothing else happened. Whoever sees the whole book is taken
+     * to the report, filtered to the same accounts the banner counted.
+     */
     const handleViewPriorityItems = () => {
         setStatusFilter(null);
-        setCategoryFilter('all');
         setUnattendedFilter(false);
-        setPriorityFilter(true);
         setShowNotificationBanner(false);
+
+        if (seesWholeBook(currentUser)) {
+            setPriorityFilter(false);
+            setCategoryFilter('urgent');
+            setAdminTab('reports');
+        } else {
+            setCategoryFilter('all');
+            setPriorityFilter(true);
+        }
     };
     
     const handleOpenUserModal = (user: User | null) => {
@@ -2511,6 +2526,17 @@ const App = () => {
     const totalBook = (wholeBook ? appData : outstandingData)
         .reduce((s, r) => s + (r.totalType === 'Cr' ? 0 : (r.total || 0)), 0);
 
+    /**
+     * Hold the placeholder until the book has actually arrived.
+     *
+     * updateViewData() sets loading true and false again as soon as it has
+     * scoped whatever appData holds — which, on the first pass after sign-in, is
+     * nothing. The dashboard therefore painted "0 accounts with dues · ₹0
+     * outstanding" over a book worth eleven crore before the real figures
+     * replaced them a moment later.
+     */
+    const showSkeleton = loading || (isSupabaseConfigured && isAuthenticated && !serverLoaded);
+
     const shellBanner = syncMessage ? (
         <div className="px-3 sm:px-5 lg:px-7 pt-4">
             <div
@@ -2556,12 +2582,18 @@ const App = () => {
             onChangePassword={() => setIsPasswordModalOpen(true)}
             title={PAGE_TITLE[safeKey] || 'Timely Payment'}
             subtitle={
+                // Counting an empty book while it is still loading states a
+                // figure that is not merely unknown but wrong.
+                showSkeleton ? (
+                    <span className="text-label-3">Loading the book…</span>
+                ) : (
                 <span className="inline-flex items-center gap-2 flex-wrap">
                     <span>{scopeLabel}</span>
                     <span className="text-label-3">&middot;</span>
                     <span className="num font-semibold text-label-2">{formatCompact(totalBook)}</span>
                     <span>outstanding</span>
                 </span>
+                )
             }
             searchTerm={searchTerm}
             onSearch={setSearchTerm}
@@ -2572,10 +2604,23 @@ const App = () => {
             lastSyncTime={lastSyncTime}
             banner={shellBanner}
         >
-            {loading ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-3">
-                    <Spinner className="w-6 h-6 text-label" />
-                    <p className="text-[14.5px] text-label-3">Loading the collections book\u2026</p>
+            {showSkeleton ? (
+                // The shape of what is coming, rather than a spinner over an
+                // empty page: four thousand accounts take a moment to arrive and
+                // the page should not jump when they do.
+                <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        {[0, 1, 2, 3].map(i => (
+                            <div key={i} className="bg-card rounded-[16px] shadow-e1 px-5 py-4" aria-hidden="true">
+                                <div className="h-2.5 w-24 rounded bg-card-3" />
+                                <div className="h-7 w-16 rounded bg-card-3 mt-3" />
+                                <div className="h-2.5 w-28 rounded bg-card-2 mt-3" />
+                            </div>
+                        ))}
+                    </div>
+                    <Card className="overflow-hidden">
+                        <LoadingList label="Loading the collections book" rows={9} />
+                    </Card>
                 </div>
             ) : error ? (
                 <div className="bg-dang-bg border border-dang text-dang rounded-xl px-5 py-4">

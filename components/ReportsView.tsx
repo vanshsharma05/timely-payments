@@ -16,7 +16,7 @@ import {
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatINR } from './ui/format';
 
-export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135';
+export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
 
 interface ReportsViewProps {
@@ -239,6 +239,11 @@ export const ReportsView = ({
             if (categoryFilter === 'overdue' && !isOverdueFollowUp(item)) return false;
             if (categoryFilter === 'future' && !isFutureFollowUp(item)) return false;
             if (categoryFilter === 'completed' && item.status !== FollowUpStatus.Completed) return false;
+            // Exactly what the "needs attention" banner counts: flagged urgent,
+            // or the follow-up date has gone by. The banner used to set a filter
+            // that only the personal dashboard rendered, so pressing it on the
+            // company dashboard dismissed the banner and did nothing else.
+            if (categoryFilter === 'urgent' && !(item.isUrgent || isOverdueFollowUp(item))) return false;
             if (categoryFilter === 'over90' && itemOver90 <= 0) return false;
             if (categoryFilter === 'over135' && a4 <= 0) return false;
 

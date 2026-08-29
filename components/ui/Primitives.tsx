@@ -309,6 +309,39 @@ export const EmptyState = ({
   </div>
 );
 
+/* ------------------------------- Skeleton -------------------------------- */
+
+/**
+ * Placeholder rows while a list is being prepared.
+ *
+ * Shaped like the rows it stands in for, so the page does not jump when the
+ * real ones arrive, and dimmed rather than animated into a stripe show — this
+ * appears for a few hundred milliseconds and should not draw the eye.
+ */
+export const SkeletonRows = ({ rows = 8, className }: { rows?: number; className?: string }) => (
+    <div className={cx('divide-y divide-separator', className)} aria-hidden="true">
+        {Array.from({ length: rows }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+                <div className="flex-1 min-w-0">
+                    <div className="h-3.5 rounded bg-card-3" style={{ width: `${38 + ((i * 13) % 34)}%` }} />
+                    <div className="h-2.5 rounded bg-card-2 mt-2" style={{ width: `${22 + ((i * 7) % 26)}%` }} />
+                </div>
+                <div className="h-3.5 w-20 rounded bg-card-3 flex-none" />
+                <div className="h-2 w-32 rounded-full bg-card-2 flex-none hidden sm:block" />
+                <div className="h-7 w-20 rounded-full bg-card-2 flex-none hidden md:block" />
+            </div>
+        ))}
+    </div>
+);
+
+/** Announced to a screen reader; the shapes above are decorative. */
+export const LoadingList = ({ label = 'Loading', rows = 8 }: { label?: string; rows?: number }) => (
+    <div role="status" aria-live="polite">
+        <span className="sr-only">{label}</span>
+        <SkeletonRows rows={rows} />
+    </div>
+);
+
 /* -------------------------------- Loading -------------------------------- */
 
 export const Spinner = ({ className }: { className?: string }) => (

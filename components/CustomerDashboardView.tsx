@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
@@ -85,6 +85,41 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const [balanceTypeFilter, setBalanceTypeFilter] = useState<'ALL' | 'Dr' | 'Cr'>('ALL');
     const [originFilter, setOriginFilter] = useState<'ALL' | 'NEW' | 'SHEET'>('ALL');
     const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+    /** How many rows are mounted. Grows as the reader reaches the bottom. */
+    const PAGE = 60;
+    const [visibleCount, setVisibleCount] = useState(PAGE);
+    const sentinelRef = useRef<HTMLTableRowElement | null>(null);
+
+    /**
+     * Typing re-filtered and re-rendered the entire book on every keystroke,
+     * which cost about five seconds a character. The input stays instant and
+     * the list catches up a beat later.
+     */
+    const [searchDraft, setSearchDraft] = useState('');
+
+    useEffect(() => {
+        const t = window.setTimeout(() => setSearchTerm(searchDraft), 220);
+        return () => window.clearTimeout(t);
+    }, [searchDraft]);
+
+
+    // Hiding filters must never hide the fact that they are ON.
+    useEffect(() => {
+        const node = sentinelRef.current;
+        if (!node || typeof IntersectionObserver === 'undefined') return;
+        const io = new IntersectionObserver(
+            entries => { if (entries.some(e => e.isIntersecting)) setVisibleCount(c => c + PAGE * 2); },
+            { rootMargin: '400px' },
+        );
+        io.observe(node);
+        return () => io.disconnect();
+    }, [visibleCount, viewMode]);
+
+    // A new filter means a new list; keep the window from carrying over.
+    useEffect(() => {
+        setVisibleCount(PAGE);
+    }, [searchTerm, globalSearch, rankFilter, selectedCrm, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
 
     // Hiding filters must never hide the fact that they are ON.
     const activeFilterCount = [
@@ -476,15 +511,15 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         <div className="relative">
                             <input
                                 type="text"
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
+                                value={searchDraft}
+                                onChange={e => setSearchDraft(e.target.value)}
                                 placeholder="Search by name, contact, mobile, GST, city..."
                                 className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-accent font-medium"
                             />
                             <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
                             {searchTerm && (
                                 <button
-                                    onClick={() => setSearchTerm('')}
+                                    onClick={() => { setSearchDraft(''); setSearchTerm(''); }}
                                     className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold"
                                 >
                                     ✕
@@ -829,7 +864,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                {filteredData.map(item => {
+                                {filteredData.slice(0, visibleCount).map(item => {
                                     const activePdcs = pdcCheques.filter(p => p.customerId === item.id && (p.status === 'Pending' || p.status === 'DueToday'));
                                     const totalPdc = activePdcs.reduce((sum, p) => sum + p.amount, 0);
 
@@ -1107,6 +1142,18 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                         </tr>
                                     );
                                 })}
+                                {filteredData.length > visibleCount && (
+                                    <tr ref={sentinelRef}>
+                                        <td colSpan={canReassignCrm ? 8 : 7} className="px-4 py-5 text-center">
+                                            <button
+                                                onClick={() => setVisibleCount(c => c + PAGE * 2)}
+                                                className="h-9 px-4 rounded-full bg-card-2 hover:bg-hover text-[13px] font-semibold text-label-2"
+                                            >
+                                                Show more &mdash; {(filteredData.length - visibleCount).toLocaleString('en-IN')} left
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -1115,7 +1162,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             ) : (
                 /* Grid / Cards View */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {filteredData.map(item => {
+                    {filteredData.slice(0, visibleCount).map(item => {
 
                         const a3 = item.ageing?.['91-135'] || 0;
                         const a4 = item.ageing?.['>135'] || 0;
