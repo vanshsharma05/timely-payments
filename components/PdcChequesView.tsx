@@ -389,14 +389,14 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                             <p className="text-xs text-gray-400">
                                                 {hasActiveFilters 
                                                     ? 'Try adjusting your filters or search terms.' 
-                                                    : 'Click"+ Add PDC Cheque" to register a new post-dated cheque.'}
+                                                    : 'Nothing recorded yet. Enter a cheque with the date written on it.'}
                                             </p>
                                             <button
                                                 onClick={() => canManagePdc && onAddPdc()}
                                                 disabled={!canManagePdc}
                                                 className="mt-1 px-3 py-1.5 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-semibold transition-colors"
                                             >
-                                                + Add PDC Cheque
+                                                Record a cheque
                                             </button>
                                         </div>
                                     </td>

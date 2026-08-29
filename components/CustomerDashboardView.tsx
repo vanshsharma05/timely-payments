@@ -1174,7 +1174,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     : 'bg-gray-200 dark:bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed'
                                             }`}
                                         >
-                                            Follow Up
+                                            Open
                                         </button>
                                     </div>
                                 </div>
