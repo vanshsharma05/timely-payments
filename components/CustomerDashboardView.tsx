@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, hasOutstanding, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
-import { AgeingBar, AgeingLegend, AGE_BANDS, Button } from './ui/Primitives';
+import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatCompact, formatINR } from './ui/format';
 
 interface CustomerDashboardViewProps {
@@ -16,6 +16,7 @@ interface CustomerDashboardViewProps {
     onFollowUp: (customer: Outstanding) => void;
     onWhatsApp: (customer: Outstanding) => void;
     onOpenPdcForCustomer?: (customerId: string) => void;
+    onReassignCrm?: (customerId: string, newCrm: string) => void;
     onBulkReassignCrm?: (customerIds: string[], newCrm: string) => void;
     /** Grading 417 bad debts one dialog at a time is not a workflow. */
     onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
@@ -41,11 +42,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     onFollowUp,
     onWhatsApp,
     onOpenPdcForCustomer,
+    onReassignCrm,
     onBulkReassignCrm,
     onBulkSetRank,
     pdcCheques = [],
     onSyncSheet,
     isSyncing = false,
+    lastUpdatedTill,
     onExportExcel,
     globalSearch = '',
 }) => {
@@ -56,6 +59,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const canEditCustomer = isAdmin || Boolean(permissions?.canEditCustomer);
     const canDeleteCustomer = isAdmin || Boolean(permissions?.canDeleteCustomer);
     const canEditFollowUp = isAdmin || Boolean(permissions?.canEditFollowUp);
+    const canManagePdc = isAdmin || Boolean(permissions?.canManagePdc);
     const canReassignCrm = isAdmin || Boolean(permissions?.canReassignCrm);
     const canExport = isAdmin || Boolean(permissions?.canExportData);
     const canViewAllCrms = seesWholeBook(currentUser);
@@ -80,13 +84,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const [balanceTypeFilter, setBalanceTypeFilter] = useState<'ALL' | 'Dr' | 'Cr'>('ALL');
     const [originFilter, setOriginFilter] = useState<'ALL' | 'NEW' | 'SHEET'>('ALL');
-    const [showSettled, setShowSettled] = useState(false);
-    const [viewMode, setViewMode] = useState<'table' | 'cards'>(
-        () => (typeof window !== 'undefined' && window.innerWidth < 1024 ? 'cards' : 'table'),
-    );
-    // On a phone the three dropdowns stack into 600px of chrome above the list.
-    // Search stays; the rest waits until it is asked for.
-    const [showFilterRow, setShowFilterRow] = useState(false);
+    const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
     // Hiding filters must never hide the fact that they are ON.
     const activeFilterCount = [
@@ -154,9 +152,6 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     // Filter logic based on userAllowedData
     const filteredData = useMemo(() => {
         return userAllowedData.filter(item => {
-            // Owing nothing is not a reason to hide a customer from search,
-            // only from the default list of things to work on.
-            if (!showSettled && !hasOutstanding(item) && !searchTerm.trim() && !globalSearch.trim()) return false;
             if (!matchesQuery(item, globalSearch)) return false;
             // Search match across company, contact, mobile, email, GSTIN, City, State, additional contacts
             if (searchTerm.trim()) {
@@ -228,7 +223,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             return true;
         });
-    }, [userAllowedData, globalSearch, searchTerm, rankFilter, selectedCrm, ageingFilter, statusFilter, balanceTypeFilter, originFilter, showSettled]);
+    }, [userAllowedData, globalSearch, searchTerm, rankFilter, selectedCrm, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
 
     // Metrics summary for filtered dataset
     const metrics = useMemo(() => {
@@ -338,73 +333,143 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
     return (
         <div className="w-full space-y-3.5 pb-2">
-            {/* One toolbar: what you are looking at, then how to narrow it. */}
-            <div className="bg-card rounded-[16px] shadow-e1 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2.5">
-                <span className="text-[14px] font-bold text-label">
-                    {filteredData.length.toLocaleString('en-IN')}
-                    <span className="font-medium text-label-3">
-                        {' '}{showSettled ? 'of every account' : 'owing money'}
-                    </span>
-                </span>
-                <span className="num text-[14px] font-semibold text-label-2" title={formatINR(metrics.debitSum)}>
-                    {formatCompact(metrics.debitSum)}
-                </span>
-
-                <button
-                    type="button"
-                    aria-pressed={showSettled}
-                    onClick={() => setShowSettled(v => !v)}
-                    className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${
-                        showSettled ? 'bg-accent text-on-accent' : 'bg-card-2 text-label-2 hover:bg-hover'
-                    }`}
-                    title="Accounts that owe nothing are hidden by default"
-                >
-                    {showSettled ? 'Showing settled too' : 'Show settled'}
-                </button>
-
-                <div className="flex-1" />
-
-                <div className="flex items-center gap-2 flex-wrap">
-                    {canAddCustomer && (
-                        <Button size="sm" variant="primary" onClick={onAddCustomer}>Add customer</Button>
-                    )}
-                    {onSyncSheet && (
-                        <Button size="sm" variant="quiet" onClick={onSyncSheet} disabled={isSyncing}
-                            icon={<SyncIcon className={isSyncing ? 'w-3.5 h-3.5 animate-spin' : 'w-3.5 h-3.5'} />}>
-                            {isSyncing ? 'Syncing' : 'Sync'}
-                        </Button>
-                    )}
-                    {onExportExcel && canExport && (
-                        <Button size="sm" variant="quiet" onClick={() => onExportExcel(filteredData)}
-                            icon={<DownloadIcon className="w-3.5 h-3.5" />}
-                            title="Exports exactly the rows on screen">
-                            Export
-                        </Button>
-                    )}
-                    <div className="flex bg-card-2 p-0.5 rounded-full">
-                        {(['table', 'cards'] as const).map(mode => (
-                            <button
-                                key={mode}
-                                onClick={() => setViewMode(mode)}
-                                aria-pressed={viewMode === mode}
-                                className={`h-7 px-3 text-[12.5px] font-semibold rounded-full capitalize transition-colors ${
-                                    viewMode === mode ? 'bg-card text-label shadow-e1' : 'text-label-3 hover:text-label'
-                                }`}
-                            >
-                                {mode}
-                            </button>
-                        ))}
+            {/* Top Header Banner */}
+            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-0.5 rounded text-[12.5px] font-medium bg-card-3 text-label-2">
+                            {filteredData.length} of {data.length} Accounts
+                        </span>
+                        {lastUpdatedTill && (
+                            <span className="px-2 py-0.5 rounded-md text-[12.5px] font-semibold bg-pos-bg text-pos border border-pos">
+                                Till: {lastUpdatedTill}
+                            </span>
+                        )}
                     </div>
+                    <div className="hidden">
+                        <span>Signed in as <strong className="text-label font-semibold">{currentUser?.name}</strong> ({currentUser?.role})</span>
+                        <span className="text-label-3">•</span>
+                        <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-pos"></span>
+                            Rights: {[canAddCustomer && 'Add', canEditCustomer && 'Edit', canEditFollowUp && 'Follow-up', canManagePdc && 'PDC', isAdmin && 'Admin'].filter(Boolean).join(' · ')}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Primary Action Buttons */}
+                <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                    {/* Add Customer Button */}
+                    <button
+                        onClick={onAddCustomer}
+                        disabled={!canAddCustomer}
+                        title={canAddCustomer ? 'Create a new customer master account' : 'You do not have permission to add new customers'}
+                        className={`px-3.5 py-1.5 text-xs font-extrabold rounded-lg transition-all shadow-sm flex items-center gap-1.5 ${
+                            canAddCustomer
+                                ? 'bg-accent hover:bg-accent-press text-on-accent cursor-pointer'
+                                : 'bg-card-3 text-label-2 cursor-not-allowed'
+                        }`}
+                    >
+                        <span>Add Customer</span>
+                        
+                    </button>
+
+                    {/* Sync from Google Sheet */}
+                    {onSyncSheet && (
+                        <button
+                            onClick={onSyncSheet}
+                            disabled={isSyncing}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-card hover:bg-card-3 text-label-2 hover:text-label border border-separator-strong transition-colors flex items-center gap-1"
+                            title="Pull fresh updates from the official Google Sheet"
+                        >
+                            <SyncIcon className={isSyncing ?"w-3.5 h-3.5 animate-spin" :"w-3.5 h-3.5"} />
+                            <span>{isSyncing ? 'Syncing...' : 'Sync'}</span>
+                        </button>
+                    )}
+
+                    {/* Export Excel */}
+                    {onExportExcel && canExport && (
+                        <button
+                            onClick={() => onExportExcel(filteredData)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-card hover:bg-card-3 text-label-2 hover:text-label border border-separator-strong transition-colors flex items-center gap-1"
+                            title="Export filtered customer list to Excel / CSV"
+                        >
+                            <DownloadIcon className="w-3.5 h-3.5" />
+                            <span>Export</span>
+                        </button>
+                    )}
+
+                    {/* Table / Cards toggle */}
+                    <div className="flex bg-card-3 p-0.5 rounded-lg border border-separator">
+                        <button
+                            onClick={() => setViewMode('table')}
+                            className={`h-8 px-3 text-xs font-semibold rounded-lg transition-all ${viewMode === 'table' ? 'bg-card text-label ' : 'text-label-3 hover:text-label'}`}
+                            title="Detailed Compact Table View"
+                        >
+                            Table
+                        </button>
+                        <button
+                            onClick={() => setViewMode('cards')}
+                            className={`h-8 px-3 text-xs font-semibold rounded-lg transition-all ${viewMode === 'cards' ? 'bg-card text-label ' : 'text-label-3 hover:text-label'}`}
+                            title="Customer Cards View"
+                        >
+                            Cards
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Book summary. Flat and divided, not boxed: under the colour rule
+                only the ageing figures are allowed hue, so the tiles stay grey. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Receivables</p>
+                    <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.debitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.count} accounts</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Good payers</p>
+                    <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.goodDebitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.goodCount} accounts</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Late payers</p>
+                    <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.lateDebitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.lateCount} accounts</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Bad debt</p>
+                    <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-4-ink)' }}>{formatCurrency(metrics.badDebitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.badCount} accounts · agency list</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Past 45 days</p>
+                    <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-2-ink)' }}>{formatCurrency(metrics.due45Sum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">Working capital held up</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Past 90 days</p>
+                    <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-3-ink)' }}>{formatCurrency(metrics.over90Sum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">Recovery risk</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Advance held</p>
+                    <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>{formatCurrency(metrics.creditSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">Credit with us</p>
                 </div>
             </div>
 
             {/* Compact Filter Controls Card */}
             <div className="bg-card rounded-[16px] shadow-e1 p-5 space-y-3.5">
                 {/* Search, Rank, CRM, Status Filters Row */}
-                <div className="lg:flex lg:items-end lg:gap-2">
-                <div className="flex items-end gap-2 lg:flex-1 lg:min-w-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2">
                     {/* Live Search */}
-                    <div className="flex-1 min-w-0 relative">
+                    <div className="lg:col-span-4 relative">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Search Customer / Phone / City
                         </label>
@@ -428,21 +493,8 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </div>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setShowFilterRow(v => !v)}
-                        aria-expanded={showFilterRow}
-                        className={`lg:hidden h-9 px-3.5 rounded-[10px] text-[13px] font-semibold whitespace-nowrap transition-colors ${
-                            activeFilterCount || showFilterRow ? 'bg-accent text-on-accent' : 'bg-card-2 text-label-2'
-                        }`}
-                    >
-                        Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
-                    </button>
-                </div>
-
-                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 lg:mt-0 lg:flex lg:gap-2 lg:flex-none ${showFilterRow ? '' : 'hidden lg:flex'}`}>
                     {/* Payment Rank Filter Dropdown */}
-                    <div className="lg:w-[168px]">
+                    <div className="lg:col-span-3">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Payment Rank
                         </label>
@@ -451,7 +503,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setRankFilter(e.target.value as any)}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
                         >
-                            <option value="ALL">Every rank</option>
+                            <option value="ALL">All ranks ({data.length})</option>
                             <option value="Good">Good — pays to terms ({metrics.goodCount})</option>
                             <option value="Late">Late pay — slow but paying ({metrics.lateCount})</option>
                             <option value="Bad">Bad debt — old money stuck ({metrics.badCount})</option>
@@ -459,7 +511,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* CRM Filter Dropdown */}
-                    <div className="lg:w-[168px]">
+                    <div className="lg:col-span-3">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             CRM Owner
                         </label>
@@ -469,7 +521,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             disabled={!canViewAllCrms && currentUser?.role === UserRole.CRM}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent disabled:opacity-60"
                         >
-                            <option value="ALL">Every CRM</option>
+                            <option value="ALL">All CRMs ({data.length} Accounts)</option>
                             {allCrmsInDataset.map(crm => (
                                 <option key={crm} value={crm}>{crm} Portfolio</option>
                             ))}
@@ -478,7 +530,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* Status Filter */}
-                    <div className="lg:w-[168px]">
+                    <div className="lg:col-span-2">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Status
                         </label>
@@ -496,10 +548,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </select>
                     </div>
                 </div>
-                </div>
 
                 {/* Secondary filters stay available, just out of the way until asked for. */}
-                <div className={`flex items-center justify-between gap-2 pt-2 border-t border-separator ${showFilterRow ? '' : 'hidden lg:flex'}`}>
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-separator">
                     <button
                         type="button"
                         onClick={() => setShowMoreFilters(v => !v)}
@@ -594,7 +645,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onClick={() => setAgeingFilter(ageingFilter === '1-45' ? 'all' : '1-45')}
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
                                 ageingFilter === '1-45'
-                                    ? 'bg-accent text-on-accent'
+                                    ? 'bg-emerald-600 text-white'
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                             }`}
                         >
@@ -724,7 +775,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     {canAddCustomer && (
                         <button
                             onClick={onAddCustomer}
-                            className="mt-3 px-3.5 py-1.5 bg-accent hover:bg-accent-press text-on-accent text-xs font-bold rounded-lg shadow-sm transition-all inline-flex items-center gap-1"
+                            className="mt-3 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all inline-flex items-center gap-1"
                         >
                             <span>Add New Customer</span>
                         </button>
@@ -733,9 +784,16 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             ) : viewMode === 'table' ? (
                 /* Customer Data Table with Dedicated Smooth Horizontal Scroll Container */
                 <div className="w-full max-w-full bg-card rounded-[16px] shadow-e1 overflow-hidden flex flex-col">
-                    {/* What the ageing bar colours mean, said once instead of per row. */}
-                    <div className="px-3.5 py-2 bg-card-2 border-b border-separator flex items-center">
-                        <AgeingLegend className="gap-3" />
+                    {/* Top Table Control Bar with Quick Horizontal Scroll Slider & Navigation */}
+                    <div className="px-3.5 py-2.5 bg-card-2 border-b border-separator flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                                                                <span>Customer Ledger ({filteredData.length} accounts)</span>
+                            </span>
+                            {/* What the bar colours mean, said once instead of per row. */}
+                            <AgeingLegend className="gap-3" />
+                        </div>
+
                     </div>
 
                     {/* Horizontal Scroll Container (Strict containment without triggering body scroll) */}
@@ -844,13 +902,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     >
                                                         {PAYMENT_RANK_LABELS[rank]}
                                                     </span>
-                                                    {(item.paymentTermsDays || item.creditLimit) && (
-                                                        <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                                            {item.paymentTermsDays ? `${item.paymentTermsDays}d terms` : ''}
-                                                            {item.paymentTermsDays && item.creditLimit ? ' · ' : ''}
-                                                            {item.creditLimit ? `limit ${formatCompact(item.creditLimit)}` : ''}
-                                                        </span>
-                                                    )}
+                                                    <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                                        {item.paymentTermsDays ? `${item.paymentTermsDays}d terms` : 'Std credit'}
+                                                        {item.creditLimit ? ` • ₹${(item.creditLimit / 100000).toFixed(1)}L` : ''}
+                                                    </span>
                                                     {item.city && (
                                                         <span className="font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                                                             {item.city}
@@ -963,19 +1018,28 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 </div>
                                             </td>
 
-                                            {/* CRM Owner — read-only here.
-                                                A <select> on every row put a
-                                                destructive action (handing an
-                                                account to someone else) one
-                                                stray scroll-wheel away, 4,015
-                                                times over. Reassigning happens
-                                                where it is deliberate: the
-                                                account panel, or the bulk bar
-                                                after ticking rows. */}
+                                            {/* CRM Owner */}
                                             <td className="px-2.5 py-2.5 text-left whitespace-nowrap">
-                                                <span className="text-[12.5px] font-semibold text-label-2">
-                                                    {item.crmOwnerId || <span className="text-dang">Unassigned</span>}
-                                                </span>
+                                                {canReassignCrm && onReassignCrm ? (
+                                                    <select
+                                                        value={item.crmOwnerId || ''}
+                                                        onChange={e => onReassignCrm(item.id, e.target.value)}
+                                                        aria-label={`CRM owner for ${item.company}`}
+                                                        className="text-[12.5px] h-8 px-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 font-semibold text-gray-800 dark:text-gray-200 cursor-pointer"
+                                                    >
+                                                        <option value="">Unassigned</option>
+                                                        {crmUsers.map(u => (
+                                                            <option key={u.id} value={u.name}>{u.name}</option>
+                                                        ))}
+                                                        {item.crmOwnerId && !crmUsers.some(u => u.name === item.crmOwnerId) && (
+                                                            <option value={item.crmOwnerId}>{item.crmOwnerId}</option>
+                                                        )}
+                                                    </select>
+                                                ) : (
+                                                    <span className="font-bold text-gray-800 dark:text-gray-200 text-[12.5px]">
+                                                        {item.crmOwnerId || 'Unassigned'}
+                                                    </span>
+                                                )}
                                             </td>
 
                                             {/* Actions — pinned to the right edge. The ledger is ~1850px wide, so on a
@@ -1009,37 +1073,34 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                         <EditIcon className="w-4 h-4" />
                                                     </button>
 
-                                                    {/* The primary action opens the
-                                                        account in the workspace; it
-                                                        stopped being a follow-up form
-                                                        when that became a panel. */}
+                                                    {/* Follow-up Button */}
                                                     <button
                                                         onClick={() => onFollowUp(item)}
-                                                        className="h-8 px-3.5 text-[12.5px] font-semibold rounded-full bg-accent hover:bg-accent-press text-on-accent transition-colors"
-                                                        title={`Open ${item.company}`}
+                                                        disabled={!canEditFollowUp}
+                                                        className={`h-8 px-3 text-[12.5px] font-semibold rounded-full transition-all ${
+                                                            canEditFollowUp
+                                                                ? 'bg-green-600 hover:bg-green-700 text-white shadow-2xs'
+                                                                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed'
+                                                        }`}
+                                                        title="Log follow-up notes & update date"
                                                     >
-                                                        Open
+                                                        Follow Up
                                                     </button>
 
-                                                    {/* Delete sits behind a divider so a
-                                                        mis-tap on the primary action cannot
-                                                        land on it. */}
+                                                    {/* Delete Customer Button */}
                                                     {canDeleteCustomer && onDeleteCustomer && (
-                                                        <>
-                                                            <span className="w-px h-5 bg-separator mx-0.5" aria-hidden="true" />
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (confirm(`Delete "${item.company}"? This cannot be undone.`)) {
-                                                                        onDeleteCustomer(item.id);
-                                                                    }
-                                                                }}
-                                                                className="w-8 h-8 grid place-items-center text-label-3 hover:text-dang hover:bg-hover rounded-full transition-colors"
-                                                                title="Delete customer"
-                                                                aria-label={`Delete ${item.company}`}
-                                                            >
-                                                                <TrashIcon className="w-4 h-4" />
-                                                            </button>
-                                                        </>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`Delete "${item.company}"? This cannot be undone.`)) {
+                                                                    onDeleteCustomer(item.id);
+                                                                }
+                                                            }}
+                                                            className="w-8 h-8 grid place-items-center text-dang hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-full transition-colors"
+                                                            title="Delete customer"
+                                                            aria-label={`Delete ${item.company}`}
+                                                        >
+                                                            <TrashIcon className="w-4 h-4" />
+                                                        </button>
                                                     )}
                                                 </div>
                                             </td>
@@ -1170,11 +1231,11 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             disabled={!canEditFollowUp}
                                             className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                                                 canEditFollowUp
-                                                    ? 'bg-accent hover:bg-accent-press text-on-accent shadow-2xs'
+                                                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-2xs'
                                                     : 'bg-gray-200 dark:bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed'
                                             }`}
                                         >
-                                            Open
+                                            Follow Up
                                         </button>
                                     </div>
                                 </div>

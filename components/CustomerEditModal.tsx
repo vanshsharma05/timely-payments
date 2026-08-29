@@ -496,7 +496,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 <button
                                     type="button"
                                     onClick={handleAddContact}
-                                    className="px-3 bg-accent hover:bg-accent-press text-on-accent text-xs font-bold rounded-lg"
+                                    className="px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg"
                                 >
                                     + Add
                                 </button>
@@ -637,7 +637,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                         </button>
                         <button 
                             type="submit" 
-                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-accent text-on-accent hover:bg-accent-press shadow-e1 transition-all flex items-center gap-1.5"
+                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5"
                         >
                             <span>{isNew ? 'Create Customer' : 'Save Changes'}</span>
                         </button>

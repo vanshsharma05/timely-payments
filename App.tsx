@@ -20,9 +20,10 @@ import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
-import { formatCompact, formatINR } from './components/ui/format';
-import { Spinner, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Button } from './components/ui/Primitives';
+import { formatCompact, formatDateShort, formatINR, relativeDays } from './components/ui/format';
+import { Spinner, Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState } from './components/ui/Primitives';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
+import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
 import UserModal from './components/UserModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
@@ -34,8 +35,6 @@ import PdcChequesView from './components/PdcChequesView';
 import PdcModal from './components/PdcModal';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
-import Workspace from './components/work/Workspace';
-import { QueueKey } from './components/work/Worklist';
 
 
 // Helper to get today's date at midnight
@@ -98,15 +97,11 @@ const App = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState<FollowUpStatus | null>(null);
     const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>('all');
     
-    /**
-     * Where the workspace should open. An account chosen anywhere else in the
-     * app — the customer book, a report, the cheque register — lands here, and
-     * the workspace opens it beside the list rather than over the top of it.
-     */
-    const [workQueue, setWorkQueue] = useState<QueueKey>('today');
-    const [focusAccountId, setFocusAccountId] = useState<string | null>(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState<Outstanding | null>(null);
 
     const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
     const [whatsAppCustomer, setWhatsAppCustomer] = useState<Outstanding | null>(null);
@@ -158,6 +153,8 @@ const App = () => {
     } | null>(null);
 
     // State for notifications
+    const [priorityFilter, setPriorityFilter] = useState(false);
+    const [unattendedFilter, setUnattendedFilter] = useState(false);
     const [showNotificationBanner, setShowNotificationBanner] = useState(true);
 
     // Data Source State - default to Google Sheet
@@ -450,6 +447,9 @@ const App = () => {
             updateViewData();
             // Reset notification banner and filters on data refresh/user switch
             setShowNotificationBanner(true);
+            setPriorityFilter(false);
+            setUnattendedFilter(false);
+            setStatusFilter(null);
             setCategoryFilter('all');
         }
     }, [updateViewData, currentUser, isAuthenticated]);
@@ -477,23 +477,26 @@ const App = () => {
         setUserTab('overview');
     };
 
-    /** Opens one account in the workspace, wherever it was chosen from. */
-    const handleOpenFollowUp = useCallback((customer: Outstanding) => {
-        setFocusAccountId(customer.id);
-        setAdminTab('overview');
-        setUserTab('overview');
-        // A second press on the same row has to move the workspace again, and a
-        // prop that never changes cannot do that.
-        window.setTimeout(() => setFocusAccountId(current => (current === customer.id ? current : customer.id)), 0);
-    }, []);
+    const handleOpenFollowUp = (customer: Outstanding) => {
+        setSelectedCustomer(customer);
+        setIsModalOpen(true);
+    };
 
-    /** Opens one of the work queues, from a banner or a summary figure. */
-    const openQueue = useCallback((queue: QueueKey) => {
-        setWorkQueue(queue);
-        setFocusAccountId(null);
-        setAdminTab('overview');
-        setUserTab('overview');
-    }, []);
+    /**
+     * The follow-up dialog stays open while entries are logged against the
+     * account, and each one writes back. Handing it the row out of appData
+     * rather than the copy taken when it opened means the second entry builds
+     * on the first instead of rebuilding from a snapshot that no longer has it.
+     */
+    const liveSelectedCustomer = useMemo(
+        () => (selectedCustomer ? appData.find(c => c.id === selectedCustomer.id) || selectedCustomer : null),
+        [selectedCustomer, appData],
+    );
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setSelectedCustomer(null);
+    };
 
     const handleUpdateOutstanding = (updatedCustomer: Outstanding) => {
         // Automatically ensure status reflects the updated followUpDate and forecast
@@ -506,8 +509,26 @@ const App = () => {
     };
 
 
+    const handleCategoryBoxClick = (category: FollowUpCategoryFilter) => {
+        setPriorityFilter(false);
+        setUnattendedFilter(false);
+        setStatusFilter(null);
+        setCategoryFilter(current => current === category ? 'all' : category);
+    };
+
+    const handleClearFilters = () => {
+        setStatusFilter(null);
+        setCategoryFilter('all');
+        setPriorityFilter(false);
+        setUnattendedFilter(false);
+        setSearchTerm('');
+    };
+
     const handleViewPriorityItems = () => {
-        openQueue('overdue');
+        setStatusFilter(null);
+        setCategoryFilter('all');
+        setUnattendedFilter(false);
+        setPriorityFilter(true);
         setShowNotificationBanner(false);
     };
     
@@ -672,6 +693,14 @@ const App = () => {
         if (window.confirm('Are you sure you want to delete this template?')) {
             setTemplates(currentTemplates => currentTemplates.filter(t => t.id !== templateId));
         }
+    };
+
+    // Reassign single customer to a CRM
+    const handleReassignCrm = (customerId: string, newCrmId: string) => {
+        const updated = appData.map(item =>
+            item.id === customerId ? { ...item, crmOwnerId: newCrmId } : item
+        );
+        setAppData(updated);
     };
 
     // Bulk reassign multiple customers to a CRM
@@ -884,6 +913,58 @@ const App = () => {
         setIsWhatsAppModalOpen(true);
     };
 
+    const filteredData = useMemo(() => {
+        const today = getToday();
+        return outstandingData.filter(item => {
+            if (priorityFilter) {
+                return (item.isUrgent && item.status !== FollowUpStatus.Completed) || item.status === FollowUpStatus.Overdue;
+            }
+
+            const itemCategory = getFollowUpCategory(item, today);
+
+            if (unattendedFilter) {
+                // Unattended: Overdue OR No Follow-up
+                return itemCategory === 'overdue' || itemCategory === 'no_follow_up';
+            }
+
+            // Category Filter from 4 Main Clickable Boxes
+            if (categoryFilter !== 'all') {
+                if (itemCategory !== categoryFilter) return false;
+            }
+
+            if (!statusFilter) return true;
+            
+            if (statusFilter === FollowUpStatus.Completed) {
+                if (!item.followUpDate) return false;
+                const collectedDate = new Date(item.followUpDate);
+                collectedDate.setHours(0,0,0,0);
+                return item.status === FollowUpStatus.Completed && collectedDate.getTime() === today.getTime();
+            }
+            
+            return item.status === statusFilter;
+        }).filter(item => {
+            if (!searchTerm.trim()) return true;
+            const searchTokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+            const userObj = users.find(u => u.id === item.crmOwnerId || u.name === item.crmOwnerId);
+            const crmDisplayName = userObj ? userObj.name.toLowerCase() : '';
+            const collectorObj = users.find(u => u.id === item.assignedCollectorId || u.name === item.assignedCollectorId);
+            const collectorDisplayName = collectorObj ? collectorObj.name.toLowerCase() : '';
+
+            const company = String(item.company || '').toLowerCase();
+            const contactPerson = String(item.contactPerson || '').toLowerCase();
+            const contactPhone = String(item.contactNumber || '').toLowerCase();
+            const email = String(item.email || '').toLowerCase();
+            const crmOwnerId = String(item.crmOwnerId || '').toLowerCase();
+            const assignedCollectorId = String(item.assignedCollectorId || '').toLowerCase();
+            const id = String(item.id || '').toLowerCase();
+            const total = String(item.total || '');
+            const notes = (item.notes || []).join(' ').toLowerCase();
+
+            const combinedSearchable = `${company} ${contactPerson} ${contactPhone} ${email} ${crmOwnerId} ${crmDisplayName} ${assignedCollectorId} ${collectorDisplayName} ${id} ${total} ${notes}`;
+            return searchTokens.every(tok => combinedSearchable.includes(tok));
+        });
+    }, [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users]);
+
     // 4 Main Boxes Summary (For Admin Company-Wide View)
 
     // Whole-book ageing. Credit balances are excluded: money sitting with us is
@@ -933,6 +1014,27 @@ const App = () => {
         seesWholeBook: seesWholeBook(currentUser),
         permissions: permissionsOf(currentUser),
     }), [currentUser]);
+
+    /** Same shape as portfolioAgeing, but only what this person is chasing. */
+    const myAgeing = useMemo(() => {
+        let a1 = 0, a2 = 0, a3 = 0, a4 = 0;
+        outstandingData.forEach(item => {
+            if (item.totalType === 'Cr') return;
+            const t = item.ageingTypes || {};
+            if (t['1-45'] !== 'Cr') a1 += Math.abs(item.ageing?.['1-45'] || 0);
+            if (t['46-90'] !== 'Cr') a2 += Math.abs(item.ageing?.['46-90'] || 0);
+            if (t['91-135'] !== 'Cr') a3 += Math.abs(item.ageing?.['91-135'] || 0);
+            if (t['>135'] !== 'Cr') a4 += Math.abs(item.ageing?.['>135'] || 0);
+        });
+        const total = a1 + a2 + a3 + a4;
+        const over45 = a2 + a3 + a4;
+        const over90 = a3 + a4;
+        return {
+            a1, a2, a3, a4, total, over45, over90,
+            pct45: total > 0 ? Math.round((over45 / total) * 100) : 0,
+            pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
+        };
+    }, [outstandingData]);
 
     const fourBoxesSummary = useMemo(() => {
         const today = getToday();
@@ -1273,15 +1375,65 @@ const App = () => {
     };
 
     // Shared dashboard view for Admin
-    /**
-     * The management read: how the book is ageing, what is coming in, and how
-     * the team is keeping up. This used to be the landing screen, which meant
-     * a CRM opening the app at nine in the morning met a wall of aggregates
-     * before a single customer name. It belongs with the other reports; the
-     * people working a list get the list.
-     */
-    const renderManagementSummary = () => (
+    const renderAdminOverviewCards = () => (
         <div className="flex flex-col gap-7">
+            {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
+                <NotificationBanner
+                    urgentCount={notificationSummary.urgentCount}
+                    overdueCount={notificationSummary.overdueCount}
+                    onView={handleViewPriorityItems}
+                    onDismiss={() => setShowNotificationBanner(false)}
+                />
+            )}
+
+            {/* ---------- worklist ---------- */}
+            <section>
+                <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
+                    <div>
+                        <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">Worklist</h2>
+                        <p className="text-[13.5px] text-label-3 mt-1">Tap a card to open it in the customer book.</p>
+                    </div>
+                    {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
+                        <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <Stat
+                        label="Due today"
+                        tone="brand"
+                        active={categoryFilter === 'today'}
+                        onClick={() => { handleCategoryBoxClick('today'); setAdminTab('reports'); }}
+                        value={fourBoxesSummary.todayCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase</>}
+                    />
+                    <Stat
+                        label="Overdue"
+                        tone="dang"
+                        active={categoryFilter === 'overdue'}
+                        onClick={() => { handleCategoryBoxClick('overdue'); setAdminTab('reports'); }}
+                        value={fourBoxesSummary.overdueCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past promised date</>}
+                    />
+                    <Stat
+                        label="No follow-up"
+                        tone="warn"
+                        active={categoryFilter === 'no_follow_up'}
+                        onClick={() => { handleCategoryBoxClick('no_follow_up'); setAdminTab('reports'); }}
+                        value={fourBoxesSummary.noFollowUpCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> unattended</>}
+                    />
+                    <Stat
+                        label="Scheduled"
+                        tone="pos"
+                        active={categoryFilter === 'future'}
+                        onClick={() => { handleCategoryBoxClick('future'); setAdminTab('reports'); }}
+                        value={fourBoxesSummary.futureCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> committed</>}
+                    />
+                </div>
+            </section>
+
             {/* ---------- portfolio ageing ---------- */}
             <Card className="p-6">
                 <SectionHeader
@@ -1424,6 +1576,7 @@ const App = () => {
             onFollowUp={handleOpenFollowUp}
             onWhatsApp={handleSendWhatsApp}
             onOpenPdcForCustomer={handleOpenPdcForCustomer}
+            onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
             onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
             pdcCheques={pdcCheques}
@@ -1442,7 +1595,7 @@ const App = () => {
         return (
             <>
                 {activeTab === 'overview' && (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-7">
                         {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                             <NotificationBanner
                                 urgentCount={notificationSummary.urgentCount}
@@ -1451,20 +1604,223 @@ const App = () => {
                                 onDismiss={() => setShowNotificationBanner(false)}
                             />
                         )}
-                        <Workspace
-                            rows={outstandingData}
-                            cheques={pdcCheques}
-                            currentUser={currentUser!}
-                            users={users}
-                            templates={templates}
-                            onUpdate={handleUpdateOutstanding}
-                            onAddPdc={handleOpenAddPdc}
-                            onUpdatePdcStatus={handleUpdatePdcStatus}
-                            onEditCustomer={handleOpenEditCustomer}
-                            onWhatsApp={handleSendWhatsApp}
-                            initialQueue={workQueue}
-                            focusId={focusAccountId}
-                        />
+
+                        {/* ---------- my worklist ---------- */}
+                        <section>
+                            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
+                                <div>
+                                    <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">My worklist</h2>
+                                    <p className="text-[13.5px] text-label-3 mt-1">Tap a card to filter the accounts below.</p>
+                                </div>
+                                {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
+                                    <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                                <Stat
+                                    label="Due today"
+                                    tone="brand"
+                                    active={categoryFilter === 'today'}
+                                    onClick={() => handleCategoryBoxClick('today')}
+                                    value={userBoxMetrics.todayCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.todayAmount)}</span> to chase</>}
+                                />
+                                <Stat
+                                    label="Overdue"
+                                    tone="dang"
+                                    active={categoryFilter === 'overdue'}
+                                    onClick={() => handleCategoryBoxClick('overdue')}
+                                    value={userBoxMetrics.overdueCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.overdueAmount)}</span> past promised date</>}
+                                />
+                                <Stat
+                                    label="No follow-up"
+                                    tone="warn"
+                                    active={categoryFilter === 'no_follow_up'}
+                                    onClick={() => handleCategoryBoxClick('no_follow_up')}
+                                    value={userBoxMetrics.noFollowUpCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.noFollowUpAmount)}</span> unattended</>}
+                                />
+                                <Stat
+                                    label="Scheduled"
+                                    tone="pos"
+                                    active={categoryFilter === 'future'}
+                                    onClick={() => handleCategoryBoxClick('future')}
+                                    value={userBoxMetrics.futureCount}
+                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.futureAmount)}</span> committed</>}
+                                />
+                            </div>
+                        </section>
+
+                        {/* ---------- my book ---------- */}
+                        <div className="grid lg:grid-cols-2 gap-3.5">
+                            <Card className="p-6 flex flex-col">
+                                <SectionHeader
+                                    title="My book"
+                                    subtitle="Everything assigned to you, by age."
+                                    actions={<AgeingLegend />}
+                                />
+                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7">
+                                    <div>
+                                        <p className="label">Outstanding</p>
+                                        <p className="num text-[34px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
+                                            {formatCompact(myAgeing.total)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{userBoxMetrics.totalCount} accounts</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Past 45 days</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
+                                            {formatCompact(myAgeing.over45)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct45}% of your book</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Past 90 days</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
+                                            {formatCompact(myAgeing.over90)}
+                                        </p>
+                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct90}% of your book</p>
+                                    </div>
+                                </div>
+                                <div className="mt-auto pt-7">
+                                    <AgeingBar parts={myAgeing} height={12} />
+                                </div>
+                            </Card>
+
+                            <Card className="p-6 flex flex-col">
+                                <SectionHeader
+                                    title="Cheques and commitments"
+                                    subtitle="Cheques to present, and what customers promised you."
+                                />
+                                <div className="flex items-end gap-10 mt-7 flex-wrap">
+                                    <div>
+                                        <p className="label">Cheques today</p>
+                                        <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
+                                            {todayPdcMetrics.todayCount}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{formatCompact(todayPdcMetrics.todayAmount)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Held in hand</p>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
+                                            {formatCompact(todayPdcMetrics.activeAmount)}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
+                                    </div>
+                                    <div>
+                                        <p className="label">Promised today</p>
+                                        <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                            {formatCompact(cashFlowForecastMetrics.todayForecast)}
+                                        </p>
+                                        <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.todayCount} commitments</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2.5 mt-auto pt-7">
+                                    <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
+                                        {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
+                                    </Button>
+                                    {rights.canManagePdc && (
+                                        <Button size="sm" variant="secondary" onClick={() => handleOpenAddPdc()}>Record a cheque</Button>
+                                    )}
+                                </div>
+                            </Card>
+                        </div>
+
+                        {/* ---------- the accounts themselves ---------- */}
+                        <Card className="p-6">
+                            <SectionHeader
+                                title={
+                                    categoryFilter === 'today' ? 'Due today'
+                                        : categoryFilter === 'overdue' ? 'Past their promised date'
+                                        : categoryFilter === 'no_follow_up' ? 'No follow-up planned'
+                                        : categoryFilter === 'future' ? 'Scheduled'
+                                        : 'My accounts'
+                                }
+                                subtitle={`${filteredData.length} account${filteredData.length === 1 ? '' : 's'}${searchTerm ? ' matching your search' : ''}`}
+                                actions={
+                                    <Button size="sm" variant="quiet" onClick={() => setActiveKey('customers')}>
+                                        Open full list
+                                    </Button>
+                                }
+                            />
+
+                            {filteredData.length === 0 ? (
+                                <EmptyState
+                                    title="Nothing here"
+                                    hint="No account matches the current filter."
+                                    action={<Button size="sm" variant="secondary" onClick={handleClearFilters}>Show all my accounts</Button>}
+                                />
+                            ) : (
+                                <div className="mt-6 flex flex-col gap-2.5">
+                                    {filteredData.slice(0, 40).map(customer => {
+                                        const cat = getFollowUpCategory(customer, getToday());
+                                        const due = relativeDays(customer.followUpDate);
+                                        return (
+                                            <div
+                                                key={customer.id}
+                                                className="rounded-[14px] bg-card-2 px-4 py-3.5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5"
+                                            >
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <button
+                                                            onClick={() => handleOpenFollowUp(customer)}
+                                                            className="text-[15px] font-bold text-label hover:text-accent text-left truncate max-w-[380px]"
+                                                        >
+                                                            {customer.company}
+                                                        </button>
+                                                        {customer.isUrgent && <Badge tone="dang">Urgent</Badge>}
+                                                        {cat === 'overdue' && <Badge tone="dang">{due?.text || 'Overdue'}</Badge>}
+                                                        {cat === 'today' && <Badge tone="brand">Due today</Badge>}
+                                                        {cat === 'future' && <Badge tone="pos">{due?.text || 'Scheduled'}</Badge>}
+                                                        {cat === 'no_follow_up' && <Badge tone="warn">No follow-up</Badge>}
+                                                    </div>
+                                                    <p className="text-[13px] text-label-3 mt-1.5 truncate">
+                                                        {customer.contactPerson || 'No contact'}
+                                                        {customer.contactNumber ? ` · ${customer.contactNumber}` : ''}
+                                                        {customer.notes?.length ? ` · ${customer.notes[customer.notes.length - 1]}` : ''}
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-4 md:gap-5 flex-none">
+                                                    <div className="text-right">
+                                                        <p className="num text-[16px] font-semibold text-label">
+                                                            {formatCompact(customer.total)}
+                                                        </p>
+                                                        <p className="text-[12px] text-label-3 mt-0.5">
+                                                            {customer.followUpDate ? formatDateShort(customer.followUpDate) : 'not scheduled'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button size="sm" variant="quiet" onClick={() => handleSendWhatsApp(customer)}>
+                                                            WhatsApp
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="primary"
+                                                            onClick={() => handleOpenFollowUp(customer)}
+                                                            disabled={!rights.canEditFollowUp}
+                                                            title={rights.canEditFollowUp ? 'Log a follow-up' : 'Your role cannot record follow-ups'}
+                                                        >
+                                                            Follow up
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {filteredData.length > 40 && (
+                                        <button
+                                            onClick={() => setActiveKey('customers')}
+                                            className="text-[13.5px] font-semibold text-accent hover:underline self-start mt-1"
+                                        >
+                                            {filteredData.length - 40} more in the full list
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </Card>
                     </div>
                 )}
 
@@ -1486,8 +1842,6 @@ const App = () => {
                 )}
 
                 {activeTab === 'reports' && (
-                  <div className="flex flex-col gap-6">
-                    {renderManagementSummary()}
                     <ReportsView
                         data={appData}
                         users={users}
@@ -1495,9 +1849,10 @@ const App = () => {
                         initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : 'ALL'}
                         initialCategoryFilter={categoryFilter}
                         onFollowUp={handleOpenFollowUp}
+                        onWhatsApp={handleSendWhatsApp}
                         pdcCheques={pdcCheques}
+                        onOpenPdcForCustomer={handleOpenPdcForCustomer}
                     />
-                  </div>
                 )}
 
                 {activeTab === 'customers' && renderCustomerListView()}
@@ -1581,32 +1936,7 @@ const App = () => {
 
         return (
              <>
-                {activeTab === 'overview' && (
-                    <div className="flex flex-col gap-4">
-                        {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
-                            <NotificationBanner
-                                urgentCount={notificationSummary.urgentCount}
-                                overdueCount={notificationSummary.overdueCount}
-                                onView={handleViewPriorityItems}
-                                onDismiss={() => setShowNotificationBanner(false)}
-                            />
-                        )}
-                        <Workspace
-                            rows={outstandingData}
-                            cheques={pdcCheques}
-                            currentUser={currentUser!}
-                            users={users}
-                            templates={templates}
-                            onUpdate={handleUpdateOutstanding}
-                            onAddPdc={handleOpenAddPdc}
-                            onUpdatePdcStatus={handleUpdatePdcStatus}
-                            onEditCustomer={handleOpenEditCustomer}
-                            onWhatsApp={handleSendWhatsApp}
-                            initialQueue={workQueue}
-                            focusId={focusAccountId}
-                        />
-                    </div>
-                )}
+                {activeTab === 'overview' && renderAdminOverviewCards()}
                 
                 {activeTab === 'customers' && renderCustomerListView()}
 
@@ -1661,7 +1991,8 @@ const App = () => {
                                     <div>
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                                             <div>
-                                                <p className="text-[13.5px] text-label-3">Who can sign in, what they may do, and which accounts they see.</p>
+                                                <h2 className="text-xl font-bold text-label">System Users & Access Roles</h2>
+                                                <p className="text-xs text-label-3 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -1779,8 +2110,6 @@ const App = () => {
                             <AlertsView canEdit={rights.canSyncSheets} />
                         )}
                         {activeTab === 'reports' && (
-                          <div className="flex flex-col gap-6">
-                            {renderManagementSummary()}
                             <ReportsView
                                 data={appData}
                                 users={users}
@@ -1788,14 +2117,15 @@ const App = () => {
                                 companyProfile={companyProfile}
                                 initialCategoryFilter={categoryFilter}
                                 onFollowUp={handleOpenFollowUp}
+                                onWhatsApp={handleSendWhatsApp}
                                 pdcCheques={pdcCheques}
+                                onOpenPdcForCustomer={handleOpenPdcForCustomer}
                             />
-                          </div>
                         )}
                          {activeTab === 'templates' && rights.canSyncSheets && (
                             <div>
                                 <div className="flex justify-between items-center mb-4">
-                                    <p className="text-[13.5px] text-label-3">Used by the WhatsApp reminder. Placeholders are filled per customer.</p>
+                                    <h2 className="text-2xl font-bold text-label">Manage Message Templates</h2>
                                     <button 
                                         onClick={() => handleOpenTemplateModal(null)}
                                         className="flex items-center px-3 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press"
@@ -1831,6 +2161,7 @@ const App = () => {
                         )}
                         {activeTab === 'source' && rights.canSyncSheets && (
                              <div>
+                                <h2 className="text-2xl font-bold mb-6 text-label">Data Source Management</h2>
                                 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                     
@@ -2225,12 +2556,9 @@ const App = () => {
             onChangePassword={() => setIsPasswordModalOpen(true)}
             title={PAGE_TITLE[safeKey] || 'Timely Payment'}
             subtitle={
-                // The account count and the settled tail are context, not the
-                // headline. On a phone they push the work below the fold, so
-                // only the figure that matters survives the narrow screen.
                 <span className="inline-flex items-center gap-2 flex-wrap">
-                    <span className="hidden sm:inline">{scopeLabel}</span>
-                    <span className="hidden sm:inline text-label-3">&middot;</span>
+                    <span>{scopeLabel}</span>
+                    <span className="text-label-3">&middot;</span>
                     <span className="num font-semibold text-label-2">{formatCompact(totalBook)}</span>
                     <span>outstanding</span>
                 </span>
@@ -2259,6 +2587,20 @@ const App = () => {
             )}
         </AppShell>
 
+            {isModalOpen && liveSelectedCustomer && (
+                <FollowUpModal
+                    customer={liveSelectedCustomer}
+                    onClose={handleCloseModal}
+                    onUpdate={handleUpdateOutstanding}
+                    currentUser={currentUser}
+                    users={users}
+                    templates={templates}
+                    pdcCheques={pdcCheques}
+                    onAddPdc={handleOpenAddPdc}
+                    onUpdatePdcStatus={handleUpdatePdcStatus}
+                    onEditCustomer={handleOpenEditCustomer}
+                />
+            )}
             {isPasswordModalOpen && (
                 <ChangePasswordModal
                     onClose={() => setIsPasswordModalOpen(false)}

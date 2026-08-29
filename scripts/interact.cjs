@@ -121,7 +121,7 @@ const dialogOpen = page =>
   /* ---- dialogs open and close ---- */
   const dialogs = [
     ['Customers', 'Add Customer'],
-    ['PDC cheques', 'Record a cheque'],
+    ['PDC cheques', 'Add PDC'],
   ];
   for (const [tab, trigger] of dialogs) {
     await page.evaluate(t => {

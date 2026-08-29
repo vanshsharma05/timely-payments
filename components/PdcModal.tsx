@@ -162,10 +162,10 @@ const PdcModal: React.FC<PdcModalProps> = ({
                         </div>
                         <div>
                             <h3 className="text-lg font-bold">
-                                {chequeToEdit ? 'Edit this cheque' : 'Record a cheque'}
+                                {chequeToEdit ? 'Edit Post Dated Cheque (PDC)' : 'Add Post Dated Cheque (PDC)'}
                             </h3>
                             <p className="text-xs text-emerald-100">
-                                The date on the cheque decides when it is due. Leave the status alone until the bank acts.
+                                Record customer cheque details for bank presentation tracking
                             </p>
                         </div>
                     </div>
@@ -374,9 +374,9 @@ const PdcModal: React.FC<PdcModalProps> = ({
                         </button>
                         <button
                             type="submit"
-                            className="px-6 py-2.5 bg-accent hover:bg-accent-press text-on-accent rounded-xl text-sm font-semibold shadow-e1 transition-colors flex items-center space-x-2"
+                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-colors flex items-center space-x-2"
                         >
-                            <span>{chequeToEdit ? 'Save changes' : 'Record it'}</span>
+                            <span>{chequeToEdit ? 'Save Changes' : 'Add PDC Cheque'}</span>
                         </button>
                     </div>
                 </form>
