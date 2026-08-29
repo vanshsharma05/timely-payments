@@ -1,20 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE } from '../types';
-import StatusBadge from './StatusBadge';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, DEFAULT_COMPANY_PROFILE } from '../types';
 import AiReportModal from './AiReportModal';
-import { 
-    ClockIcon, 
-    ExclamationTriangleIcon, 
-    WhatsAppIcon, 
-    FireIcon, 
-    UsersIcon, 
-    DownloadIcon,
-    ChequeIcon,
-    SparklesIcon
-} from './icons/Icons';
-import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatINR } from './ui/format';
+import { ClockIcon, ExclamationTriangleIcon, UsersIcon, DownloadIcon, SparklesIcon } from './icons/Icons';
+import { AgeingLegend, Button } from './ui/Primitives';
+import { formatCompact } from './ui/format';
 
 export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
@@ -25,11 +15,9 @@ interface ReportsViewProps {
     currentUser: User;
     companyProfile?: CompanyProfile;
     onFollowUp: (customer: Outstanding) => void;
-    onWhatsApp: (customer: Outstanding) => void;
     initialCrmFilter?: string;
     initialCategoryFilter?: FollowUpCategoryFilter;
     pdcCheques?: PdcCheque[];
-    onOpenPdcForCustomer?: (customerId: string) => void;
 }
 
 export const ReportsView = ({
@@ -38,11 +26,9 @@ export const ReportsView = ({
     currentUser,
     companyProfile = DEFAULT_COMPANY_PROFILE,
     onFollowUp,
-    onWhatsApp,
     initialCrmFilter = 'ALL',
     initialCategoryFilter = 'all',
     pdcCheques = [],
-    onOpenPdcForCustomer,
 }: ReportsViewProps) => {
     const [selectedCrm, setSelectedCrm] = useState<string>(initialCrmFilter);
     const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>(initialCategoryFilter);
@@ -273,9 +259,6 @@ export const ReportsView = ({
     }, [crmScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
 
     // Export current report view to Excel with full ageing breakdown
-    /** True when a stored contact number is worth offering as a dial link. */
-    const dialable = (raw?: string) => (raw || '').replace(/D/g, '').length >= 7;
-
     const exportToExcel = () => {
         if (!XLSX) {
             alert('Excel utility is loading, please try again in a moment.');
@@ -742,236 +725,42 @@ export const ReportsView = ({
                     </div>
                 </div>
 
-                {/* Table with Live 1-45d, 46-90d, 91-135d, >135d on Screen */}
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs min-w-[900px]">
-                        <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                            <tr>
-                                <th className="px-3 py-2.5 text-left min-w-[180px]">Company / Contact</th>
-                                <th className="px-2.5 py-2.5 text-right">Total Due</th>
-                                
-                                {/* The four buckets, as one column - same as the customer ledger */}
-                                <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
-                                <th className="px-2.5 py-2.5 text-right text-dang">
-                                    &gt;90d Total
-                                </th>
-
-                                <th className="px-2.5 py-2.5 text-center">Status</th>
-                                <th className="px-2.5 py-2.5 text-left">Follow-up</th>
-                                <th className="px-2.5 py-2.5 text-left">CRM Owner</th>
-                                <th className="px-2.5 py-2.5 text-left hidden lg:table-cell">Last Note</th>
-                                <th className="px-2.5 py-2.5 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
-                            {filteredReportData.length === 0 ? (
-                                <tr>
-                                    <td colSpan={11} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
-                                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No customer records match the selected report criteria.</p>
-                                        <p className="text-[12.5px] text-gray-400 mt-1">Try switching to"All" or choosing another ageing bucket.</p>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredReportData.map((item) => {
-                                    const a1 = item.ageing?.['1-45'] || 0;
-                                    const a2 = item.ageing?.['46-90'] || 0;
-                                    const a3 = item.ageing?.['91-135'] || 0;
-                                    const a4 = item.ageing?.['>135'] || 0;
-                                    const over90Total = item.over90 !== undefined ? item.over90 : (a3 + a4);
-                                    const hasOver90Dues = over90Total > 0;
-                                    
-                                    // Row status visual border
-                                    let rowBorder = '';
-                                    // A 3px status edge is enough. The tinted row backgrounds that came with
-                                    // it fought the ageing colours and repeated what the status pill says.
-                                    if (item.status === FollowUpStatus.Completed) {
-                                        rowBorder = 'border-l-[3px] border-l-green-500';
-                                    } else if (isTodayFollowUp(item)) {
-                                        rowBorder = 'border-l-[3px] border-l-blue-500';
-                                    } else if (isOverdueFollowUp(item)) {
-                                        rowBorder = 'border-l-[3px] border-l-red-500';
-                                    } else if (isNoFollowUp(item)) {
-                                        rowBorder = 'border-l-[3px] border-l-amber-400';
-                                    } else if (isFutureFollowUp(item)) {
-                                        rowBorder = 'border-l-[3px] border-l-emerald-500';
-                                    }
-
-                                    // Customer PDC Summary
-                                    const customerPdcs = pdcCheques.filter(p => p.customerId === item.id);
-                                    const activePdcs = customerPdcs.filter(p => CHEQUE_ACTIVE.includes(chequeState(p, today)));
-                                    const totalPdcAmount = activePdcs.reduce((sum, p) => sum + p.amount, 0);
-
-                                    return (
-                                        <tr key={item.id} className={`${rowBorder} ${hasOver90Dues ? 'hover:bg-red-50/30 dark:hover:bg-red-950/20' : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'} transition-colors`}>
-                                            <td className="px-3 py-2.5">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <button
-                                                        onClick={() => onFollowUp(item)}
-                                                        className="font-bold text-label hover:text-accent text-left inline-flex items-center gap-1.5 min-h-[30px] min-w-[30px]"
-                                                    >
-                                                        <span>{item.company}</span>
-                                                        {item.isUrgent && <FireIcon className="text-red-500 w-3.5 h-3.5 flex-shrink-0" />}
-                                                    </button>
-                                                    {hasOver90Dues && (
-                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-extrabold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200 border border-red-200 dark:border-red-800" title="Overdue > 90 Days late payment focus">
-                                                            &gt;90d
-                                                        </span>
-                                                    )}
-                                                    {activePdcs.length > 0 && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onOpenPdcForCustomer?.(item.id);
-                                                            }}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 min-h-[30px] rounded-md text-[11.5px] font-bold bg-pos-bg text-pos hover:opacity-80 transition-opacity flex-shrink-0"
-                                                            title={`Active PDC Cheques: ₹${totalPdcAmount.toLocaleString('en-IN')} (${activePdcs.length} cheques)`}
-                                                        >
-                                                            <ChequeIcon className="w-2.5 h-2.5" />
-                                                            <span>{formatCurrency(totalPdcAmount)}</span>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
-                                                    {item.contactNumber && (dialable(item.contactNumber) ? (
-                                                        <a href={`tel:${item.contactNumber}`} className="inline-flex items-center min-h-[30px] px-1 -mx-1 hover:text-pos font-medium">
-                                                            {item.contactNumber}
-                                                        </a>
-                                                    ) : (
-                                                        <span>{item.contactNumber}</span>
-                                                    ))}
-                                                    {item.contactPerson && (
-                                                        <span className="truncate max-w-[110px]">({item.contactPerson})</span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            {/* Total Due */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                {item.totalType === 'Cr' && item.total > 0 ? (
-                                                    <span
-                                                        className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80"
-                                                        title={`Excess payment held with us (CR advance) of ${formatINR(item.total)}`}
-                                                    >
-                                                        {formatINR(item.total)}
-                                                        <span className="uppercase font-black text-[10px] px-1 rounded bg-purple-200 text-purple-900 dark:bg-purple-800 dark:text-purple-100">CR</span>
-                                                    </span>
-                                                ) : (
-                                                    <span className="font-extrabold text-gray-900 dark:text-white">{formatINR(item.total)}</span>
-                                                )}
-                                            </td>
-
-                                            {/* Ageing - bar for shape, then every bucket in full rupees keyed to
-                                                its colour. Four number columns cost ~650px here, which is what
-                                                pushed Status, Follow-up, CRM and Actions off the screen. */}
-                                            <td className="px-2.5 py-2 align-middle">
-                                                <AgeingBar parts={{ a1, a2, a3, a4 }} height={6} />
-                                                <div className="mt-1.5 grid grid-cols-2 gap-x-2.5 gap-y-0.5 text-[11px] leading-[1.35]">
-                                                    {AGE_BANDS.map((band, i) => {
-                                                        const v = [a1, a2, a3, a4][i];
-                                                        return (
-                                                            <span
-                                                                key={band.key}
-                                                                className="inline-flex items-center gap-1 whitespace-nowrap"
-                                                                title={`${band.label}: ${formatINR(v)}`}
-                                                            >
-                                                                <span
-                                                                    className="w-1.5 h-1.5 rounded-full flex-none"
-                                                                    style={{ background: band.varName, opacity: v > 0 ? 1 : 0.3 }}
-                                                                    aria-hidden="true"
-                                                                />
-                                                                <span className={v > 0 ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>
-                                                                    {v > 0 ? formatINR(v) : '—'}
-                                                                </span>
-                                                            </span>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </td>
-
-                                            {/* >90d Total Column */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <span className={`text-xs ${over90Total > 0 ? 'text-dang font-extrabold' : 'text-gray-400 dark:text-gray-600'}`}>
-                                                    {over90Total > 0 ? formatINR(over90Total) : '—'}
-                                                </span>
-                                            </td>
-
-                                            {/* Status Badge */}
-                                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                                                {isTodayFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                                                        Today
-                                                    </span>
-                                                ) : isNoFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
-                                                        No Date
-                                                    </span>
-                                                ) : isOverdueFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-300">
-                                                        Overdue
-                                                    </span>
-                                                ) : isFutureFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                                                        Future
-                                                    </span>
-                                                ) : (
-                                                    <StatusBadge status={item.status} />
-                                                )}
-                                            </td>
-
-                                            {/* Follow-up Date & Expected Amount */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap">
-                                                <div className="flex flex-col gap-0.5">
-                                                    {item.followUpDate ? (
-                                                        <span className={`text-xs font-semibold ${isTodayFollowUp(item) ? 'text-accent font-bold' : isOverdueFollowUp(item) ? 'text-dang font-bold' : 'text-label-2'}`}>
-                                                            {formatDate(item.followUpDate)}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-xs text-warn font-medium italic">
-                                                            Not Set
-                                                        </span>
-                                                    )}
-                                                    {item.forecastAmount !== undefined && item.forecastAmount > 0 && (
-                                                        <span className="inline-flex items-center gap-0.5 text-[11.5px] font-bold text-pos">
-                                                            {formatCurrency(item.forecastAmount)}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            {/* CRM Owner */}
-                                            <td className="px-2.5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                                                <span className="truncate block max-w-[100px]">{getUserDisplayName(item.crmOwnerId)}</span>
-                                            </td>
-
-                                            {/* Last Note */}
-                                            <td className="px-2.5 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate hidden lg:table-cell" title={item.notes?.[item.notes.length - 1] || ''}>
-                                                {item.notes && item.notes.length > 0 ? item.notes[item.notes.length - 1] : '—'}
-                                            </td>
-
-                                            {/* Actions */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
-                                                <div className="flex items-center justify-end gap-1.5">
-                                                    <button
-                                                        onClick={() => onFollowUp(item)}
-                                                        className="h-8 px-3.5 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-semibold transition-colors"
-                                                    >
-                                                        Update
-                                                    </button>
-                                                    <button
-                                                        onClick={() => onWhatsApp(item)}
-                                                        className="w-8 h-8 grid place-items-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-full transition-colors"
-                                                        title="Send WhatsApp reminder"
-                                                    >
-                                                        <WhatsAppIcon className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
+                {/* The customer table used to be repeated here in full, a third
+                    copy of the same rows after the worklist and the customer
+                    book, complete with its own Update and WhatsApp buttons — and
+                    it listed the settled accounts too, so a management report
+                    opened on pages of "₹0 · No Date · Not Set". A report says
+                    what the filters found and hands you the rows; the book is
+                    where you read them. */}
+                <div className="px-5 py-6 border-t border-separator flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <div>
+                        <p className="label">This selection</p>
+                        <p className="num text-[26px] font-semibold text-label leading-none mt-1.5 tracking-[-0.03em]">
+                            {filteredReportData.length.toLocaleString('en-IN')}
+                            <span className="text-[14px] font-medium text-label-3"> accounts</span>
+                        </p>
+                    </div>
+                    <div>
+                        <p className="label">Worth</p>
+                        <p className="num text-[26px] font-semibold text-label leading-none mt-1.5 tracking-[-0.03em]">
+                            {formatCompact(filteredReportData.reduce((sum, r) => sum + (r.totalType === 'Cr' ? 0 : r.total || 0), 0))}
+                        </p>
+                    </div>
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {canExport && (
+                            <Button variant="primary" onClick={exportToExcel} icon={<DownloadIcon />}>
+                                Export these {filteredReportData.length.toLocaleString('en-IN')} to Excel
+                            </Button>
+                        )}
+                        <Button
+                            variant="secondary"
+                            onClick={() => filteredReportData[0] && onFollowUp(filteredReportData[0])}
+                            disabled={!filteredReportData.length}
+                        >
+                            Open the first one
+                        </Button>
+                    </div>
                 </div>
             </div>
 

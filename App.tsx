@@ -674,14 +674,6 @@ const App = () => {
         }
     };
 
-    // Reassign single customer to a CRM
-    const handleReassignCrm = (customerId: string, newCrmId: string) => {
-        const updated = appData.map(item =>
-            item.id === customerId ? { ...item, crmOwnerId: newCrmId } : item
-        );
-        setAppData(updated);
-    };
-
     // Bulk reassign multiple customers to a CRM
     /**
      * Grades a whole selection at once.
@@ -1432,7 +1424,6 @@ const App = () => {
             onFollowUp={handleOpenFollowUp}
             onWhatsApp={handleSendWhatsApp}
             onOpenPdcForCustomer={handleOpenPdcForCustomer}
-            onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
             onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
             pdcCheques={pdcCheques}
@@ -1504,9 +1495,7 @@ const App = () => {
                         initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : 'ALL'}
                         initialCategoryFilter={categoryFilter}
                         onFollowUp={handleOpenFollowUp}
-                        onWhatsApp={handleSendWhatsApp}
                         pdcCheques={pdcCheques}
-                        onOpenPdcForCustomer={handleOpenPdcForCustomer}
                     />
                   </div>
                 )}
@@ -1672,8 +1661,7 @@ const App = () => {
                                     <div>
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                                             <div>
-                                                <h2 className="text-xl font-bold text-label">System Users & Access Roles</h2>
-                                                <p className="text-xs text-label-3 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
+                                                <p className="text-[13.5px] text-label-3">Who can sign in, what they may do, and which accounts they see.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
@@ -1800,16 +1788,14 @@ const App = () => {
                                 companyProfile={companyProfile}
                                 initialCategoryFilter={categoryFilter}
                                 onFollowUp={handleOpenFollowUp}
-                                onWhatsApp={handleSendWhatsApp}
                                 pdcCheques={pdcCheques}
-                                onOpenPdcForCustomer={handleOpenPdcForCustomer}
                             />
                           </div>
                         )}
                          {activeTab === 'templates' && rights.canSyncSheets && (
                             <div>
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold text-label">Manage Message Templates</h2>
+                                    <p className="text-[13.5px] text-label-3">Used by the WhatsApp reminder. Placeholders are filled per customer.</p>
                                     <button 
                                         onClick={() => handleOpenTemplateModal(null)}
                                         className="flex items-center px-3 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press"
@@ -1845,7 +1831,6 @@ const App = () => {
                         )}
                         {activeTab === 'source' && rights.canSyncSheets && (
                              <div>
-                                <h2 className="text-2xl font-bold mb-6 text-label">Data Source Management</h2>
                                 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                     
@@ -1923,7 +1908,7 @@ const App = () => {
                                                     <span className="ml-3 font-semibold text-label">Excel Upload (Offline)</span>
                                                 </div>
                                                 <p className="text-sm text-label-3 ml-7">
-                                                    Best for single users. Data is stored in your browser. No internet needed after load.
+                                                    Upload a spreadsheet by hand. It is reviewed before anything is saved, and it saves to the shared database like every other change.
                                                 </p>
                                             </label>
 

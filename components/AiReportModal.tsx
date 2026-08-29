@@ -535,7 +535,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                             </button>
                                             <button
                                                 onClick={handleGenerateReport}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-bold transition-colors shadow-xs"
                                             >
                                                 <SparklesIcon className="w-3.5 h-3.5" />
                                                 <span>Regenerate</span>
