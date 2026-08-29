@@ -294,7 +294,7 @@ export const AppShell = ({
   const isSetupActive = setup.some(i => i.key === activeKey);
 
   return (
-    <div className="min-h-screen bg-bg text-label">
+    <div className="min-h-screen bg-bg text-label" style={{ ["--chrome-h" as any]: "184px" }}>
       {/* ================= app bar ================= */}
       <header className="sticky top-0 z-40 bg-card/90 backdrop-blur-xl border-b-[3px] border-brand-yellow">
         <div className="h-16 px-4 sm:px-6 flex items-center gap-3">
@@ -487,21 +487,25 @@ export const AppShell = ({
 
       {banner}
 
-      {/* ================= page heading (Apple large title) ================= */}
-      <div className="px-4 sm:px-6 pt-8 pb-6">
-        <div className="flex items-end justify-between gap-6 flex-wrap">
-          <div className="min-w-0">
-            <h1 className="text-[32px] sm:text-[36px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
+      {/* ================= page heading =================
+          Compact on purpose. A 36px title reads well above a document, but this
+          is a workspace: every row it pushes below the fold is an account
+          somebody has to scroll to reach. Title and context share one line, and
+          the work starts higher up the screen. */}
+      <div className="px-4 sm:px-6 pt-5 pb-3.5">
+        <div className="flex items-end justify-between gap-x-6 gap-y-2 flex-wrap">
+          <div className="min-w-0 flex items-baseline gap-3 flex-wrap">
+            <h1 className="text-[22px] font-extrabold text-label tracking-[-0.025em] leading-tight">
               {title}
             </h1>
             {(subtitle || dataAsOf || lastSyncTime) && (
-              <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3">
+              <div className="flex items-center gap-2 flex-wrap text-[13px] text-label-3">
                 {subtitle}
                 {dataAsOf && (
-                  <>
+                  <span className="hidden md:inline-flex items-center gap-2">
                     {subtitle && <span className="w-1 h-1 rounded-full bg-label-3" aria-hidden="true" />}
                     <span>Book as of {dataAsOf}</span>
-                  </>
+                  </span>
                 )}
                 {/* "Book as of" is the date the spreadsheet says its figures run
                     to — it does not move when you press Sync, which left no way
@@ -521,7 +525,7 @@ export const AppShell = ({
         </div>
       </div>
 
-      <main className="px-4 sm:px-6 pb-24">{children}</main>
+      <main className="px-4 sm:px-6 pb-10">{children}</main>
     </div>
   );
 };
