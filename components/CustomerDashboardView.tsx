@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, DataVisibility } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, DataVisibility, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -22,7 +22,8 @@ interface CustomerDashboardViewProps {
     onSyncSheet?: () => void;
     isSyncing?: boolean;
     lastUpdatedTill?: string;
-    onExportExcel?: () => void;
+    /** Given the rows currently on screen, so a filtered list exports as one. */
+    onExportExcel?: (rows: Outstanding[]) => void;
     /** Search text from the app bar. Narrows the book before the view's own filters. */
     globalSearch?: string;
 }
@@ -86,7 +87,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCrm, setSelectedCrm] = useState<string>('ALL');
     const [showMoreFilters, setShowMoreFilters] = useState(false);
-    const [rankFilter, setRankFilter] = useState<'ALL' | 'Good' | 'Bad'>('ALL');
+    const [rankFilter, setRankFilter] = useState<'ALL' | PaymentRank>('ALL');
+
+    /** Rank pill colours, shared by the table row and the mobile card. */
+    const RANK_TONE: Record<PaymentRank, string> = {
+        Good: 'bg-pos-bg text-pos border border-separator',
+        Late: 'bg-warn-bg text-warn border border-separator',
+        Bad: 'bg-dang-bg text-dang border border-separator',
+    };
     const [ageingFilter, setAgeingFilter] = useState<AgeingCategoryFilter>('all');
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const [balanceTypeFilter, setBalanceTypeFilter] = useState<'ALL' | 'Dr' | 'Cr'>('ALL');
@@ -242,7 +250,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         let forecastSum = 0;
         let newCount = 0;
         let goodCount = 0;
+        let lateCount = 0;
         let badCount = 0;
+        let lateDebitSum = 0;
         let badDebitSum = 0;
         let goodDebitSum = 0;
 
@@ -272,6 +282,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             if (rank === 'Good') {
                 goodCount++;
                 if (!isCr) goodDebitSum += itemTotal;
+            } else if (rank === 'Late') {
+                lateCount++;
+                if (!isCr) lateDebitSum += itemTotal;
             } else {
                 badCount++;
                 if (!isCr) badDebitSum += itemTotal;
@@ -289,7 +302,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             forecastSum,
             newCount,
             goodCount,
+            lateCount,
             badCount,
+            lateDebitSum,
             goodDebitSum,
             badDebitSum
         };
@@ -388,7 +403,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     {/* Export Excel */}
                     {onExportExcel && canExport && (
                         <button
-                            onClick={onExportExcel}
+                            onClick={() => onExportExcel(filteredData)}
                             className="px-3 py-1.5 text-xs font-bold rounded-lg bg-card hover:bg-card-3 text-label-2 hover:text-label border border-separator-strong transition-colors flex items-center gap-1"
                             title="Export filtered customer list to Excel / CSV"
                         >
@@ -419,7 +434,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             {/* Book summary. Flat and divided, not boxed: under the colour rule
                 only the ageing figures are allowed hue, so the tiles stay grey. */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
                     <p className="label">Receivables</p>
                     <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.debitSum)}</p>
@@ -433,9 +448,15 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 </div>
 
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
-                    <p className="label">Delayed payers</p>
-                    <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.badDebitSum)}</p>
-                    <p className="text-[12px] text-label-3 mt-1">{metrics.badCount} accounts</p>
+                    <p className="label">Late payers</p>
+                    <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.lateDebitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.lateCount} accounts</p>
+                </div>
+
+                <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
+                    <p className="label">Bad debt</p>
+                    <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-4-ink)' }}>{formatCurrency(metrics.badDebitSum)}</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.badCount} accounts · agency list</p>
                 </div>
 
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
@@ -496,9 +517,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setRankFilter(e.target.value as any)}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
                         >
-                            <option value="ALL">All Payment Ranks ({data.length})</option>
-                            <option value="Good">Good Payment (Timely / Healthy)</option>
-                            <option value="Bad">Bad Payment (Overdue / High Risk)</option>
+                            <option value="ALL">All ranks ({data.length})</option>
+                            <option value="Good">Good — pays to terms ({metrics.goodCount})</option>
+                            <option value="Late">Late pay — slow but paying ({metrics.lateCount})</option>
+                            <option value="Bad">Bad debt — old money stuck ({metrics.badCount})</option>
                         </select>
                     </div>
 
@@ -572,23 +594,33 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </button>
                         <button
                             onClick={() => setRankFilter(rankFilter === 'Good' ? 'ALL' : 'Good')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all flex items-center gap-1 ${
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
                                 rankFilter === 'Good'
-                                    ? 'bg-emerald-600 text-white ring-1 ring-emerald-400'
-                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                    ? 'bg-pos text-card ring-1 ring-pos'
+                                    : 'bg-pos-bg text-pos border border-separator'
                             }`}
                         >
-                            <span>Good Payment ({metrics.goodCount})</span>
+                            Good ({metrics.goodCount})
+                        </button>
+                        <button
+                            onClick={() => setRankFilter(rankFilter === 'Late' ? 'ALL' : 'Late')}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
+                                rankFilter === 'Late'
+                                    ? 'bg-warn text-card ring-1 ring-warn'
+                                    : 'bg-warn-bg text-warn border border-separator'
+                            }`}
+                        >
+                            Late pay ({metrics.lateCount})
                         </button>
                         <button
                             onClick={() => setRankFilter(rankFilter === 'Bad' ? 'ALL' : 'Bad')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all flex items-center gap-1 ${
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
                                 rankFilter === 'Bad'
-                                    ? 'bg-rose-600 text-white ring-1 ring-rose-400'
-                                    : 'bg-rose-50 dark:bg-rose-950/40 text-dang border border-rose-200 dark:border-rose-800'
+                                    ? 'bg-dang text-card ring-1 ring-dang'
+                                    : 'bg-dang-bg text-dang border border-separator'
                             }`}
                         >
-                            <span>Bad Payment ({metrics.badCount})</span>
+                            Bad debt ({metrics.badCount})
                         </button>
 
                         <span className="text-[11.5px] font-bold text-gray-400 dark:text-gray-500 mx-1">|</span>
@@ -839,14 +871,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     {/* Payment rank used to be its own 178px column; it is one pill,
                                                         so it lives with the customer it describes. */}
                                                     <span
-                                                        className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                                                            rank === 'Good'
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                                                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
-                                                        }`}
-                                                        title={item.paymentRank ? `Manually set: ${item.paymentRank} Payment` : `Auto-ranked on credit terms & ageing: ${rank} Payment`}
+                                                        className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-extrabold ${RANK_TONE[rank]}`}
+                                                        title={item.paymentRank
+                                                            ? `Set by hand: ${PAYMENT_RANK_LABELS[rank]}`
+                                                            : `Worked out from credit terms and ageing: ${PAYMENT_RANK_LABELS[rank]}`}
                                                     >
-                                                        {rank}
+                                                        {PAYMENT_RANK_LABELS[rank]}
                                                     </span>
                                                     <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                                         {item.paymentTermsDays ? `${item.paymentTermsDays}d terms` : 'Std credit'}
@@ -1081,14 +1111,8 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 {item.company}
                                             </h3>
                                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                                <span 
-                                                    className={`px-2 py-0.5 rounded-full text-[11.5px] font-extrabold ${
-                                                        rank === 'Good'
-                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300'
-                                                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300'
-                                                    }`}
-                                                >
-                                                    {rank === 'Good' ? 'Good Payment' : 'Bad Payment'}
+                                                <span className={`px-2 py-0.5 rounded-full text-[11.5px] font-extrabold ${RANK_TONE[rank]}`}>
+                                                    {PAYMENT_RANK_LABELS[rank]}
                                                 </span>
                                                 <span className="px-2 py-0.5 rounded-md text-[11.5px] font-bold bg-slate-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                                                     CRM: {item.crmOwnerId || 'Unassigned'}

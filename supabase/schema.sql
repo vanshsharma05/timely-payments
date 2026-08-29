@@ -49,7 +49,9 @@ create table if not exists public.customers (
     pan                  text,
     credit_limit         numeric,
     payment_terms_days   integer,
-    payment_rank         text check (payment_rank in ('Good','Bad')),
+    -- Good pays to terms, Late pays slowly, Bad is old money stuck — the
+    -- last of which is what the recovery agency is given.
+    payment_rank         text check (payment_rank is null or payment_rank in ('Good','Late','Bad')),
 
     total                numeric not null default 0,
     total_type           text check (total_type in ('Dr','Cr')),

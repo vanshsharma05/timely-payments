@@ -280,7 +280,21 @@ export interface AdditionalContact {
     notes?: string;
 }
 
-export type PaymentRank = 'Good' | 'Bad';
+/**
+ * How a customer pays, in the three grades the business actually uses.
+ *
+ *   Good  — pays to terms.
+ *   Late  — pays, but late; worth chasing normally.
+ *   Bad   — old money stuck. This is the list that goes to the recovery agency,
+ *           so it must not be diluted with people who are merely slow.
+ */
+export type PaymentRank = 'Good' | 'Late' | 'Bad';
+
+export const PAYMENT_RANK_LABELS: Record<PaymentRank, string> = {
+    Good: 'Good',
+    Late: 'Late pay',
+    Bad: 'Bad debt',
+};
 
 export interface Outstanding {
     id: string;
@@ -453,10 +467,11 @@ export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
  * Otherwise, intelligently auto-calculate based on credit days terms and overdue ageing.
  */
 export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
-    if (customer.paymentRank === 'Good' || customer.paymentRank === 'Bad') {
+    // Somebody who knows the account has said what it is; that beats any rule.
+    if (customer.paymentRank === 'Good' || customer.paymentRank === 'Late' || customer.paymentRank === 'Bad') {
         return customer.paymentRank;
     }
-    // Advance / Credit balance is always Good
+    // Advance / credit balance owes nothing.
     if (customer.totalType === 'Cr' || (customer.total || 0) <= 0) {
         return 'Good';
     }
@@ -466,19 +481,17 @@ export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
     const a4 = customer.ageing?.['>135'] || 0;
     const over90 = customer.over90 !== undefined ? customer.over90 : (a3 + a4);
     const dueOver45 = customer.dueOver45 !== undefined ? customer.dueOver45 : (a2 + over90);
+    const total = customer.total || 0;
 
-    // If critical overdue >90d or >135d exists -> Bad Payment
-    if (over90 > 0 || a4 > 0) {
-        return 'Bad';
-    }
-    // If overdue >45d is more than 35% of total balance -> Bad Payment
-    if (dueOver45 > 0 && dueOver45 > (customer.total * 0.35)) {
-        return 'Bad';
-    }
-    // If payment credit terms days are strict (<=45d) and overdue >45d exists -> Bad Payment
-    if (customer.paymentTermsDays && customer.paymentTermsDays <= 45 && dueOver45 > 0) {
-        return 'Bad';
-    }
+    // Money sitting past 135 days, or most of the balance past 90, is stuck
+    // rather than slow.
+    if (a4 > 0) return 'Bad';
+    if (over90 > 0 && over90 > total * 0.35) return 'Bad';
+
+    // Late but still moving: something is past its date, but none of it is old.
+    if (over90 > 0 || dueOver45 > 0) return 'Late';
+    if (customer.paymentTermsDays && customer.paymentTermsDays <= 45 && dueOver45 > 0) return 'Late';
+
     return 'Good';
 }
 

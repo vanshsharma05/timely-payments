@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, PdcStatus, CompanyProfile, DataVisibility, getFollowUpCategory, can, DEFAULT_COMPANY_PROFILE } from '../types';
 import StatusBadge from './StatusBadge';
@@ -46,6 +46,13 @@ export const ReportsView = ({
 }: ReportsViewProps) => {
     const [selectedCrm, setSelectedCrm] = useState<string>(initialCrmFilter);
     const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>(initialCategoryFilter);
+
+    // Arriving from a dashboard card carries the category with it. Following the
+    // prop rather than only seeding from it means a second card press re-filters
+    // even if this view never unmounted in between.
+    useEffect(() => {
+        setCategoryFilter(initialCategoryFilter);
+    }, [initialCategoryFilter]);
     const [searchTerm, setSearchTerm] = useState('');
     const [ageingFilter, setAgeingFilter] = useState<AgeingReportFilter>('all');
     const [isAiReportOpen, setIsAiReportOpen] = useState<boolean>(false);
@@ -822,7 +829,7 @@ export const ReportsView = ({
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <button
                                                         onClick={() => onFollowUp(item)}
-                                                        className="font-bold text-label hover:text-accent text-left inline-flex items-center gap-1.5 min-h-[28px] min-w-[28px]"
+                                                        className="font-bold text-label hover:text-accent text-left inline-flex items-center gap-1.5 min-h-[30px] min-w-[30px]"
                                                     >
                                                         <span>{item.company}</span>
                                                         {item.isUrgent && <FireIcon className="text-red-500 w-3.5 h-3.5 flex-shrink-0" />}

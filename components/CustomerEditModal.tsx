@@ -414,9 +414,10 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     onChange={e => setPaymentRank(e.target.value as any)}
                                     className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-bold text-gray-900 dark:text-white"
                                 >
-                                    <option value="">Auto (Calculate from Terms)</option>
-                                    <option value="Good">Good Payment (Disciplined)</option>
-                                    <option value="Bad">Bad Payment (Delayed/Focus)</option>
+                                    <option value="">Auto (from terms &amp; ageing)</option>
+                                    <option value="Good">Good — pays to terms</option>
+                                    <option value="Late">Late pay — pays, but slowly</option>
+                                    <option value="Bad">Bad debt — old money stuck</option>
                                 </select>
                             </div>
                             <div>

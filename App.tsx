@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, hasOutstanding, getCustomerPaymentRank, PAYMENT_RANK_LABELS } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -210,17 +210,28 @@ const App = () => {
         }
     };
 
-    const handleExportCustomerExcel = () => {
+    /**
+     * Exports the accounts currently on screen, not the whole book.
+     *
+     * Filtering to the bad debts and pressing Export handed you all four
+     * thousand customers, which made the one job this is for — giving the
+     * recovery agency a defaulter list — impossible.
+     */
+    const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => {
         if (XLSX) {
-            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
+            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","City","State","GSTIN","Payment Rank","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
             ];
-            const rows = appData.map(c => [
+            const rows = rowsToExport.map(c => [
                 c.id,
                 c.company,
                 c.contactPerson,
                 c.contactPost || '',
                 c.contactNumber,
                 c.email || '',
+                c.city || '',
+                c.state || '',
+                c.gstin || '',
+                PAYMENT_RANK_LABELS[getCustomerPaymentRank(c)],
                 c.total,
                 c.totalType || 'Dr',
                 c.ageing['1-45'],
@@ -237,7 +248,8 @@ const App = () => {
             const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws,"Customers");
-            XLSX.writeFile(wb, `Customer_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`);
+            const scope = rowsToExport.length === appData.length ? 'All' : `${rowsToExport.length}_selected`;
+            XLSX.writeFile(wb, `Customers_${scope}_${new Date().toISOString().split('T')[0]}.xlsx`);
         } else {
             alert("Export functionality ready. Please try again.");
         }
@@ -1371,7 +1383,7 @@ const App = () => {
                         label="Due today"
                         tone="brand"
                         active={categoryFilter === 'today'}
-                        onClick={() => { handleCategoryBoxClick('today'); setAdminTab('customers'); }}
+                        onClick={() => { handleCategoryBoxClick('today'); setAdminTab('reports'); }}
                         value={fourBoxesSummary.todayCount}
                         sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase</>}
                     />
@@ -1379,7 +1391,7 @@ const App = () => {
                         label="Overdue"
                         tone="dang"
                         active={categoryFilter === 'overdue'}
-                        onClick={() => { handleCategoryBoxClick('overdue'); setAdminTab('customers'); }}
+                        onClick={() => { handleCategoryBoxClick('overdue'); setAdminTab('reports'); }}
                         value={fourBoxesSummary.overdueCount}
                         sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past promised date</>}
                     />
@@ -1387,7 +1399,7 @@ const App = () => {
                         label="No follow-up"
                         tone="warn"
                         active={categoryFilter === 'no_follow_up'}
-                        onClick={() => { handleCategoryBoxClick('no_follow_up'); setAdminTab('customers'); }}
+                        onClick={() => { handleCategoryBoxClick('no_follow_up'); setAdminTab('reports'); }}
                         value={fourBoxesSummary.noFollowUpCount}
                         sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> unattended</>}
                     />
@@ -1395,7 +1407,7 @@ const App = () => {
                         label="Scheduled"
                         tone="pos"
                         active={categoryFilter === 'future'}
-                        onClick={() => { handleCategoryBoxClick('future'); setAdminTab('customers'); }}
+                        onClick={() => { handleCategoryBoxClick('future'); setAdminTab('reports'); }}
                         value={fourBoxesSummary.futureCount}
                         sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> committed</>}
                     />
@@ -1814,6 +1826,7 @@ const App = () => {
                         users={users}
                         currentUser={currentUser!}
                         initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : 'ALL'}
+                        initialCategoryFilter={categoryFilter}
                         onFollowUp={handleOpenFollowUp}
                         onWhatsApp={handleSendWhatsApp}
                         pdcCheques={pdcCheques}
@@ -2081,6 +2094,7 @@ const App = () => {
                                 users={users}
                                 currentUser={currentUser!}
                                 companyProfile={companyProfile}
+                                initialCategoryFilter={categoryFilter}
                                 onFollowUp={handleOpenFollowUp}
                                 onWhatsApp={handleSendWhatsApp}
                                 pdcCheques={pdcCheques}
