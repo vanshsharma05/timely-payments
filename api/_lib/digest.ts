@@ -79,6 +79,8 @@ export interface Digest {
     /** The day came and went with no answer either way. */
     promisesBroken: PromiseRow[];
     chequesToday: ChequeRow[];
+    /** In hand, date gone by, nobody has banked it or said why. */
+    chequesOverdue: ChequeRow[];
     noFollowUpCount: number;
     noFollowUpValue: number;
     bookValue: number;
@@ -245,12 +247,16 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
         const promisesBroken = myPromises
             .filter(p => beforeDay(p.promised_on, today))
             .sort((a, b) => a.promised_on.localeCompare(b.promised_on));
-        const chequesToday = cheques.filter(q => {
-            const ready = q.status === 'Pending' || q.status === 'DueToday';
-            if (!ready || !sameDay(q.cheque_date, today)) return false;
-            if (seesWholeBook(recipient)) return true;
-            return mineIds.has(q.customer_id || '');
-        });
+        const inHand = (q: ChequeRow) => q.status === 'Pending' || q.status === 'DueToday';
+        const isMine = (q: ChequeRow) => seesWholeBook(recipient) || mineIds.has(q.customer_id || '');
+
+        const chequesToday = cheques.filter(q => inHand(q) && isMine(q) && sameDay(q.cheque_date, today));
+
+        // A cheque whose date has gone is money sitting in a drawer. It was
+        // reported nowhere, so nothing prompted anyone to bank it.
+        const chequesOverdue = cheques
+            .filter(q => inHand(q) && isMine(q) && beforeDay(q.cheque_date, today))
+            .sort((a, b) => String(a.cheque_date).localeCompare(String(b.cheque_date)));
 
         const perCrm: Digest['perCrm'] = [];
         if (seesWholeBook(recipient)) {
@@ -276,6 +282,7 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
             promisesDue,
             promisesBroken,
             chequesToday,
+            chequesOverdue,
             noFollowUpCount: noFollowUp.length,
             noFollowUpValue: noFollowUp.reduce((s, c) => s + owes(c), 0),
             bookValue: mine.reduce((s, c) => s + owes(c), 0),
@@ -286,7 +293,7 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
             perCrm,
             taskCount:
                 dueToday.length + overdue.length + chequesToday.length +
-                promisesDue.length + promisesBroken.length,
+                chequesOverdue.length + promisesDue.length + promisesBroken.length,
         };
     });
 }
@@ -366,6 +373,7 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
         if (d.overdue.length) parts.push(`${d.overdue.length} overdue`);
         if (d.promisesBroken.length) parts.push(`${d.promisesBroken.length} promise${d.promisesBroken.length === 1 ? '' : 's'} unanswered`);
         if (d.chequesToday.length) parts.push(`${d.chequesToday.length} cheque${d.chequesToday.length === 1 ? '' : 's'}`);
+        if (d.chequesOverdue.length) parts.push(`${d.chequesOverdue.length} cheque${d.chequesOverdue.length === 1 ? '' : 's'} not banked`);
         return `Timely Payment · ${parts.join(', ')}`;
     })();
 
@@ -409,6 +417,26 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
       </tr>`;
             })
             .join('');
+
+    const overdueChequeRows = d.chequesOverdue
+        .slice(0, 12)
+        .map(
+            q => `
+      <tr>
+        <td style="padding:9px 12px;border-bottom:1px solid ${LINE};font-size:14px;color:${INK};">
+          <strong>${esc(q.customer_name)}</strong>
+          <div style="color:${MUTED};font-size:12px;margin-top:2px;">
+            Cheque ${esc(q.cheque_number)}${q.bank_name ? ' · ' + esc(q.bank_name) : ''} · dated ${esc(
+                q.cheque_date ? new Date(q.cheque_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
+            )}
+          </div>
+        </td>
+        <td style="padding:9px 12px;border-bottom:1px solid ${LINE};font-size:14px;color:${DANG};font-weight:700;text-align:right;white-space:nowrap;">
+          ${compact(q.amount)}
+        </td>
+      </tr>`
+        )
+        .join('');
 
     const promisedRows = d.promisedToday
         .map(
@@ -463,6 +491,7 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
         ${section('They said they would pay today', d.promisesDue.length, NAVY, promiseRows(d.promisesDue, NAVY), 'Ring these and record what they say.')}
         ${section('Promised, and the day passed', d.promisesBroken.length, DANG, promiseRows(d.promisesBroken, DANG), 'Nobody has recorded whether the money arrived.')}
         ${section('Cheques to present today', d.chequesToday.length, POS, chequeRows)}
+        ${section('Cheques past their date, still in hand', d.chequesOverdue.length, DANG, overdueChequeRows, 'Bank these, or record why they cannot be banked.')}
         ${section('Money promised for today', d.promisedToday.length, POS, promisedRows)}
         ${
             d.noFollowUpCount
@@ -528,6 +557,8 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
     listOut('Promised, and the day passed', d.promisesBroken.map(p =>
         `${p.company} — ${p.promised_amount ? compact(p.promised_amount) : 'amount not stated'}, due ${p.promised_on}`));
     listOut('Cheques to present today', d.chequesToday.map(q => `${q.customer_name} — ${compact(q.amount)} (${q.cheque_number})`));
+    listOut('Cheques past their date, still in hand', d.chequesOverdue.map(q =>
+        `${q.customer_name} — ${compact(q.amount)} (${q.cheque_number}), dated ${String(q.cheque_date).slice(0, 10)}`));
     listOut('Promised for today', d.promisedToday.map(c => `${c.company} — ${compact(c.forecast_amount)}`));
     if (d.noFollowUpCount) {
         lines.push('', `${d.noFollowUpCount} accounts have no follow-up planned (${compact(d.noFollowUpValue)}).`);

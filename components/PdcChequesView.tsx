@@ -115,9 +115,16 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     const chequesWithComputedStatus = useMemo(() => {
         return allowedCheques.map(c => {
             const cDate = normalizeDate(c.chequeDate);
+            // A cheque still in hand is due when its date arrives and overdue
+            // once it has passed. Reading that off the date rather than a stored
+            // status is what stops a cheque entered days ago from insisting it
+            // is due today for the rest of its life.
+            const inHand = c.status === PdcStatus.Pending || c.status === PdcStatus.DueToday;
             let effectiveStatus = c.status;
-            if (c.status === PdcStatus.Pending && isSameDay(cDate, today)) {
-                effectiveStatus = PdcStatus.DueToday;
+            if (inHand) {
+                effectiveStatus = isSameDay(cDate, today)
+                    ? PdcStatus.DueToday
+                    : PdcStatus.Pending;
             }
             return {
                 ...c,
@@ -131,6 +138,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     const metrics = useMemo(() => {
         let todayCount = 0;
         let todayAmount = 0;
+        let overdueCount = 0;
+        let overdueAmount = 0;
         let pendingCount = 0;
         let pendingAmount = 0;
         let holdCount = 0;
@@ -153,23 +162,28 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             } else if (c.status === PdcStatus.Bounced) {
                 bouncedCount++;
                 bouncedAmount += c.amount;
+            } else if (isToday) {
+                todayCount++;
+                todayAmount += c.amount;
+            } else if (cDate < today) {
+                // Its date has gone and it is still in hand — somebody has to
+                // bank it or find out why they cannot. This had nowhere to go
+                // before and sat quietly among the cheques awaiting their date.
+                overdueCount++;
+                overdueAmount += c.amount;
             } else {
-                // Pending or Due Today
-                if (isToday || c.status === PdcStatus.DueToday) {
-                    todayCount++;
-                    todayAmount += c.amount;
-                } else {
-                    pendingCount++;
-                    pendingAmount += c.amount;
-                }
+                pendingCount++;
+                pendingAmount += c.amount;
             }
         });
 
-        const activeTotalAmount = todayAmount + pendingAmount + holdAmount;
+        const activeTotalAmount = todayAmount + overdueAmount + pendingAmount + holdAmount;
 
         return {
             todayCount,
             todayAmount,
+            overdueCount,
+            overdueAmount,
             pendingCount,
             pendingAmount,
             holdCount,
@@ -214,9 +228,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             // Status Filter
             if (statusFilter !== 'all') {
                 if (statusFilter === 'today') {
-                    if (c.effectiveStatus !== PdcStatus.DueToday && !isSameDay(c.chequeDate, today)) {
-                        return false;
-                    }
+                    if (!isSameDay(c.chequeDate, today)) return false;
+                } else if (statusFilter === 'overdue') {
+                    const inHand = c.status === PdcStatus.Pending || c.status === PdcStatus.DueToday;
+                    if (!inHand || c.chequeDate >= today || isSameDay(c.chequeDate, today)) return false;
                 } else if (statusFilter === 'active') {
                     if (c.status === PdcStatus.Cleared || c.status === PdcStatus.Bounced) return false;
                 } else if (c.status !== statusFilter) {
@@ -383,7 +398,39 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     )}
                 </div>
 
-                {/* 2. Upcoming Pending PDCs */}
+                {/* 2. Cheques whose date has passed and are still in hand. */}
+                <div
+                    onClick={() => {
+                        setStatusFilter('overdue');
+                        setDateRangeFilter('all');
+                    }}
+                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
+                        statusFilter === 'overdue'
+                            ? 'bg-dang text-card border-dang shadow-lg ring-2 ring-dang'
+                            : 'bg-card hover:border-dang border-separator text-label'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'overdue' ? 'text-card' : 'text-dang'}`}>
+                            Date passed, not banked
+                        </span>
+                        <div className={`p-2 rounded-xl ${statusFilter === 'overdue' ? 'bg-white/20' : 'bg-dang-bg text-dang'}`}>
+                            <ClockIcon />
+                        </div>
+                    </div>
+                    <div className="text-2xl font-black">
+                        {metrics.overdueCount}
+                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
+                    </div>
+                    <div className={`text-sm font-bold mt-1 ${statusFilter === 'overdue' ? 'text-card' : 'text-dang'}`}>
+                        ₹{metrics.overdueAmount.toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-xs opacity-70 mt-2">
+                        {metrics.overdueCount > 0 ? 'Bank these or record why not' : 'Nothing left unbanked'}
+                    </div>
+                </div>
+
+                {/* 3. Upcoming Pending PDCs */}
                 <div
                     onClick={() => {
                         setStatusFilter(PdcStatus.Pending);

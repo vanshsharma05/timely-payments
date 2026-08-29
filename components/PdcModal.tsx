@@ -325,8 +325,11 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                 onChange={(e) => setStatus(e.target.value as PdcStatus)}
                                 className="w-full px-3 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
                             >
-                                <option value={PdcStatus.Pending}>Pending (Awaiting Date)</option>
-                                <option value={PdcStatus.DueToday}>Due Today (Present in Bank)</option>
+                                {/* No "due today" here on purpose: whether a cheque is due
+                                    is decided by its date, every morning. Storing it as a
+                                    status froze it, so a cheque entered as due today was
+                                    still claiming it a week later. */}
+                                <option value={PdcStatus.Pending}>Pending — waiting for its date</option>
                                 <option value={PdcStatus.Hold}>On Hold (Customer Request)</option>
                                 <option value={PdcStatus.Cleared}>Cleared</option>
                                 <option value={PdcStatus.Bounced}>Bounced / Returned</option>
