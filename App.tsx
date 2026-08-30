@@ -12,7 +12,9 @@ import {
     fetchGoogleSheetData,
     parseAmountAndType,
     fetchCustomerMasterSheetData,
-    mergeCustomerMasterIntoAppData
+    mergeCustomerMasterIntoAppData,
+    summariseUnlisted,
+    countNewNames
 } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -66,6 +68,8 @@ Ageing Details:
 - 46-90 days: {{ageing46_90}}
 - 91-135 days: {{ageing91_135}}
 - >135 days: {{ageingOver135}}
+
+Total overdue beyond 90 days: {{totalOver90}}
 
 Please let us know when we can expect the payment.
 
@@ -151,6 +155,15 @@ const App = () => {
         updatedTillDate?: string;
         sourceName: string;
     } | null>(null);
+
+    /**
+     * Accounts where the CRM set here and the CRM in the master sheet disagree.
+     *
+     * The app's answer wins — reassigning an account has to survive the next
+     * import — so the disagreement is recorded rather than resolved, and shown
+     * in Settings with the export that puts it right in the sheet.
+     */
+    const [crmConflicts, setCrmConflicts] = useState<{ company: string; appCrm: string; sheetCrm: string }[]>([]);
 
     // State for notifications
     const [priorityFilter, setPriorityFilter] = useState(false);
@@ -253,6 +266,45 @@ const App = () => {
         } else {
             alert("Export functionality ready. Please try again.");
         }
+    };
+
+    /**
+     * The CRM column as the app holds it, in a form that can be pasted back
+     * into the sheet.
+     *
+     * Ownership is decided here — a handover typed into the app is not undone
+     * by the next import — but the sheet is read by people who never open the
+     * app, and there is no way to write to it from here. This is the bridge:
+     * one row per account, the owner the app is working to, and the owner the
+     * sheet last supplied where the two disagree.
+     *
+     * It is pasted into the **Customer Master**. The outstanding sheet does not
+     * hold a CRM of its own — its column looks the name up from the master — so
+     * the master is the one place a correction has to land.
+     */
+    const handleExportCrmAssignments = () => {
+        if (!XLSX) {
+            alert('Export functionality ready. Please try again.');
+            return;
+        }
+        const sheetSays = new Map(crmConflicts.map(c => [c.company, c.sheetCrm]));
+        const headers = ['Company', 'CRM Owner (app)', 'CRM Owner (master sheet)', 'Differs', 'Total Outstanding'];
+        const rows = [...appData]
+            .sort((a, b) => a.company.localeCompare(b.company))
+            .map(c => {
+                const fromSheet = sheetSays.get(c.company) || '';
+                return [
+                    c.company,
+                    c.crmOwnerId || '',
+                    fromSheet,
+                    fromSheet ? 'YES' : '',
+                    c.total || 0,
+                ];
+            });
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'CRM Owners');
+        XLSX.writeFile(wb, `CRM_Owners_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     const parseRawDataArray = useCallback((values: any[][]): Outstanding[] => {
@@ -620,7 +672,7 @@ const App = () => {
     const handleResetAllDataAndUsers = async (skipConfirm = false) => {
         if (!skipConfirm) {
             const confirmed = window.confirm(
-                "COMPLETE FRESH START\n\nThis rewrites the shared dataset for the whole team:\n1. Clear all follow-up notes, tags, forecast amounts and custom contacts\n2. Delete every Post-Dated Cheque (PDC)\n3. Re-import a clean dataset from the live Google Sheet\n4. Restore the default message template and company profile\n\nTeam logins are NOT touched — remove those in Team & access.\n\nClick OK to proceed."
+                "COMPLETE FRESH START\n\nThis rewrites the shared dataset for the whole team:\n1. Clear all follow-up notes, tags, forecast amounts and custom contacts\n2. Delete every Post-Dated Cheque (PDC)\n3. Re-import a clean dataset from the live Google Sheet\n4. Restore the default message template and company profile\n\nEvery account comes back with NO CRM against it, because the outstanding sheet does not decide ownership. Run the one-time customer import afterwards, or assign owners from the customer list.\n\nTeam logins are NOT touched — remove those in Team & access.\n\nClick OK to proceed."
             );
             if (!confirmed) return;
         }
@@ -641,7 +693,12 @@ const App = () => {
             try {
                 const parsed = await fetchGoogleSheetData(OFFICIAL_SHEET_URL);
                 if (parsed.records && parsed.records.length > 0) {
-                    const freshProcessed = processStatuses(parsed.records);
+                    // Through the merge, not around it: a reset re-imports the
+                    // sheet, and the sheet does not get to decide ownership just
+                    // because the book happens to be empty at that moment. Every
+                    // account comes back unassigned, and the customer import is
+                    // what puts the owners back.
+                    const freshProcessed = mergeWithExistingFollowUps([], parsed.records);
                     setAppData(freshProcessed);
                     if (parsed.updatedTillDate) {
                         setSheetUpdatedTillDate(parsed.updatedTillDate);
@@ -660,7 +717,7 @@ const App = () => {
 
             setSyncMessage({
                 type: 'success',
-                text: 'Dataset reset and re-imported. Team logins were left untouched.',
+                text: 'Dataset reset and re-imported. Every account is unassigned — run the customer import, or set owners from the customer list. Team logins were left untouched.',
             });
             setTimeout(() => setSyncMessage(null), 6000);
         } catch (err: any) {
@@ -757,6 +814,8 @@ const App = () => {
 
     // Sync Reconciliation Handlers
     const handleConfirmSyncReconciliation = (reconciledRecords: Outstanding[]) => {
+        const settled = pendingSync ? summariseUnlisted(appData, pendingSync.records) : { count: 0, amount: 0 };
+        const added = pendingSync ? countNewNames(appData, pendingSync.records) : 0;
         const processed = processStatuses(reconciledRecords);
         setAppData(processed);
         const nowIso = new Date().toISOString();
@@ -766,10 +825,18 @@ const App = () => {
         }
         setSyncMessage({
             type: 'success',
-            text: `Sync complete: Successfully reconciled and updated ${reconciledRecords.length} customer records.${pendingSync?.updatedTillDate ? ` Sheet updated till: ${pendingSync.updatedTillDate}` : ''}`
+            text:
+                `Balances updated for ${reconciledRecords.length} accounts.` +
+                (added
+                    ? ` ${added} new customer${added === 1 ? '' : 's'} came in from the sheet and need a CRM — they are under "Unassigned" in the customer list.`
+                    : '') +
+                (settled.count
+                    ? ` ${settled.count} account${settled.count === 1 ? '' : 's'} the sheet no longer lists were settled to zero (${formatCompact(settled.amount)}).`
+                    : '') +
+                (pendingSync?.updatedTillDate ? ` Sheet updated till: ${pendingSync.updatedTillDate}` : '')
         });
         setPendingSync(null);
-        setTimeout(() => setSyncMessage(null), 5000);
+        setTimeout(() => setSyncMessage(null), 7000);
     };
 
     const handleCancelSyncReconciliation = () => {
@@ -796,11 +863,10 @@ const App = () => {
                  throw new Error("No customer records found in the provided Google Sheet.");
             }
 
-            // Open reconciliation review modal for Admin or when existing data exists
-            const nowIso = new Date().toISOString();
-            setLastSyncTime(nowIso);
-
             if (appData.length > 0) {
+                // Nothing is written and nothing is stamped until the review is
+                // confirmed. Recording the sync time here marked the book as
+                // freshly synced even when the review was cancelled.
                 setPendingSync({
                     records,
                     updatedTillDate,
@@ -810,12 +876,15 @@ const App = () => {
                 if (updatedTillDate) {
                     setSheetUpdatedTillDate(updatedTillDate);
                 }
-                const merged = mergeWithExistingFollowUps(appData, records);
-                const processedData = processStatuses(merged);
-                setAppData(processedData);
-                setSyncMessage({ 
-                    type: 'success', 
-                    text: `Successfully synced ${records.length} transaction records from Google Sheet.${updatedTillDate ? ` Sheet updated till: ${updatedTillDate}` : ''}` 
+                // Already runs processStatuses() on the way out.
+                setAppData(mergeWithExistingFollowUps(appData, records));
+                setLastSyncTime(new Date().toISOString());
+                setSyncMessage({
+                    type: 'success',
+                    text:
+                        `Loaded ${records.length} accounts from the outstanding sheet. ` +
+                        `None of them have a CRM yet — run the one-time customer import, or assign owners from the customer list.` +
+                        (updatedTillDate ? ` Sheet updated till: ${updatedTillDate}` : ''),
                 });
             }
 
@@ -827,7 +896,15 @@ const App = () => {
         }
     };
 
-    // Customer Master Data Google Sheet Sync Logic
+    /**
+     * The one-time customer import.
+     *
+     * The customer database lives in the app — new customers are added here and
+     * their details maintained here — so this is a seeding step, not something
+     * to run daily. It fills in what is missing and overwrites nothing, but it
+     * is still a few thousand rows landing on the book at once, so it asks
+     * first.
+     */
     const handleCustomerMasterSync = async (overrideUrl?: string) => {
         const urlToUse = (typeof overrideUrl === 'string' && overrideUrl.trim())
             ? overrideUrl.trim()
@@ -835,6 +912,18 @@ const App = () => {
 
         if (overrideUrl && typeof overrideUrl === 'string') {
             setCustomerMasterSheetUrl(overrideUrl);
+        }
+
+        if (appData.length > 0) {
+            const proceed = window.confirm(
+                'ONE-TIME CUSTOMER IMPORT\n\n' +
+                'The customer list is maintained in the software, not in this sheet. ' +
+                'This is for loading customers in bulk — normally you add a customer here instead.\n\n' +
+                'It fills in details that are missing and overwrites nothing: names, phone numbers, ' +
+                'addresses, credit terms and CRM owners already recorded here are left exactly as they are.\n\n' +
+                'Continue?'
+            );
+            if (!proceed) return;
         }
 
         setIsSyncing(true);
@@ -846,76 +935,26 @@ const App = () => {
                 throw new Error("No customer records found in the Customer Master Google Sheet.");
             }
 
-            const { updatedData, enrichedCount, newAccountsCount } = mergeCustomerMasterIntoAppData(appData, records);
+            const { updatedData, enrichedCount, newAccountsCount, crmConflicts } = mergeCustomerMasterIntoAppData(appData, records);
             setAppData(updatedData);
+            setCrmConflicts(crmConflicts);
 
-            const nowIso = new Date().toISOString();
-            setLastSyncTime(nowIso);
+            // Deliberately does not touch lastSyncTime: that is "balances last
+            // refreshed from the sheet", and this import brings no balances.
+            // Stamping it here made the book look freshly priced when it was not.
 
             setSyncMessage({
                 type: 'success',
-                text: `Customer Master Sync Successful: Enriched ${enrichedCount} customer accounts, added ${newAccountsCount} new accounts into directory.`
+                text:
+                    `Customer import done: ${newAccountsCount} new customer${newAccountsCount === 1 ? '' : 's'} added, ` +
+                    `${enrichedCount} already on file were left as they are (blanks filled in only).` +
+                    (crmConflicts.length
+                        ? ` ${crmConflicts.length} kept the CRM set here rather than the one in the sheet.`
+                        : '')
             });
             setTimeout(() => setSyncMessage(null), 6000);
         } catch (err) {
             const msg = err instanceof Error ? err.message :"Unknown error during customer master sync";
-            setSyncMessage({ type: 'error', text: msg });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    // Combined Dual Sync: Synchronizes Transactions + Customer Master Data in sequence
-    const handleCombinedSync = async () => {
-        setIsSyncing(true);
-        setSyncMessage({ type: 'success', text: 'Starting dual sync: Fetching Transactions & Customer Master data...' });
-
-        try {
-            // 1. Fetch Transactions
-            const txUrl = (googleSheetUrl || OFFICIAL_TRANSACTIONS_SHEET_URL).trim();
-            const { records: txRecords, updatedTillDate } = await fetchGoogleSheetData(txUrl);
-
-            // 2. Fetch Customer Master
-            const masterUrl = (customerMasterSheetUrl || OFFICIAL_CUSTOMER_MASTER_URL).trim();
-            let masterRecords: Outstanding[] = [];
-            try {
-                const masterRes = await fetchCustomerMasterSheetData(masterUrl);
-                masterRecords = masterRes.records;
-            } catch (masterErr) {
-                console.warn('Customer master fetch note during combined sync:', masterErr);
-            }
-
-            // Merge Transactions with existing follow-ups
-            const baseMerged = mergeWithExistingFollowUps(appData, txRecords);
-
-            // Merge Customer Master data
-            let finalData = baseMerged;
-            let enriched = 0;
-            let newAccounts = 0;
-            if (masterRecords.length > 0) {
-                const masterMerged = mergeCustomerMasterIntoAppData(baseMerged, masterRecords);
-                finalData = masterMerged.updatedData;
-                enriched = masterMerged.enrichedCount;
-                newAccounts = masterMerged.newAccountsCount;
-            }
-
-            const processed = processStatuses(finalData);
-            setAppData(processed);
-
-            if (updatedTillDate) {
-                setSheetUpdatedTillDate(updatedTillDate);
-            }
-
-            const nowIso = new Date().toISOString();
-            setLastSyncTime(nowIso);
-
-            setSyncMessage({
-                type: 'success',
-                text: `Dual Sync Complete: Updated ${txRecords.length} transaction records, enriched ${enriched} accounts, and added ${newAccounts} master customers.${updatedTillDate ? ` Sheet updated till: ${updatedTillDate}` : ''}`
-            });
-            setTimeout(() => setSyncMessage(null), 6000);
-        } catch (err) {
-            const msg = err instanceof Error ? err.message :"Error during combined sync";
             setSyncMessage({ type: 'error', text: msg });
         } finally {
             setIsSyncing(false);
@@ -930,12 +969,29 @@ const App = () => {
 
     const filteredData = useMemo(() => {
         const today = getToday();
+        const searching = Boolean(searchTerm.trim());
         return outstandingData.filter(item => {
+            const itemCategory = getFollowUpCategory(item, today);
+
+            /**
+             * Nothing owed is nothing to chase.
+             *
+             * The four boxes above already count it that way, so the list they
+             * open has to agree — otherwise "Due today: 3" opens onto four rows,
+             * one of them at zero, and the two numbers argue with each other.
+             * Now that an account dropped from the outstanding sheet is settled
+             * rather than left standing, this is the list those settled accounts
+             * would otherwise pile up in.
+             *
+             * Two exceptions: an account collected today belongs in "collected"
+             * precisely because it now owes nothing, and a search is a search —
+             * looking a customer up by name must find them, paid or not.
+             */
+            if (!hasOutstanding(item) && itemCategory !== 'completed' && !searching) return false;
+
             if (priorityFilter) {
                 return (item.isUrgent && item.status !== FollowUpStatus.Completed) || item.status === FollowUpStatus.Overdue;
             }
-
-            const itemCategory = getFollowUpCategory(item, today);
 
             if (unattendedFilter) {
                 // Unattended: Overdue OR No Follow-up
@@ -1595,7 +1651,7 @@ const App = () => {
             onBulkReassignCrm={handleBulkReassignCrm}
             onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
             pdcCheques={pdcCheques}
-            onSyncSheet={rights.canSyncSheets ? handleCombinedSync : undefined}
+            onSyncSheet={rights.canSyncSheets ? () => handleGoogleSync() : undefined}
             isSyncing={isSyncing}
             lastUpdatedTill={sheetUpdatedTillDate}
             onExportExcel={handleExportCustomerExcel}
@@ -1903,17 +1959,23 @@ const App = () => {
                     
                     // Slice(1) to skip header row, assuming file has one.
                     const parsedData = parseRawDataArray(json.slice(1));
-                    const nowIso = new Date().toISOString();
-                    setLastSyncTime(nowIso);
                     if (appData.length > 0) {
+                        // Stamped on confirm, not here — a cancelled review must
+                        // not leave the book looking freshly synced.
                         setPendingSync({
                             records: parsedData,
                             sourceName: file.name || 'Excel File'
                         });
                     } else {
-                        const processedData = processStatuses(parsedData);
-                        setAppData(processedData); // This saves to State -> LocalStorage
-                        setSyncMessage({ type: 'success', text: `Successfully loaded ${parsedData.length} records. Data saved to browser.` });
+                        setLastSyncTime(new Date().toISOString());
+                        // Same path as every other import, so an upload into an
+                        // empty book obeys the same rules as one into a full one.
+                        const processedData = mergeWithExistingFollowUps([], parsedData);
+                        setAppData(processedData);
+                        setSyncMessage({
+                            type: 'success',
+                            text: `Loaded ${parsedData.length} records. They have no CRM against them yet — assign owners from the customer list.`,
+                        });
                     }
                 } catch (err) {
                      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during file processing.';
@@ -2289,34 +2351,31 @@ const App = () => {
                                             </div>
                                         ) : (
                                             <div className="space-y-6">
-                                                {/* Top Action: Dual Sync */}
-                                                <div className="p-4 bg-card-2 dark:from-emerald-950/40 dark:to-blue-950/40 border border-emerald-300 dark:border-emerald-700 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3">
-                                                    <div>
-                                                        <h4 className="text-sm font-extrabold text-label flex items-center gap-1.5">
-                                                            <span>One-Click Dual Sync</span>
-                                                            <span className="px-2 py-0.5 text-[11.5px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 rounded font-bold">Recommended</span>
-                                                        </h4>
-                                                        <p className="text-xs text-label-2 mt-0.5">
-                                                            Synchronizes both Outstanding Invoices and Customer Master details (GSTIN, credit terms, contacts) in a single run.
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={handleCombinedSync}
-                                                        disabled={isSyncing}
-                                                        className="px-5 py-2.5 bg-accent hover:bg-accent-press text-on-accent rounded-xl disabled:opacity-50 flex items-center gap-2 font-bold text-xs shadow-md transition-all whitespace-nowrap"
-                                                    >
-                                                        <SyncIcon />
-                                                        <span>{isSyncing ? 'Syncing All Sheets...' : 'Sync Both Sheets Now'}</span>
-                                                    </button>
+                                                {/* Where each thing lives, said once */}
+                                                <div className="p-4 bg-card-2 border border-separator-strong rounded-xl">
+                                                    <h4 className="text-sm font-extrabold text-label">How this works</h4>
+                                                    <p className="text-xs text-label-2 mt-1 leading-relaxed">
+                                                        <strong>The sheet carries the outstanding amounts. The software carries the customers.</strong>
+                                                    </p>
+                                                    <p className="text-xs text-label-3 mt-1.5 leading-relaxed">
+                                                        Sync the outstanding sheet as often as you like — it updates balances and ageing,
+                                                        and touches nothing else. Customers, their contacts, credit terms and CRM owners are
+                                                        added and corrected here, in the customer list, and no sync overwrites them.
+                                                    </p>
+                                                    <p className="text-xs text-label-3 mt-1.5 leading-relaxed">
+                                                        A name in the outstanding sheet that is not in the customer list yet is added
+                                                        automatically so its money is counted, with no CRM against it. Those show up under
+                                                        <strong className="text-label-2"> Unassigned</strong> in the customer list, waiting for an owner.
+                                                    </p>
                                                 </div>
 
                                                 {/* Sheet 1: Outstanding Invoices */}
                                                 <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
                                                         <label className="block text-xs font-bold uppercase tracking-wider text-label">
-                                                            1. Outstanding Invoices & Ageing Sheet
+                                                            1. Outstanding Invoices &amp; Ageing Sheet
                                                         </label>
-                                                        <span className="text-[12.5px] text-label-3">Live transaction balances</span>
+                                                        <span className="text-[12.5px] text-label-3">The only sheet that is synced</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2332,11 +2391,11 @@ const App = () => {
                                                             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
                                                         >
                                                             <SyncIcon /> 
-                                                            <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Invoices'}</span>
+                                                            <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync balances'}</span>
                                                         </button>
                                                     </div>
                                                     <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
-                                                        <span>ID, Company, Contact, Total Due, Ageing columns</span>
+                                                        <span>Balances and ageing only — contacts, credit terms and CRM owners are not read from here</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -2353,9 +2412,9 @@ const App = () => {
                                                 <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
                                                     <div className="flex justify-between items-center">
                                                         <label className="block text-xs font-bold uppercase tracking-wider text-label">
-                                                            2. Customer Master Directory & Credit Terms Sheet
+                                                            2. One-time customer import
                                                         </label>
-                                                        <span className="text-[12.5px] text-label-3">GSTIN, addresses, multiple contacts, limits</span>
+                                                        <span className="text-[12.5px] text-label-3">Seeding only — not a sync</span>
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row gap-2">
                                                         <input 
@@ -2371,11 +2430,11 @@ const App = () => {
                                                             className="px-4 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
                                                         >
                                                             <SyncIcon /> 
-                                                            <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync Master'}</span>
+                                                            <span className="ml-1.5">{isSyncing ? 'Importing...' : 'Import Customers'}</span>
                                                         </button>
                                                     </div>
                                                     <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
-                                                        <span>Company Name, Contact Person, Designation, Mobile, City, State, GSTIN, Credit Limit</span>
+                                                        <span>Loads customers in bulk. Fills in blanks only — it never overwrites a detail recorded here.</span>
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -2386,6 +2445,62 @@ const App = () => {
                                                             Restore Default Master URL
                                                         </button>
                                                     </div>
+                                                </div>
+
+                                                {/* Who owns which account, and how that gets back to the sheet */}
+                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
+                                                    <div className="flex justify-between items-center">
+                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
+                                                            3. CRM Ownership
+                                                        </label>
+                                                        <span className="text-[12.5px] text-label-3">Set here, not in the sheet</span>
+                                                    </div>
+                                                    <p className="text-[12.5px] text-label-2 leading-relaxed">
+                                                        Reassigning an account in the customer list is permanent: a sync no longer hands
+                                                        it back to whoever the sheet still has in its CRM column. Either sheet may still
+                                                        fill in an owner where the app has none, and a new customer arrives with the
+                                                        owner the sheet gives it.
+                                                    </p>
+                                                    <p className="text-[12.5px] text-label-3 leading-relaxed">
+                                                        Nothing can be written back to Google Sheets from here, so export the list below
+                                                        and paste its CRM column into the <strong className="text-label-2">Customer Master</strong> sheet.
+                                                        The outstanding sheet looks its CRM up from the master, so correcting the master
+                                                        corrects both.
+                                                    </p>
+                                                    <p className="text-[12.5px] text-label-3 leading-relaxed">
+                                                        A customer missing from the master makes that lookup return
+                                                        <code className="mx-1 px-1 rounded bg-card-3 font-mono text-[11.5px]">#N/A</code>,
+                                                        which is read as "no owner" rather than filed under an owner of that name. Those
+                                                        accounts show as unassigned until the master lists them.
+                                                    </p>
+                                                    {crmConflicts.length > 0 && (
+                                                        <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                                                            <p className="text-[12.5px] font-bold text-amber-800 dark:text-amber-200">
+                                                                {crmConflicts.length} account{crmConflicts.length === 1 ? '' : 's'} disagree with the sheet
+                                                            </p>
+                                                            <ul className="mt-1.5 space-y-0.5 max-h-32 overflow-y-auto">
+                                                                {crmConflicts.slice(0, 25).map(c => (
+                                                                    <li key={c.company} className="text-[12px] text-amber-900 dark:text-amber-100">
+                                                                        <span className="font-semibold">{c.company}</span>
+                                                                        {' — app: '}<span className="font-mono">{c.appCrm}</span>
+                                                                        {', sheet: '}<span className="font-mono">{c.sheetCrm}</span>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                            {crmConflicts.length > 25 && (
+                                                                <p className="text-[11.5px] text-amber-700 dark:text-amber-300 mt-1">
+                                                                    And {crmConflicts.length - 25} more. The export lists every one.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleExportCrmAssignments}
+                                                        className="px-4 py-2 bg-card-3 hover:bg-hover text-label rounded-lg border border-separator-strong font-bold text-xs transition-colors"
+                                                    >
+                                                        Download CRM owner list for the sheet
+                                                    </button>
                                                 </div>
                                             </div>
                                         )}
@@ -2597,7 +2712,7 @@ const App = () => {
             }
             searchTerm={searchTerm}
             onSearch={setSearchTerm}
-            onSync={rights.canSyncSheets ? () => handleCombinedSync() : undefined}
+            onSync={rights.canSyncSheets ? () => handleGoogleSync() : undefined}
             isSyncing={isSyncing}
             readOnly={rights.isViewer}
             dataAsOf={sheetUpdatedTillDate}
@@ -2685,7 +2800,6 @@ const App = () => {
                     existingRecords={appData}
                     incomingRecords={pendingSync.records}
                     updatedTillDate={pendingSync.updatedTillDate}
-                    users={users}
                     sourceName={pendingSync.sourceName}
                     onConfirm={handleConfirmSyncReconciliation}
                     onCancel={handleCancelSyncReconciliation}

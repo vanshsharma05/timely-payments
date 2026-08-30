@@ -1,219 +1,135 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, User, UserRole, companyKey } from '../types';
-import { financialsFromSheet, processStatuses } from '../services/googleSheetService';
+import { Outstanding, companyKey } from '../types';
+import { mergeWithExistingFollowUps, needsClearing } from '../services/googleSheetService';
 
 export interface SyncReconciliationModalProps {
     incomingRecords: Outstanding[];
     existingRecords: Outstanding[];
-    users: User[];
     updatedTillDate?: string;
     sourceName?: string;
     onConfirm: (mergedRecords: Outstanding[]) => void;
     onCancel: () => void;
 }
 
-export type CrmAssignmentMode = 'keep_earlier' | 'use_new_sync' | 'custom';
+/** What the import will do to one account. */
+type Effect = 'updated' | 'added' | 'settled';
 
+interface ReviewRow {
+    id: string;
+    company: string;
+    effect: Effect;
+    /** The balance after the import. */
+    amount: number;
+    /** What it was before — only interesting on a settled row. */
+    was: number;
+}
+
+/**
+ * The last look before an import is written.
+ *
+ * It used to ask which CRM should win, the sheet's or the app's. That question
+ * is gone: the outstanding sheet is the ledger of what is owed and nothing more,
+ * and who owns an account is decided in the app. So this is now a plain preview
+ * of three things — what gets new figures, what arrives as a new customer, and
+ * what gets settled to nil because the sheet has stopped listing it.
+ *
+ * Nothing is recomputed here. Confirming runs mergeWithExistingFollowUps(), the
+ * same function a sync runs when there is nothing to review, so what is shown
+ * and what is written cannot drift apart.
+ */
 export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = ({
     incomingRecords,
     existingRecords,
-    users,
     updatedTillDate,
     sourceName = 'Google Sheet',
     onConfirm,
     onCancel,
 }) => {
-    const crmUsers = useMemo(() => users.filter(u => u.role === UserRole.CRM), [users]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [viewFilter, setViewFilter] = useState<'all' | 'added' | 'settled'>('all');
 
-    // Build map of existing records by company normalized name and id
-    const existingMap = useMemo(() => {
-        const map = new Map<string, Outstanding>();
-        existingRecords.forEach(item => {
-            map.set(companyKey(item.company), item);
-            map.set(item.id, item);
-        });
-        return map;
-    }, [existingRecords]);
-
-    // Analyze overlapping, differing, and new records
     const analysis = useMemo(() => {
-        let matchedCount = 0;
-        let diffCrmCount = 0;
-        let newAccountsCount = 0;
+        const existingByKey = new Map<string, Outstanding>();
+        existingRecords.forEach(item => {
+            existingByKey.set(companyKey(item.company), item);
+            existingByKey.set(item.id, item);
+        });
 
-        const customerRows = incomingRecords.map(incoming => {
-            const key = companyKey(incoming.company);
-            const existing = existingMap.get(key) || existingMap.get(incoming.id);
+        const rows: ReviewRow[] = [];
+        const matchedIds = new Set<string>();
+        let updatedCount = 0;
+        let addedCount = 0;
 
-            const earlierCrm = existing?.crmOwnerId?.trim() || '';
-            const newCrm = incoming.crmOwnerId?.trim() || '';
-            const isMatched = !!existing;
-            const isCrmDiff = isMatched && earlierCrm.toUpperCase() !== newCrm.toUpperCase();
+        incomingRecords.forEach(item => {
+            const existing = existingByKey.get(companyKey(item.company)) || existingByKey.get(item.id);
+            if (existing) matchedIds.add(existing.id);
+            if (existing) updatedCount++;
+            else addedCount++;
 
-            if (isMatched) {
-                matchedCount++;
-                if (isCrmDiff) diffCrmCount++;
-            } else {
-                newAccountsCount++;
-            }
+            rows.push({
+                id: item.id,
+                company: item.company,
+                effect: existing ? 'updated' : 'added',
+                amount: item.total || 0,
+                was: existing?.total || 0,
+            });
+        });
 
-            return {
-                id: incoming.id,
-                company: incoming.company,
-                total: incoming.total,
-                isMatched,
-                isCrmDiff,
-                earlierCrm,
-                newCrm,
-                // Default chosen CRM starts as earlier if matched, else new
-                chosenCrm: earlierCrm || newCrm,
-                existingRecord: existing,
-                incomingRecord: incoming
-            };
+        // On file, not in this sheet. The sheet is the whole of what is owed, so
+        // a balance still standing against one of these has been paid.
+        const unlisted = existingRecords.filter(item => !matchedIds.has(item.id));
+        const settling = unlisted.filter(needsClearing);
+        settling.forEach(item => {
+            rows.push({
+                id: item.id,
+                company: item.company,
+                effect: 'settled',
+                amount: 0,
+                was: item.total || 0,
+            });
         });
 
         return {
-            customerRows,
+            rows,
             totalIncoming: incomingRecords.length,
-            matchedCount,
-            diffCrmCount,
-            newAccountsCount,
-            retainedCount: existingRecords.filter(
-                e => !incomingRecords.some(i => companyKey(i.company) === companyKey(e.company))
-            ).length,
+            updatedCount,
+            addedCount,
+            untouchedCount: unlisted.length - settling.length,
+            settledCount: settling.length,
+            settledAmount: settling.reduce((sum, i) => sum + Math.abs(Number(i.total) || 0), 0),
         };
-    }, [incomingRecords, existingMap]);
-
-    const [assignmentMode, setAssignmentMode] = useState<CrmAssignmentMode>('keep_earlier');
-    
-    // Per-customer custom CRM selections (customerId -> chosenCrm)
-    const [customAssignments, setCustomAssignments] = useState<Record<string, string>>(() => {
-        const initial: Record<string, string> = {};
-        analysis.customerRows.forEach(r => {
-            initial[r.id] = r.earlierCrm || r.newCrm;
-        });
-        return initial;
-    });
-
-    const [searchTerm, setSearchTerm] = useState('');
-    const [viewFilter, setViewFilter] = useState<'all' | 'diff_only' | 'new_only'>('all');
-
-    // Handle global mode changes
-    const handleModeChange = (mode: CrmAssignmentMode) => {
-        setAssignmentMode(mode);
-        const updated: Record<string, string> = {};
-        analysis.customerRows.forEach(r => {
-            if (mode === 'keep_earlier') {
-                updated[r.id] = r.earlierCrm || r.newCrm;
-            } else if (mode === 'use_new_sync') {
-                updated[r.id] = r.newCrm || r.earlierCrm;
-            } else {
-                updated[r.id] = customAssignments[r.id] || (r.earlierCrm || r.newCrm);
-            }
-        });
-        setCustomAssignments(updated);
-    };
-
-    const handleSingleCustomerCrmChange = (id: string, crm: string) => {
-        setCustomAssignments(prev => ({
-            ...prev,
-            [id]: crm
-        }));
-        if (assignmentMode !== 'custom') {
-            setAssignmentMode('custom');
-        }
-    };
-
-    const handleSetAllToEarlier = () => {
-        const updated: Record<string, string> = {};
-        analysis.customerRows.forEach(r => {
-            updated[r.id] = r.earlierCrm || r.newCrm;
-        });
-        setCustomAssignments(updated);
-        setAssignmentMode('keep_earlier');
-    };
-
-    const handleSetAllToNew = () => {
-        const updated: Record<string, string> = {};
-        analysis.customerRows.forEach(r => {
-            updated[r.id] = r.newCrm || r.earlierCrm;
-        });
-        setCustomAssignments(updated);
-        setAssignmentMode('use_new_sync');
-    };
+    }, [incomingRecords, existingRecords]);
 
     const filteredRows = useMemo(() => {
-        return analysis.customerRows.filter(r => {
-            if (viewFilter === 'diff_only' && !r.isCrmDiff) return false;
-            if (viewFilter === 'new_only' && r.isMatched) return false;
-            if (!searchTerm.trim()) return true;
-
-            const q = searchTerm.toLowerCase();
-            return (
-                r.company.toLowerCase().includes(q) ||
-                r.earlierCrm.toLowerCase().includes(q) ||
-                r.newCrm.toLowerCase().includes(q) ||
-                (customAssignments[r.id] && customAssignments[r.id].toLowerCase().includes(q))
-            );
+        const q = searchTerm.trim().toLowerCase();
+        return analysis.rows.filter(row => {
+            if (viewFilter === 'added' && row.effect !== 'added') return false;
+            if (viewFilter === 'settled' && row.effect !== 'settled') return false;
+            if (!q) return true;
+            return row.company.toLowerCase().includes(q);
         });
-    }, [analysis.customerRows, viewFilter, searchTerm, customAssignments]);
+    }, [analysis.rows, viewFilter, searchTerm]);
+
+    const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
 
     const handleApplySync = () => {
-        // Construct final merged list
-        const matchedIds = new Set<string>();
-        const merged: Outstanding[] = incomingRecords.map(item => {
-            const key = companyKey(item.company);
-            const existing = existingMap.get(key) || existingMap.get(item.id);
-            if (existing) matchedIds.add(existing.id);
-
-            // Determine final CRM
-            let finalCrm = item.crmOwnerId;
-            if (assignmentMode === 'keep_earlier' && existing?.crmOwnerId) {
-                finalCrm = existing.crmOwnerId;
-            } else if (assignmentMode === 'use_new_sync') {
-                finalCrm = item.crmOwnerId || existing?.crmOwnerId || '';
-            } else if (assignmentMode === 'custom' && customAssignments[item.id]) {
-                finalCrm = customAssignments[item.id];
-            } else if (existing?.crmOwnerId) {
-                finalCrm = existing.crmOwnerId;
-            }
-
-            if (existing) {
-                // Start from the row on file and overwrite only what the sheet
-                // is the authority on. Building from the sheet row instead threw
-                // away credit limits, GSTINs, designations, extra contacts and
-                // expected collections on every account it matched.
-                return {
-                    ...existing,
-                    ...financialsFromSheet(item),
-                    crmOwnerId: finalCrm,
-                    isNewCustomer: false,
-                    contactPerson:
-                        existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
-                            ? existing.contactPerson
-                            : item.contactPerson,
-                    contactNumber: existing.contactNumber || item.contactNumber,
-                    email: existing.email || item.email,
-                };
-            }
-
-            // Brand new customer record detected from sync
-            return {
-                ...item,
-                crmOwnerId: finalCrm,
-                isNewCustomer: true,
-                addedAt: new Date().toISOString(),
-            };
-        });
-
-        // Accounts this sheet does not mention are kept, not deleted.
-        const retained = existingRecords.filter(item => !matchedIds.has(item.id));
-        const finalProcessed = processStatuses([...merged, ...retained]);
-        onConfirm(finalProcessed);
+        onConfirm(mergeWithExistingFollowUps(existingRecords, incomingRecords));
     };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+    const EFFECT: Record<Effect, { label: string; chip: string }> = {
+        updated: {
+            label: 'Figures updated',
+            chip: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
+        },
+        added: {
+            label: 'New customer — needs a CRM',
+            chip: 'bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300',
+        },
+        settled: {
+            label: 'Not in sheet — settled to zero',
+            chip: 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300',
+        },
     };
 
     return (
@@ -224,7 +140,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                     <div>
                         <div className="flex items-center gap-2">
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300">
-                                Data Sync Review
+                                Outstanding Import
                             </span>
                             {updatedTillDate && (
                                 <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -233,126 +149,63 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                             )}
                         </div>
                         <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                            Review CRM Assignments for Synced Data
+                            Review before the balances are updated
                         </h2>
                         <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            {analysis.totalIncoming} records loaded from {sourceName}. Choose whether to retain previously assigned CRMs or apply new assignments from the sync.
+                            {analysis.totalIncoming} rows read from {sourceName}. This changes money only — contact
+                            details, CRM owners, follow-ups and cheques are left exactly as they are.
                         </p>
                     </div>
                     <button
                         onClick={onCancel}
                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
-                        title="Cancel Sync"
+                        title="Cancel — nothing is written"
                     >
                         ✕
                     </button>
                 </div>
 
-                {/* KPI Overview Pills */}
-                <div className="px-5 sm:px-6 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700/60 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                {/* What this import does */}
+                <div className="px-5 sm:px-6 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">Total Synced</span>
+                        <span className="text-gray-500 dark:text-gray-400 block">Rows in sheet</span>
                         <span className="text-lg font-bold text-gray-900 dark:text-white">{analysis.totalIncoming}</span>
                     </div>
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">Existing Accounts</span>
-                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{analysis.matchedCount}</span>
+                        <span className="text-gray-500 dark:text-gray-400 block">Existing accounts updated</span>
+                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{analysis.updatedCount}</span>
                     </div>
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">CRM Changed/Differs</span>
-                        <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{analysis.diffCrmCount}</span>
+                        <span
+                            className="text-gray-500 dark:text-gray-400 block"
+                            title="Names in the sheet that are not in the customer list yet. They are added so their money is counted, with no CRM against them — assign one from the customer list."
+                        >
+                            New customers
+                        </span>
+                        <span className="text-lg font-bold text-green-600 dark:text-green-400">{analysis.addedCount}</span>
+                        {analysis.addedCount > 0 && (
+                            <span className="block text-[11px] text-green-700 dark:text-green-400 font-semibold leading-tight mt-0.5">
+                                will need a CRM
+                            </span>
+                        )}
                     </div>
                     <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">New Accounts</span>
-                        <span className="text-lg font-bold text-green-600 dark:text-green-400">{analysis.newAccountsCount}</span>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block" title="Accounts already in the book that this sheet does not list. They are kept, not deleted.">Kept (not in sheet)</span>
-                        <span className="text-lg font-bold text-gray-600 dark:text-gray-300">{analysis.retainedCount}</span>
+                        <span
+                            className="text-gray-500 dark:text-gray-400 block"
+                            title="Accounts in the book that this sheet does not list. The customer, their contacts, cheques and history stay — only the balance goes to zero, because the sheet is the whole of what is owed."
+                        >
+                            Settled to zero
+                        </span>
+                        <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{analysis.settledCount}</span>
+                        {analysis.settledCount > 0 && (
+                            <span className="block text-[11px] text-amber-600 dark:text-amber-400 font-semibold leading-tight mt-0.5">
+                                {formatCurrency(analysis.settledAmount)} written off
+                            </span>
+                        )}
                     </div>
                 </div>
 
-                {/* Assignment Strategy Selector */}
-                <div className="p-5 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                        Assignment Strategy
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <button
-                            type="button"
-                            onClick={() => handleModeChange('keep_earlier')}
-                            className={`text-left p-3.5 rounded-xl border-2 transition-all ${
-                                assignmentMode === 'keep_earlier'
-                                    ? 'border-green-600 bg-green-50/70 dark:bg-green-950/40 ring-1 ring-green-500'
-                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-gray-900 dark:text-white">Keep Earlier Assigned CRM</span>
-                                <input
-                                    type="radio"
-                                    name="crm_strategy"
-                                    checked={assignmentMode === 'keep_earlier'}
-                                    onChange={() => handleModeChange('keep_earlier')}
-                                    className="text-green-600 dark:text-green-400 focus:ring-accent"
-                                />
-                            </div>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                                Retain all previously assigned CRMs for existing customers. New customers take CRM from sync.
-                            </p>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => handleModeChange('use_new_sync')}
-                            className={`text-left p-3.5 rounded-xl border-2 transition-all ${
-                                assignmentMode === 'use_new_sync'
-                                    ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-1 ring-blue-500'
-                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-gray-900 dark:text-white">Update to New Synced CRM</span>
-                                <input
-                                    type="radio"
-                                    name="crm_strategy"
-                                    checked={assignmentMode === 'use_new_sync'}
-                                    onChange={() => handleModeChange('use_new_sync')}
-                                    className="text-blue-600 dark:text-blue-400 focus:ring-accent"
-                                />
-                            </div>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                                Overwrite CRM assignments with the newly synced spreadsheet/file data.
-                            </p>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => handleModeChange('custom')}
-                            className={`text-left p-3.5 rounded-xl border-2 transition-all ${
-                                assignmentMode === 'custom'
-                                    ? 'border-purple-600 bg-purple-50/70 dark:bg-purple-950/40 ring-1 ring-purple-500'
-                                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-gray-900 dark:text-white">Custom Per-Customer</span>
-                                <input
-                                    type="radio"
-                                    name="crm_strategy"
-                                    checked={assignmentMode === 'custom'}
-                                    onChange={() => handleModeChange('custom')}
-                                    className="text-accent focus:ring-accent"
-                                />
-                            </div>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                                Manually select or toggle the CRM owner for individual customers below.
-                            </p>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Customer Table Filter & Controls */}
+                {/* Filters */}
                 <div className="p-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -364,193 +217,98 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                                     : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                             }`}
                         >
-                            All ({analysis.totalIncoming})
+                            Everything ({analysis.rows.length})
                         </button>
                         <button
                             type="button"
-                            onClick={() => setViewFilter('diff_only')}
+                            onClick={() => setViewFilter('added')}
                             className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                                viewFilter === 'diff_only'
-                                    ? 'bg-amber-600 text-white'
-                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                            }`}
-                        >
-                            CRM Changed ({analysis.diffCrmCount})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setViewFilter('new_only')}
-                            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                                viewFilter === 'new_only'
+                                viewFilter === 'added'
                                     ? 'bg-green-600 text-white'
                                     : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
                             }`}
                         >
-                            New Accounts ({analysis.newAccountsCount})
+                            New customers ({analysis.addedCount})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewFilter('settled')}
+                            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                                viewFilter === 'settled'
+                                    ? 'bg-amber-600 text-white'
+                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
+                            }`}
+                        >
+                            Settled ({analysis.settledCount})
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="text"
-                            placeholder="Search company, CRM..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full sm:w-56 px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                        />
-                        <button
-                            type="button"
-                            onClick={handleSetAllToEarlier}
-                            className="px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                            title="Set all to earlier CRM"
-                        >
-                            Reset Earlier
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleSetAllToNew}
-                            className="px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
-                            title="Set all to new synced CRM"
-                        >
-                            Set All New
-                        </button>
-                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search company…"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="w-full sm:w-56 px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
                 </div>
 
                 {/* Table */}
-                <div className="flex-1 overflow-y-auto min-h-[260px] max-h-[420px] divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="flex-1 overflow-y-auto min-h-[260px] max-h-[420px]">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-xs">
                         <thead className="bg-gray-100/70 dark:bg-gray-800/80 sticky top-0 z-10">
                             <tr>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Customer Company</th>
-                                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Total Due</th>
-                                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Earlier Assigned CRM</th>
-                                <th className="px-3 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">New Synced CRM</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Assign To CRM (Final)</th>
+                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Customer</th>
+                                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 dark:text-gray-300">Balance now</th>
+                                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 dark:text-gray-300">After import</th>
+                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">What happens</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
                             {filteredRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="text-center py-8 text-gray-400">
-                                        No customer records match the current filter.
+                                    <td colSpan={4} className="text-center py-8 text-gray-400">
+                                        Nothing matches the current filter.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredRows.map(row => {
-                                    const selectedCrm = customAssignments[row.id] || row.chosenCrm;
-                                    const hasConflict = row.isCrmDiff;
-
-                                    return (
-                                        <tr
-                                            key={row.id}
-                                            className={`hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors ${
-                                                hasConflict ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
-                                            }`}
-                                        >
-                                            <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span>{row.company}</span>
-                                                    {!row.isMatched && (
-                                                        <span className="px-1.5 py-0.5 rounded text-[11.5px] font-bold bg-green-100 dark:bg-green-900/60 text-green-700 dark:text-green-300">
-                                                            NEW
-                                                        </span>
-                                                    )}
-                                                    {hasConflict && (
-                                                        <span className="px-1.5 py-0.5 rounded text-[11.5px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300">
-                                                            CRM DIFF
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-3 py-2.5 font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                                                {formatCurrency(row.total)}
-                                            </td>
-                                            <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                                                {row.earlierCrm ? (
-                                                    <span className="px-2 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200">
-                                                        {row.earlierCrm}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-gray-400 italic">None (New)</span>
-                                                )}
-                                            </td>
-                                            <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                                                {row.newCrm ? (
-                                                    <span className={`px-2 py-0.5 rounded font-medium ${
-                                                        hasConflict
-                                                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-bold'
-                                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
-                                                    }`}>
-                                                        {row.newCrm}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-gray-400 italic">Unspecified</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-2.5">
-                                                <div className="flex items-center gap-1.5">
-                                                    <select
-                                                        aria-label="CRM owner for this account"
-                                                        value={selectedCrm}
-                                                        onChange={e => handleSingleCustomerCrmChange(row.id, e.target.value)}
-                                                        className="px-2.5 py-1 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        {row.earlierCrm && !crmUsers.some(u => u.name.toUpperCase() === row.earlierCrm.toUpperCase() || u.id.toUpperCase() === row.earlierCrm.toUpperCase()) && (
-                                                            <option value={row.earlierCrm}>{row.earlierCrm} (Earlier)</option>
-                                                        )}
-                                                        {row.newCrm && !crmUsers.some(u => u.name.toUpperCase() === row.newCrm.toUpperCase() || u.id.toUpperCase() === row.newCrm.toUpperCase()) && (
-                                                            <option value={row.newCrm}>{row.newCrm} (Sheet)</option>
-                                                        )}
-                                                        {crmUsers.map(user => (
-                                                            <option key={user.id} value={user.id}>
-                                                                {user.name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                    
-                                                    {row.earlierCrm && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSingleCustomerCrmChange(row.id, row.earlierCrm)}
-                                                            className={`px-1.5 py-0.5 text-[11.5px] font-medium rounded ${
-                                                                selectedCrm === row.earlierCrm
-                                                                    ? 'bg-green-100 text-green-800 font-bold dark:bg-green-900/60 dark:text-green-300'
-                                                                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
-                                                            }`}
-                                                            title="Use Earlier CRM"
-                                                        >
-                                                            Earlier
-                                                        </button>
-                                                    )}
-                                                    {row.newCrm && row.newCrm !== row.earlierCrm && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSingleCustomerCrmChange(row.id, row.newCrm)}
-                                                            className={`px-1.5 py-0.5 text-[11.5px] font-medium rounded ${
-                                                                selectedCrm === row.newCrm
-                                                                    ? 'bg-blue-100 text-blue-800 font-bold dark:bg-blue-900/60 dark:text-blue-300'
-                                                                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
-                                                            }`}
-                                                            title="Use New Synced CRM"
-                                                        >
-                                                            New
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
+                                filteredRows.slice(0, 400).map(row => (
+                                    <tr
+                                        key={`${row.effect}_${row.id}`}
+                                        className={`hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors ${
+                                            row.effect === 'settled' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
+                                        }`}
+                                    >
+                                        <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{row.company}</td>
+                                        <td className="px-3 py-2.5 text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                            {row.effect === 'added' ? '—' : formatCurrency(row.was)}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right font-semibold text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                                            {formatCurrency(row.amount)}
+                                        </td>
+                                        <td className="px-4 py-2.5">
+                                            <span className={`px-2 py-0.5 rounded font-semibold ${EFFECT[row.effect].chip}`}>
+                                                {EFFECT[row.effect].label}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
                             )}
                         </tbody>
                     </table>
+                    {filteredRows.length > 400 && (
+                        <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
+                            Showing the first 400 of {filteredRows.length}. Search to narrow it down.
+                        </p>
+                    )}
                 </div>
 
-                {/* Footer Controls */}
+                {/* Footer */}
                 <div className="p-4 sm:px-6 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-3">
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                        <strong>Note:</strong> All follow-up history, notes, next follow-up dates, and collector assignments are safely preserved.
+                        {analysis.untouchedCount > 0 && (
+                            <span>{analysis.untouchedCount} account{analysis.untouchedCount === 1 ? '' : 's'} already at zero are untouched. </span>
+                        )}
+                        <strong>Follow-ups, notes, contacts, cheques and CRM owners are kept.</strong>
                     </div>
                     <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                         <button
@@ -565,9 +323,9 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                             onClick={handleApplySync}
                             className="px-5 py-2 text-xs font-bold rounded-xl bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors flex items-center gap-1.5"
                         >
-                            <span>Apply Sync & Update Dashboard</span>
+                            <span>Update balances</span>
                             <span className="px-1.5 py-0.5 rounded-full bg-green-700 text-[11.5px]">
-                                {analysis.totalIncoming} records
+                                {analysis.totalIncoming} rows
                             </span>
                         </button>
                     </div>

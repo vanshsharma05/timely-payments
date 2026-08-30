@@ -25,6 +25,35 @@ export function parseAmountAndType(val: any): { amount: number; type: BalanceTyp
 }
 
 
+/**
+ * Ways a spreadsheet says "nothing here" that are not blank.
+ *
+ * `#N/A`, `#REF!` and the rest arrive whenever a formula cannot resolve, and
+ * people type the others by hand. Every one of them is a value the sheet is
+ * using to mean the absence of a value.
+ */
+const SHEET_NON_VALUES = new Set(['NA', 'N/A', 'NIL', 'NULL', 'NONE', '-', '--', '.', '0']);
+
+/** True when a cell holds a spreadsheet error or a hand-written "nothing". */
+export const isSheetBlank = (value?: string | null): boolean => {
+    const v = (value || '').trim().toUpperCase();
+    return !v || v.startsWith('#') || SHEET_NON_VALUES.has(v);
+};
+
+/**
+ * A CRM code read from a sheet, or '' when the cell does not hold one.
+ *
+ * The outstanding sheet does not have the CRM typed into it — the column looks
+ * the name up from the Customer Master. So a customer who is not in the master
+ * reaches us as "#N/A", and a broken formula as "#REF!". Taken at face value
+ * those became CRM codes: accounts filed under an owner called "#N/A", counted
+ * on the CRM performance table as though "#N/A" were a colleague, and reachable
+ * by nobody. Read as blank, they leave the account unassigned — which is what
+ * the sheet is actually saying — and the next sync can still fill it in.
+ */
+export const crmFromSheet = (value?: string | null): string =>
+    isSheetBlank(value) ? '' : ownerKey(value);
+
 // Clean CSV parser for handling quotes and comma delimiters
 export function parseCSVMatrix(text: string): string[][] {
     const matrix: string[][] = [[]];
@@ -117,7 +146,8 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
     for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         const companyName = r[colMap.company]?.trim();
-        if (!companyName) continue;
+        // A row whose name is "#N/A" is a broken lookup, not a customer.
+        if (!companyName || isSheetBlank(companyName)) continue;
 
         const totalParsed = parseAmountAndType(r[colMap.total]);
         const a1Parsed = parseAmountAndType(r[colMap.a1_45]);
@@ -133,7 +163,7 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
             ? parseAmountAndType(r[colMap.dueOver45])
             : { amount: a2Parsed.amount + over90Parsed.amount, type: 'Dr' as BalanceType };
 
-        const crm = ownerKey(r[colMap.crm]);
+        const crm = crmFromSheet(r[colMap.crm]);
         const explicitContact = (colMap.contactPerson >= 0 && colMap.contactPerson < r.length) ? r[colMap.contactPerson]?.trim() : '';
         const mobile = r[colMap.mobile] ? r[colMap.mobile].trim() : '';
         const email = r[colMap.email] ? r[colMap.email].trim() : '';
@@ -197,10 +227,15 @@ export function customerIdFor(company: string): string {
  * The columns an invoice sheet is the authority on. Everything else — contacts,
  * master data, follow-ups, notes, expected collections — belongs to the app and
  * survives an import untouched.
+ *
+ * The company **name** is not in this list. It is customer data, and customer
+ * data is the app's: a name corrected here was being overwritten by the sheet's
+ * spelling on the next sync, which is the same complaint that was made about
+ * CRM owners. Matching does not depend on it either — accounts are matched on a
+ * normalised key or on the id, both of which survive a rename.
  */
 export function financialsFromSheet(sheet: Outstanding) {
     return {
-        company: sheet.company,
         total: sheet.total,
         totalType: sheet.totalType,
         ageing: sheet.ageing,
@@ -213,17 +248,114 @@ export function financialsFromSheet(sheet: Outstanding) {
 }
 
 /**
+ * What an account's figures become when the outstanding sheet stops listing it.
+ *
+ * The outstanding sheet is the whole of what is owed. A customer who drops off
+ * it has cleared their balance — so the record stays (with its contacts,
+ * cheques and history) but the money goes to nil. Leaving the last known figure
+ * in place is what had the app still chasing accounts, and still counting them
+ * in every CRM's total, after the accounts team had taken them off the sheet.
+ *
+ * Urgency is a reading of those figures, so it is cleared with them.
+ */
+export function clearedFinancials() {
+    return {
+        total: 0,
+        totalType: 'Dr' as BalanceType,
+        ageing: { '1-45': 0, '46-90': 0, '91-135': 0, '>135': 0 },
+        ageingTypes: {},
+        over90: 0,
+        over90Type: 'Dr' as BalanceType,
+        dueOver45: 0,
+        dueOver45Type: 'Dr' as BalanceType,
+        isUrgent: false,
+    };
+}
+
+/** True when this row still carries a balance the sheet no longer accounts for. */
+export const needsClearing = (item: Outstanding): boolean =>
+    Math.abs(Number(item.total) || 0) > 0;
+
+/** Settles every account handed to it; summariseUnlisted() counts them first. */
+export function settleUnlisted(rows: Outstanding[]): Outstanding[] {
+    return rows.map(item => (needsClearing(item) ? { ...item, ...clearedFinancials() } : item));
+}
+
+/**
+ * What a sync is about to settle: the accounts on file that the incoming sheet
+ * does not list, and still carry a balance. Counted before the merge so the
+ * sync can say what it did instead of quietly writing off money.
+ */
+export function summariseUnlisted(existingRecords: Outstanding[], incomingRecords: Outstanding[]): { count: number; amount: number } {
+    if (!existingRecords?.length || !incomingRecords?.length) return { count: 0, amount: 0 };
+    const incomingKeys = new Set(incomingRecords.map(i => companyKey(i.company)));
+    const clearing = existingRecords.filter(e => !incomingKeys.has(companyKey(e.company)) && needsClearing(e));
+    return {
+        count: clearing.length,
+        amount: clearing.reduce((sum, e) => sum + Math.abs(Number(e.total) || 0), 0),
+    };
+}
+
+/**
+ * How many names in the incoming sheet the customer list has never seen.
+ *
+ * They will be added with no owner, so the sync can say how many accounts are
+ * about to need one instead of leaving them to be noticed.
+ */
+export function countNewNames(existingRecords: Outstanding[], incomingRecords: Outstanding[]): number {
+    if (!incomingRecords?.length) return 0;
+    const known = new Set((existingRecords || []).map(e => companyKey(e.company)));
+    return incomingRecords.filter(i => !known.has(companyKey(i.company))).length;
+}
+
+/**
+ * A row the customer list has never seen, turned into a customer.
+ *
+ * The owner is dropped whatever the sheet said. Used for every account an
+ * outstanding import creates — including the very first import into an empty
+ * book, which otherwise took its owners from the sheet and left the rule true
+ * in every case but one.
+ *
+ * `isNewCustomer` is deliberately NOT set. It does not mean "recently arrived";
+ * it means "created here rather than read from a sheet", and it is what the
+ * customer list's Created / Sheet Synced filter runs on. Setting it here would
+ * file every account the sheet brought in under "Created" and hide it from
+ * "Sheet Synced". What marks these accounts as needing attention is that they
+ * have no owner, which the unassigned queue already shows.
+ */
+const asNewCustomer = (item: Outstanding): Outstanding => ({
+    ...item,
+    crmOwnerId: '',
+    isNewCustomer: false,
+    addedAt: item.addedAt || new Date().toISOString(),
+});
+
+/**
  * Folds a fresh sheet into the book already on file.
  *
- * Two rules matter for the shared database: a matched customer keeps the id it
- * already has, and a customer the sheet no longer lists is kept rather than
- * dropped. Dropping it here would delete the row — and its cheques and history
- * — on the next sync. Removing a customer is a deliberate act, done from the
- * customer list.
+ * **The outstanding sheet changes money and nothing else.** It is the ledger of
+ * what is owed; the customer — who they are, who to ring, who owns them — lives
+ * in the app. So a matched account takes its figures from the sheet and keeps
+ * everything else it has, including its owner and its contact details.
+ *
+ * Two more rules matter against a shared database:
+ *
+ *  - A matched customer keeps the id it already has. Old ids carried the
+ *    sheet's row number, so re-ordering the sheet gave one customer a new id —
+ *    against a database that means deleting the row and inserting a copy,
+ *    taking its cheques with it.
+ *  - A customer the sheet no longer lists is kept, and settled to nil. Dropping
+ *    it would delete the row and its history on the next sync; removing a
+ *    customer is a deliberate act, done from the customer list.
+ *
+ * A name the sheet carries that the app has never seen becomes a new customer
+ * with **no owner**, waiting in the unassigned queue. The money is never left
+ * out of the book, and the sheet still does not get to say whose account it is.
  */
+
 export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRecords: Outstanding[]): Outstanding[] {
     if (!existingRecords || existingRecords.length === 0) {
-        return processStatuses(newRecords || []);
+        return processStatuses((newRecords || []).map(asNewCustomer));
     }
     if (!newRecords || newRecords.length === 0) {
         return processStatuses(existingRecords || []);
@@ -244,25 +376,26 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
 
         if (existing) {
             matchedIds.add(existing.id);
+            // Figures from the sheet; the customer is the app's. The owner is
+            // still passed through crmFromSheet() so a "#N/A" stored by an
+            // older import — when a failed lookup was read as a name — clears
+            // itself and the account surfaces in the unassigned queue.
             return {
                 ...existing,
                 ...financialsFromSheet(item),
-                crmOwnerId: item.crmOwnerId || existing.crmOwnerId,
-                // The sheet's contact details fill gaps; they never overwrite
-                // what someone has taken the trouble to record.
-                contactPerson:
-                    existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
-                        ? existing.contactPerson
-                        : item.contactPerson,
-                contactNumber: existing.contactNumber || item.contactNumber,
-                email: existing.email || item.email,
+                crmOwnerId: crmFromSheet(existing.crmOwnerId),
             };
         }
-        return item;
+
+        // A name the app has never seen. Seed it from the row — that is all we
+        // know about them — but leave the owner blank: who chases an account is
+        // decided in the app, never in the sheet.
+        return asNewCustomer(item);
     });
 
-    // Anything already on file that this sheet does not mention stays put.
-    const retained = existingRecords.filter(item => !matchedIds.has(item.id));
+    // Anything already on file that this sheet does not mention stays put, with
+    // nothing left owing against it.
+    const retained = settleUnlisted(existingRecords.filter(item => !matchedIds.has(item.id)));
 
     return processStatuses([...merged, ...retained]);
 }
@@ -476,7 +609,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
     for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         const companyName = (colMap.company >= 0 && colMap.company < r.length) ? r[colMap.company]?.trim() : '';
-        if (!companyName) continue;
+        if (!companyName || isSheetBlank(companyName)) continue;
 
         const contactPerson = (colMap.contactPerson >= 0 && colMap.contactPerson < r.length) ? r[colMap.contactPerson]?.trim() : 'Accounts Dept';
         const contactPost = (colMap.contactPost >= 0 && colMap.contactPost < r.length) ? r[colMap.contactPost]?.trim() : '';
@@ -487,7 +620,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
         const state = (colMap.state >= 0 && colMap.state < r.length) ? r[colMap.state]?.trim() : '';
         const address = (colMap.address >= 0 && colMap.address < r.length) ? r[colMap.address]?.trim() : '';
         const gstin = (colMap.gstin >= 0 && colMap.gstin < r.length) ? r[colMap.gstin]?.trim() : '';
-        const crm = ownerKey((colMap.crm >= 0 && colMap.crm < r.length) ? r[colMap.crm] : '');
+        const crm = crmFromSheet((colMap.crm >= 0 && colMap.crm < r.length) ? r[colMap.crm] : '');
         const rawLimit = (colMap.creditLimit >= 0 && colMap.creditLimit < r.length) ? r[colMap.creditLimit] : '';
         const creditLimit = rawLimit ? parseFloat(String(rawLimit).replace(/[^0-9.]/g, '')) || undefined : undefined;
         const rawTerms = (colMap.paymentTermsDays >= 0 && colMap.paymentTermsDays < r.length) ? r[colMap.paymentTermsDays] : '';
@@ -525,7 +658,8 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
                 post: 'Second Contact'
             }] : [],
             creationDate: new Date(),
-            isNewCustomer: true
+            // Read from a sheet, so not "created here" — see asNewCustomer().
+            isNewCustomer: false
         };
 
         parsed.push(item);
@@ -573,8 +707,33 @@ export async function fetchCustomerMasterSheetData(sheetUrl: string): Promise<{ 
     return parseCustomerMasterSheetCsv(csvContent);
 }
 
-// Merge Customer Master Data into existing application dataset
-export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], masterData: Outstanding[]): { updatedData: Outstanding[]; enrichedCount: number; newAccountsCount: number } {
+/** An account whose owner in the app no longer matches the one in the sheet. */
+export interface CrmConflict {
+    company: string;
+    appCrm: string;
+    sheetCrm: string;
+}
+
+/**
+ * The one-time customer import.
+ *
+ * This is a **seeding** step, not a sync. The customer database lives in the
+ * app: names, contacts, addresses, GSTINs, credit terms and ownership are
+ * maintained there, and new customers are added there. This exists to load a
+ * spreadsheet of customers into an empty book, and to bulk-add later if one
+ * ever needs loading again.
+ *
+ * So it never overwrites. Every field fills a blank or is left alone, which
+ * means running it twice cannot undo a correction somebody typed. It used to
+ * work the other way round — the sheet overwrote contacts, addresses, limits
+ * and terms on every run — which is why a phone number fixed during a call came
+ * back wrong the next morning.
+ *
+ * Where the sheet's CRM column disagrees with the app's, the app wins and the
+ * disagreement is reported, so the sheet can be brought in line rather than
+ * silently fighting the app.
+ */
+export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], masterData: Outstanding[]): { updatedData: Outstanding[]; enrichedCount: number; newAccountsCount: number; crmConflicts: CrmConflict[] } {
     const existingMap = new Map<string, Outstanding>();
     existingData.forEach(item => {
         const key = companyKey(item.company);
@@ -583,6 +742,7 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
 
     let enrichedCount = 0;
     let newAccountsCount = 0;
+    const crmConflicts: CrmConflict[] = [];
     const mergedList: Outstanding[] = [...existingData];
 
     // Index once. Scanning the list per master row is quadratic, and with a few
@@ -597,19 +757,38 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
         if (existingIdx >= 0) {
             // Enrich existing customer
             const current = mergedList[existingIdx];
+            if (
+                crmFromSheet(masterItem.crmOwnerId) &&
+                crmFromSheet(current.crmOwnerId) &&
+                ownerKey(masterItem.crmOwnerId) !== ownerKey(current.crmOwnerId)
+            ) {
+                crmConflicts.push({
+                    company: current.company,
+                    appCrm: current.crmOwnerId,
+                    sheetCrm: masterItem.crmOwnerId,
+                });
+            }
+            // Every line reads app-first: the import fills what is missing and
+            // touches nothing else. 'Accounts Dept' is the placeholder the
+            // parsers write when a row has no name, so it counts as missing.
+            const named = current.contactPerson && current.contactPerson !== 'Accounts Dept';
             const updated: Outstanding = {
                 ...current,
-                contactPerson: masterItem.contactPerson && masterItem.contactPerson !== 'Accounts Dept' ? masterItem.contactPerson : current.contactPerson,
-                contactPost: masterItem.contactPost || current.contactPost,
-                contactNumber: masterItem.contactNumber || current.contactNumber,
-                email: masterItem.email || current.email,
-                city: masterItem.city || current.city,
-                state: masterItem.state || current.state,
-                address: masterItem.address || current.address,
-                gstin: masterItem.gstin || current.gstin,
-                creditLimit: masterItem.creditLimit !== undefined ? masterItem.creditLimit : current.creditLimit,
-                paymentTermsDays: masterItem.paymentTermsDays !== undefined ? masterItem.paymentTermsDays : current.paymentTermsDays,
-                crmOwnerId: masterItem.crmOwnerId || current.crmOwnerId,
+                contactPerson: named ? current.contactPerson : (masterItem.contactPerson || current.contactPerson),
+                contactPost: current.contactPost || masterItem.contactPost,
+                contactNumber: current.contactNumber || masterItem.contactNumber,
+                email: current.email || masterItem.email,
+                city: current.city || masterItem.city,
+                state: current.state || masterItem.state,
+                address: current.address || masterItem.address,
+                gstin: current.gstin || masterItem.gstin,
+                creditLimit: current.creditLimit !== undefined ? current.creditLimit : masterItem.creditLimit,
+                paymentTermsDays: current.paymentTermsDays !== undefined ? current.paymentTermsDays : masterItem.paymentTermsDays,
+                // Whoever the app says owns the account keeps it. On a first
+                // import nothing is set yet, so the sheet's column seeds it —
+                // and a stored "#N/A" from an earlier import is blank, not an
+                // owner.
+                crmOwnerId: crmFromSheet(current.crmOwnerId) || masterItem.crmOwnerId,
                 // A grade somebody set in the app is a judgement about the
                 // account; the sheet only fills the gap where nobody has.
                 paymentRank: current.paymentRank || masterItem.paymentRank,
@@ -633,7 +812,8 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
     return {
         updatedData: processStatuses(mergedList),
         enrichedCount,
-        newAccountsCount
+        newAccountsCount,
+        crmConflicts
     };
 }
 

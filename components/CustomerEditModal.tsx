@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank } from '../types';
+import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can } from '../types';
 
 interface CustomerEditModalProps {
     customerToEdit: Outstanding | null; // null means Add New Customer
@@ -17,10 +17,19 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     users
 }) => {
     const isNew = !customerToEdit;
-    const permissions = currentUser?.permissions;
-    const isAdmin = currentUser?.role === UserRole.Admin;
-    const canEditFinancials = isAdmin || Boolean(permissions?.canEditFinancials);
-    const canReassignCrm = isAdmin || Boolean(permissions?.canReassignCrm) || Boolean(permissions?.canViewAllCrms);
+    // One reading of the matrix — can() falls back to the role's defaults where
+    // a profile has none, and lets an Admin through unconditionally.
+    const canEditFinancials = can(currentUser, 'canEditFinancials');
+    // Reading every CRM's accounts is not permission to move one between them.
+    // "View all CRMs" used to be accepted here as well, which handed a Viewer —
+    // who may change nothing at all — the owner dropdown.
+    //
+    // Choosing the owner while creating a customer is a different act from
+    // moving an existing account between colleagues, and anyone trusted to add
+    // a customer has to be able to answer it — otherwise the form asks for
+    // something it will not let them give.
+    const canReassignCrm = can(currentUser, 'canReassignCrm');
+    const canChooseOwner = canReassignCrm || (isNew && can(currentUser, 'canAddCustomer'));
 
     const crmUsers = users.filter(u => u.role === UserRole.CRM);
 
@@ -97,8 +106,14 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setCreditLimit(undefined);
             setPaymentTermsDays(undefined);
             setPaymentRank('');
-            // Default CRM to current user if CRM, or first CRM in list
-            setCrmOwnerId(currentUser?.role === UserRole.CRM ? currentUser.name : (crmUsers[0]?.name || 'ANKUR'));
+            // A CRM adding a customer is obviously its owner. For anybody else
+            // it is left blank on purpose and the form will not save without an
+            // answer: the customer database lives here now, so "who chases this
+            // account" is asked when the account is created. It used to default
+            // to whoever happened to be first in the list — which is how
+            // thousands of accounts ended up on one person's name without
+            // anyone deciding it.
+            setCrmOwnerId(currentUser?.role === UserRole.CRM ? currentUser.name : '');
             setTotal(0);
             setTotalType('Dr');
             setA1_45(0);
@@ -147,6 +162,10 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
         e.preventDefault();
         if (!company.trim()) {
             alert('Company name is required.');
+            return;
+        }
+        if (!crmOwnerId.trim()) {
+            alert('Choose the CRM who will own this customer.');
             return;
         }
 
@@ -271,11 +290,14 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
                                 CRM Owner <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
                             </label>
-                            {canReassignCrm ? (
+                            {canChooseOwner ? (
                                 <select aria-label="CRM Owner"
                                     value={crmOwnerId}
                                     onChange={e => setCrmOwnerId(e.target.value)}
-                                    className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-accent"
+                                    required
+                                    className={`w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-accent ${
+                                        crmOwnerId ? 'border-gray-300 dark:border-gray-700' : 'border-amber-400 dark:border-amber-600'
+                                    }`}
                                 >
                                     <option value="">Select CRM</option>
                                     {crmUsers.map(u => (
@@ -288,10 +310,16 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             ) : (
                                 <input aria-label="CRM Owner"
                                     type="text"
-                                    value={crmOwnerId}
+                                    value={crmOwnerId || 'Unassigned'}
                                     disabled
+                                    title="Your role cannot change who owns an account."
                                     className="w-full border rounded-xl bg-gray-100 dark:bg-gray-800/60 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-600 dark:text-gray-400 cursor-not-allowed"
                                 />
+                            )}
+                            {canChooseOwner && !crmOwnerId && (
+                                <p className="text-[11.5px] text-amber-700 dark:text-amber-400 font-semibold mt-1">
+                                    Pick who will chase this customer — it cannot be saved without one.
+                                </p>
                             )}
                         </div>
                     </div>

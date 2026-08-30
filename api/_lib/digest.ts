@@ -139,14 +139,39 @@ async function fetchAll<T>(db: SupabaseClient, table: string, columns: string): 
     return rows;
 }
 
+/**
+ * Roles that read the whole book unless the access form says otherwise.
+ * Mirrors DEFAULT_ROLE_PERMISSIONS.canViewAllCrms in types.ts, and the
+ * has_perm() fallback in schema.sql. Three copies, one table.
+ */
+const ROLE_READS_WHOLE_BOOK: Record<string, boolean> = {
+    Admin: true,
+    Manager: true,
+    Viewer: true,
+    CRM: false,
+    Collector: false,
+};
+
+/**
+ * Whether this person's digest covers the whole book or only their slice.
+ *
+ * Must agree with seesWholeBook() in types.ts, which the browser uses. It did
+ * not: this copy named Manager and Viewer directly, so somebody switched to
+ * "Assigned customers only" with "View all CRMs" cleared was correctly scoped
+ * on screen and still emailed every account in the company the next morning.
+ * The email is the one place a leak is silent — nobody sees the mismatch,
+ * because nobody sees anyone else's inbox.
+ *
+ * The rule: an Admin is never restricted; an explicit "All" widens; otherwise
+ * whatever the permission matrix says, falling back to the role's default for a
+ * profile that does not carry the key.
+ */
 function seesWholeBook(r: Recipient): boolean {
-    return (
-        r.role === 'Admin' ||
-        r.role === 'Manager' ||
-        r.role === 'Viewer' ||
-        r.dataVisibility === 'All' ||
-        Boolean(r.permissions?.canViewAllCrms)
-    );
+    if (r.role === 'Admin') return true;
+    if (r.dataVisibility === 'All') return true;
+    const stated = r.permissions?.canViewAllCrms;
+    if (stated !== undefined) return Boolean(stated);
+    return ROLE_READS_WHOLE_BOOK[r.role] ?? false;
 }
 
 const key = (v?: string | null): string => (v || '').trim().toUpperCase();

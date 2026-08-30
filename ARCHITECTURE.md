@@ -437,8 +437,16 @@ is implemented in **four** places that must agree.
 
 > An account reaches you if **you own it as CRM**, **or** you are the
 > **collector** working it, **or** its CRM code is in your `assigned_crms`.
-> Anyone who reads the whole book (Admin, Manager, Viewer, `data_visibility =
-> All`, or `canViewAllCrms`) sees everything.
+> Anyone who reads the whole book (Admin, `data_visibility = All`, or
+> `canViewAllCrms`) sees everything.
+
+`seesWholeBook()` reads **what the Team & access form was set to**; the role only
+supplies the default it started from. Manager and Viewer used to be named in the
+function itself, so switching one of them to "Assigned customers only" and
+clearing "View all CRMs" saved the change and then did nothing — they still read
+every account. Their role defaults still say `canViewAllCrms: true`, so anyone
+who has not touched those controls is unaffected. Admin remains unconditional,
+exactly as `can()` treats it.
 
 Responsibility runs two ways and **either one is enough**. Scoping on only one
 of them is how an account assigned to somebody disappears from their screen —
@@ -470,6 +478,29 @@ instead of three.
 `assigned_collector_id` *instead of* CRM ownership, rather than in addition to
 it. See [§13.3](#133-scoping-is-implemented-four-times).
 
+### What the access checkboxes actually reach
+
+Every right in the matrix is read through `can()` — which lets an Admin through
+unconditionally and falls back to the role's default for a key a profile does not
+carry — and `has_perm()` mirrors the same table in the database. Reading
+`user.permissions?.someRight` directly is the bug pattern: it treats a profile
+carrying a partial matrix as though every key it omits were denied.
+
+`api/_lib/digest.ts` keeps its own copy of `seesWholeBook()` — it cannot import
+browser code — and that copy has to be changed in step. It was not, once: the
+browser honoured a Manager restricted to "Assigned customers only" while the
+daily email still sent them every account in the company. The email is the worst
+place for a leak of this kind, because nobody sees anyone else's inbox and the
+mismatch is silent. Three copies of the same table now: `DEFAULT_ROLE_PERMISSIONS`
+(types.ts), `has_perm()` (schema.sql), `ROLE_READS_WHOLE_BOOK` (digest.ts).
+
+Two rights are enforced in the **UI only**. `customers_update` is granted on
+`can_write()` alone, because the change sync writes a whole row for something as
+ordinary as a note, and RLS cannot say "this column but not that one". So
+`canEditFinancials` and `canReassignCrm` are honoured by every screen but are not
+a wall at the database. Anyone who can write anything can, in principle, write
+those columns through PostgREST directly.
+
 ### `hasOutstanding()` — what counts as work
 
 ```ts
@@ -481,6 +512,12 @@ accounts that owe nothing. They are real customers and belong in search and in
 their ledger, **but counting them as things to chase overstates every CRM's
 workload**. Before this gate, Ankur's dashboard said 3,378 accounts; the truth
 is 19.
+
+Also applied in `filteredData`, the list those boxes open. It was not, so
+"Due today: 3" could open onto four rows with one at zero — the box and its own
+drill-down disagreeing. Two exceptions: an account **collected today** belongs in
+that list precisely because it now owes nothing, and a **search** must find a
+customer whether they owe anything or not.
 
 Applied in: `fourBoxesSummary`, `userBoxMetrics`, `crmPerformanceStats`, the
 shell's `scopeLabel`, and `digest.bookCount`.
@@ -657,52 +694,124 @@ Both go through `/api/fetch-sheet`, which tries a ladder of candidate CSV URL
 shapes (gviz, `/export?format=csv`, `/pub?output=csv`, published-to-web variants)
 and detects Google's HTML login page as a failure rather than data.
 
-### 8.2 Merge rules — what an import may and may not touch
+### 8.2 Where each thing lives
 
-`financialsFromSheet()` names the only columns an invoice sheet is the authority
-on:
+> **The sheet carries the outstanding amounts. The software carries the
+> customers.**
+
+That one line settles every merge question below, and it is a decision from the
+business, not an implementation detail. Ownership of the customer record — who
+they are, who to ring, what their terms are, who chases them — sits in the app.
+The Google Sheet is the ledger of what is owed and is read for nothing else.
+
+| | Lives in | Written by |
+|---|---|---|
+| Balances, ageing, roll-ups | the outstanding sheet | the accounts team, in the sheet |
+| Customer name, contacts, address, GSTIN, credit terms | the app | whoever works the account |
+| — the name included: `financialsFromSheet()` does **not** carry `company`, so a spelling corrected here is not overwritten on the next sync. Matching does not depend on it (normalised key, or the id, both survive a rename). | | |
+| CRM owner | the app | assigned when the customer is created, changed in the customer list |
+| Follow-ups, notes, cheques, activity | the app | the collections team |
+
+`financialsFromSheet()` names the only columns an import is the authority on:
 
 ```
 company, total, totalType, ageing, ageingTypes,
 over90, over90Type, dueOver45, dueOver45Type
 ```
 
-Everything else — contacts, master data, follow-ups, notes, forecasts, cheques,
-activity — belongs to the app and survives an import untouched.
+Everything else survives an import untouched.
 
-`mergeWithExistingFollowUps()` then enforces two rules that matter against a
-shared database:
+### 8.3 The balance sync
+
+`mergeWithExistingFollowUps()` enforces four rules against a shared database:
 
 1. **A matched customer keeps the id it already has.** Old ids carried the
-   sheet's row number, so re-ordering the sheet gave the same customer a new id
-   — which against a database means deleting the row and inserting a copy,
-   taking its PDC cheques with it.
-2. **A customer the sheet no longer lists is kept, not dropped.** Dropping it
-   here would delete the row and its history on the next sync. Removing a
-   customer is a deliberate act, done from the customer list.
+   sheet's row number, so re-ordering the sheet gave one customer a new id —
+   against a database that means deleting the row and inserting a copy, taking
+   its cheques with it.
+2. **It changes money and nothing else.** A matched account keeps its contacts,
+   its owner and its history. The sheet's contact columns used to fill blanks;
+   they no longer do, because those fields are maintained in the app.
+3. **A customer the sheet no longer lists is kept, and settled to nil.**
+   `settleUnlisted()` zeroes the balance, every bucket, both roll-ups and
+   `isUrgent`. The record stays — dropping it would delete the row and its
+   history on the next sync. The sheet is the *whole* of what is owed, so
+   falling off it means paid.
+4. **A name the app has never seen is added, with no owner.** Its money is
+   counted immediately — money must never go missing because a record does not
+   exist yet — but the sheet does not get to say whose account it is. Those land
+   in the unassigned queue.
 
-Contact details from the sheet **fill gaps only** — they never overwrite what
-somebody took the trouble to record:
+`asNewCustomer()` builds those rows, and the empty-book branch runs through it
+too — otherwise the very first import into a fresh book took its owners from the
+sheet and the rule was true in every case but one. The reset and the Excel upload
+go through the same function for the same reason.
 
-```ts
-contactPerson: existing.contactPerson && existing.contactPerson !== 'Accounts Dept'
-    ? existing.contactPerson : item.contactPerson,
-contactNumber: existing.contactNumber || item.contactNumber,
-email:         existing.email || item.email,
-```
+It deliberately does **not** set `isNewCustomer`. That flag does not mean
+"recently arrived"; it means "created here rather than read from a sheet", and it
+drives the customer list's *Created / Sheet Synced* filter. Setting it on
+sheet-created accounts would file them all under "Created" and hide them from
+"Sheet Synced". What marks them as needing attention is having no owner.
 
-`mergeCustomerMasterIntoAppData()` enriches by company name, indexed once
-(scanning per master row is quadratic and locked the tab for seconds at this
-size).
+### 8.4 Ownership, and the queue
 
-### 8.3 Reconciliation
+Ownership is set when a customer is created (`CustomerEditModal` will not save
+without an answer; it used to default to whoever was first in the CRM list,
+which is how thousands of accounts ended up on one name without anyone deciding
+it) and changed from the customer list. No import overwrites it.
 
-When `appData` is non-empty, a transactions sync does **not** apply directly —
-it opens `SyncReconciliationModal`, which shows matched / CRM-changed / new
-counts and lets an Admin choose a CRM assignment mode
-(`keep_earlier | use_new_sync | custom`) before anything is written.
+**A lookup can fail, and a failure is not a name.** The outstanding sheet has no
+CRM of its own — its column is a lookup into the customer master — so a customer
+absent from that master returns `#N/A`, and a broken formula `#REF!`. Read at
+face value those become CRM codes: accounts filed under an owner called "#N/A",
+counted on the CRM performance table as though it were a colleague, and reachable
+by nobody. `crmFromSheet()` reads them — and hand-written stand-ins like "NA",
+"-", "NIL" — as blank; `isSheetBlank()` keeps a row whose *name* is `#N/A` out of
+the book entirely. The app's own stored value goes through the same check, so a
+`#N/A` written by an older import clears itself.
 
-### 8.4 Write-back — the change-detecting sync
+Anything with no owner surfaces as an amber banner at the top of the customer
+list, with its count and the money involved, one click from the Unassigned
+filter. A queue nobody can see is a queue nobody works.
+
+### 8.5 Reconciliation — a preview, not a decision
+
+When `appData` is non-empty, a balance sync opens `SyncReconciliationModal`
+first. It used to ask which CRM should win, the sheet's or the app's; that
+question no longer exists, so it is now a plain preview of what the import will
+do — figures updated, new customers arriving unassigned, accounts settled to
+zero and the total being written off.
+
+It recomputes nothing. Confirming calls `mergeWithExistingFollowUps()`, the same
+function the sync runs when there is nothing to review, so what is shown and
+what is written cannot drift apart.
+
+### 8.6 The customer import — seeding, not syncing
+
+`mergeCustomerMasterIntoAppData()` exists to load customers in bulk into an
+empty book. It is a one-time step behind a confirmation, not a scheduled sync,
+and **every field reads app-first**: it fills what is missing and overwrites
+nothing, so running it twice cannot undo a correction somebody typed. It used to
+work the other way round — the sheet overwrote contacts, addresses, limits and
+terms on every run — which is why a phone number fixed during a call came back
+wrong the next morning.
+
+Where its CRM column disagrees with the app's, the app wins and the disagreement
+is returned in `crmConflicts[]`, listed in Settings beside a **Download CRM owner
+list** export. That export is pasted into the *master*, because the outstanding
+sheet's CRM column is looked up from it.
+
+The old "One-Click Dual Sync" is gone. There is one sync — balances — and it is
+what both the header button and the customer list button run.
+
+### 8.6.1 "Last synced" means balances
+
+`lastSyncTime` is stamped only where balances actually land: on confirming the
+review, or on an import into an empty book. It used to be set the moment a sheet
+was fetched — so cancelling the review still left the book looking freshly
+priced — and again by the customer import, which brings no balances at all.
+
+### 8.7 Write-back — the change-detecting sync
 
 There is no Save button. `services/useSupabaseSync.ts` provides two hooks:
 
@@ -729,10 +838,17 @@ const fresh  = rows.filter(r =>  created.has(r.id));  // upsert — needs canAdd
 const edited = rows.filter(r => !created.has(r.id));  // update — needs can_write only
 ```
 
-`repo.updateCustomers()` writes rows one at a time because PostgREST has no
-multi-row update, and an edit touches a handful of rows at most.
+`repo.updateCustomers()` still writes one row per request — PostgREST has no
+multi-row update — but **eight at a time, and it no longer stops at the first
+failure**. The assumption that "an edit touches a handful of rows at most" was
+wrong: a sync re-prices every matched account, so a few hundred sequential
+round-trips ran for minutes with the book half-written, and one rejected row
+abandoned every account after it in the list. Both look, from the outside,
+exactly like customer data that has stopped syncing. Every row is now attempted
+and the error is raised afterwards, which still tells the hook to retry the
+batch — an update is idempotent, so re-running it is safe.
 
-### 8.5 Paging
+### 8.8 Paging
 
 PostgREST answers a plain `select` with **at most 1,000 rows, silently** — which
 had the app showing the first 1,000 of 4,048 customers as if that were the whole
@@ -740,7 +856,7 @@ book. `fetchAllRows()` pages by `id` (unique, so no row is skipped or repeated
 between pages) until a short page arrives. `digest.ts` has its own copy of the
 same loop.
 
-### 8.6 Activity log flow
+### 8.9 Activity log flow
 
 1. `CustomerActivityPanel` posts through `repo.addActivity()`, which stamps
    `author_id` from the live session and lets the database set `created_at`.
@@ -1093,6 +1209,24 @@ beyond substitution:
    is always kept, since a reminder with no total leaves the customer guessing
    what it is about.
 
+The fields are `{{companyName}}`, `{{contactPerson}}`, `{{contactNumber}}`,
+`{{totalDue}}`, the four buckets `{{ageing1_45}} {{ageing46_90}}
+{{ageing91_135}} {{ageingOver135}}`, and two roll-ups:
+
+| Placeholder | Is |
+|---|---|
+| `{{totalOver90}}` | 91-135 **plus** >135 — the "Total >90d Overdue" figure |
+| `{{dueOver45}}` | 46-90 plus 91-135 plus >135 |
+
+A roll-up takes the sheet's own column (`over90`, `dueOver45`) when it has one
+and adds the buckets when it does not, and counts as a credit only if *every*
+bucket feeding it is — otherwise one small advance would flip the whole line to
+"Cr (Excess)". `{{totalOver90}}` is the figure the escalation templates are
+written around; without it a follow-up template had to print 91-135 and >135 as
+separate lines and leave the customer to add them up. The chips in the template
+editor insert at the caret, so nobody has to retype the braces — a misspelt
+placeholder sends its own literal text to the customer.
+
 ---
 
 ## 13. Known issues and open work
@@ -1267,9 +1401,9 @@ during testing gets deleted.
 ## 15. File map
 
 ```
-App.tsx                     2,676 lines. All state, all handlers, both dashboards,
+App.tsx                     2,820 lines. All state, all handlers, both dashboards,
                             every derived metric. The centre of gravity.
-types.ts                      498. Types, roles, permissions, and the domain
+types.ts                      601. Types, roles, permissions, and the domain
                             helpers: ownerKey, hasOutstanding, isResponsibleFor,
                             getFollowUpCategory, getCustomerPaymentRank,
                             promiseState.
@@ -1279,11 +1413,11 @@ styles/theme.css              389. The whole design system.
 services/
   supabaseClient.ts         Browser client. requireSupabase() throws rather than
                             silently no-opping.
-  repository.ts               700. Every read and write. Row↔model mappers,
+  repository.ts               734. Every read and write. Row↔model mappers,
                             paging, team API calls, activity log.
-  googleSheetService.ts       605. CSV parsing, merge rules, getOutstandingForUser.
+  googleSheetService.ts       795. CSV parsing, merge rules, getOutstandingForUser.
   useSupabaseSync.ts          137. The two change-detecting sync hooks.
-  messageTemplate.ts          102. Template rendering.
+  messageTemplate.ts          139. Template rendering.
 
 api/
   _lib/supabase.ts          serviceClient / userClient / currentProfile / bearerToken
@@ -1307,11 +1441,11 @@ components/
   work/Workspace.tsx          Master-detail: the queue and the account together.
   work/Worklist.tsx           The six queues, their counts and their rows.
   work/AccountPanel.tsx       One account: money, form, contacts, cheques, thread.
-  CustomerDashboardView.tsx 1,269. The customer book.
+  CustomerDashboardView.tsx 1,342. The customer book.
   ReportsView.tsx           1,015. Reports and instant-report cards.
   PdcChequesView.tsx          920. Cheque register.
-  CustomerEditModal.tsx       649. Add / edit a customer.
-  SyncReconciliationModal.tsx 580. Review an import before applying it.
+  CustomerEditModal.tsx       677. Add / edit a customer.
+  SyncReconciliationModal.tsx 338. Preview an import before applying it.
   AiReportModal.tsx           575. AI report UI.
   LoginScreen.tsx             535. Sign in / forgot / recovery.
   UserModal.tsx               512. Team & access form.
@@ -1322,7 +1456,7 @@ components/
   ChangePasswordModal.tsx     126. Own password, every role.
   CrmPerformanceTable.tsx     115.
   CompanyProfileView.tsx      205.
-  TemplateModal.tsx            95.
+  TemplateModal.tsx           145.
   NotificationBanner.tsx       74.
   BalanceAmount.tsx            74. Dr/Cr rendering.
   StatusBadge.tsx              25.

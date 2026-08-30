@@ -195,20 +195,54 @@ export async function upsertCustomers(list: Outstanding[]): Promise<void> {
 }
 
 /**
+ * How many row updates are in flight at once.
+ *
+ * PostgREST has no multi-row update, so a sync that touches 700 accounts is 700
+ * requests whatever we do. Sending them one after another made that a minutes-
+ * long wait during which the book was only half written — which is what
+ * "customer data is not syncing" looked like from the outside. Browsers cap
+ * connections per host anyway, so this is about keeping the pipe full, not
+ * about flooding the database.
+ */
+const UPDATE_CONCURRENCY = 8;
+
+/**
  * Saves edits to customers that already exist.
  *
  * Deliberately an update rather than an upsert: upserting asks the database for
  * insert rights too, and creating an account is a separate permission from
- * recording a note on one. Rows are written one at a time because PostgREST has
- * no multi-row update, and an edit touches a handful of rows at most.
+ * recording a note on one.
+ *
+ * One row failing no longer abandons the rest. The old loop threw on the first
+ * error, so a single rejected row left every account after it in the list
+ * unwritten — and since the sync hook only advances its baseline when the whole
+ * batch resolves, the failure was invisible except as data that never arrived.
+ * Now every row is attempted, and the error raised afterwards still tells the
+ * hook to retry the batch: an update is idempotent, so re-running it is safe.
  */
 export async function updateCustomers(list: Outstanding[]): Promise<void> {
     const db = requireSupabase();
-    for (const c of list) {
-        const row = outstandingToRow(c);
-        delete row.id;
-        const { error } = await db.from('customers').update(row).eq('id', c.id);
-        fail('Could not save customer', error);
+    const queue = [...list];
+    const failures: string[] = [];
+
+    const worker = async (): Promise<void> => {
+        for (;;) {
+            const c = queue.shift();
+            if (!c) return;
+            const row = outstandingToRow(c);
+            delete row.id;
+            const { error } = await db.from('customers').update(row).eq('id', c.id);
+            if (error) failures.push(`${c.company}: ${error.message}`);
+        }
+    };
+
+    await Promise.all(
+        Array.from({ length: Math.min(UPDATE_CONCURRENCY, queue.length) }, worker)
+    );
+
+    if (failures.length) {
+        const more = failures.length > 1 ? ` (and ${failures.length - 1} more)` : '';
+        throw new Error(`Could not save customer ${failures[0]}${more}`);
     }
 }
 

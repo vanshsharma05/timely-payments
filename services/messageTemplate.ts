@@ -49,6 +49,26 @@ const text = (value?: string): Slot => ({
     isZeroAmount: false,
 });
 
+/**
+ * The two roll-ups the sheet carries in its own columns, worked out from the
+ * buckets when it does not.
+ *
+ * ">90 days" is the figure the follow-up templates are written around — the
+ * money that has stopped moving — and it is 91-135 plus >135. A reminder that
+ * lists the buckets separately makes the customer add them up; the escalation
+ * templates need to state the one number.
+ *
+ * A roll-up is a credit only when every bucket feeding it is, otherwise a small
+ * advance against one bucket would flip the whole line to "Cr (Excess)".
+ */
+const rollUp = (parts: { value?: number; type?: 'Dr' | 'Cr' }[], stated?: number, statedType?: 'Dr' | 'Cr'): Slot => {
+    if (stated !== undefined && stated !== null) return amount(stated, statedType);
+    const owing = parts.filter(p => Number(p.value) > 0);
+    const sum = owing.reduce((acc, p) => acc + Number(p.value || 0), 0);
+    const allCredit = owing.length > 0 && owing.every(p => p.type === 'Cr');
+    return amount(sum, allCredit ? 'Cr' : 'Dr');
+};
+
 /** Ways people write the rupee in front of a figure, longest first so "Rs." wins over "Rs". */
 const CURRENCY_PREFIXES = ['₹ ', '₹', 'Rs. ', 'Rs.', 'Rs ', 'Rs', 'INR ', 'INR'];
 
@@ -66,6 +86,23 @@ export function renderTemplate(
         '{{ageing46_90}}': amount(customer.ageing?.['46-90'], customer.ageingTypes?.['46-90']),
         '{{ageing91_135}}': amount(customer.ageing?.['91-135'], customer.ageingTypes?.['91-135']),
         '{{ageingOver135}}': amount(customer.ageing?.['>135'], customer.ageingTypes?.['>135']),
+        '{{totalOver90}}': rollUp(
+            [
+                { value: customer.ageing?.['91-135'], type: customer.ageingTypes?.['91-135'] },
+                { value: customer.ageing?.['>135'], type: customer.ageingTypes?.['>135'] },
+            ],
+            customer.over90,
+            customer.over90Type,
+        ),
+        '{{dueOver45}}': rollUp(
+            [
+                { value: customer.ageing?.['46-90'], type: customer.ageingTypes?.['46-90'] },
+                { value: customer.ageing?.['91-135'], type: customer.ageingTypes?.['91-135'] },
+                { value: customer.ageing?.['>135'], type: customer.ageingTypes?.['>135'] },
+            ],
+            customer.dueOver45,
+            customer.dueOver45Type,
+        ),
     };
 
     const entries = Object.entries(slots);

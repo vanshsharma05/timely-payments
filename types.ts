@@ -126,16 +126,23 @@ export function can(user: User | null | undefined, right: keyof UserPermissions)
     return Boolean(permissionsOf(user)[right]);
 }
 
-/** Sees the whole book rather than one CRM's slice. */
+/**
+ * Sees the whole book rather than one CRM's slice.
+ *
+ * What the Team & access form was set to is the answer; the role only supplies
+ * the default it started from. Manager and Viewer used to be written in here by
+ * name, so switching one of them to "Assigned customers only" and clearing
+ * "View all CRMs" changed the form, was saved, and then did nothing at all —
+ * they still read every account. Anybody who has not touched those controls is
+ * unaffected: the role's own defaults still say what they always said.
+ *
+ * Admin stays unconditional, exactly as can() treats it.
+ */
 export function seesWholeBook(user: User | null | undefined): boolean {
     if (!user) return false;
-    return (
-        user.role === UserRole.Admin ||
-        user.role === UserRole.Manager ||
-        user.role === UserRole.Viewer ||
-        user.dataVisibility === DataVisibility.All ||
-        Boolean(user.permissions?.canViewAllCrms)
-    );
+    if (user.role === UserRole.Admin) return true;
+    if (user.dataVisibility === DataVisibility.All) return true;
+    return permissionsOf(user).canViewAllCrms;
 }
 
 /**

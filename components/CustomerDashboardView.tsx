@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, DEFAULT_ROLE_PERMISSIONS, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -21,6 +21,10 @@ interface CustomerDashboardViewProps {
     /** Grading 417 bad debts one dialog at a time is not a workflow. */
     onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
     pdcCheques?: PdcCheque[];
+    /**
+     * Pulls the outstanding sheet. It is the only sync there is: the sheet
+     * carries what is owed, and the customer list is maintained here.
+     */
     onSyncSheet?: () => void;
     isSyncing?: boolean;
     lastUpdatedTill?: string;
@@ -54,14 +58,16 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 }) => {
     // Permissions and Data Scoping
     const isAdmin = currentUser?.role === UserRole.Admin;
-    const permissions = currentUser?.permissions || (currentUser ? (DEFAULT_ROLE_PERMISSIONS[currentUser.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM]) : undefined);
-    const canAddCustomer = isAdmin || Boolean(permissions?.canAddCustomer);
-    const canEditCustomer = isAdmin || Boolean(permissions?.canEditCustomer);
-    const canDeleteCustomer = isAdmin || Boolean(permissions?.canDeleteCustomer);
-    const canEditFollowUp = isAdmin || Boolean(permissions?.canEditFollowUp);
-    const canManagePdc = isAdmin || Boolean(permissions?.canManagePdc);
-    const canReassignCrm = isAdmin || Boolean(permissions?.canReassignCrm);
-    const canExport = isAdmin || Boolean(permissions?.canExportData);
+    // One reading of the matrix, the same one every other screen uses. Reading
+    // `permissions?.x` raw treats a profile carrying a partial matrix as though
+    // every key it omits were denied; can() fills those from the role.
+    const canAddCustomer = can(currentUser, 'canAddCustomer');
+    const canEditCustomer = can(currentUser, 'canEditCustomer');
+    const canDeleteCustomer = can(currentUser, 'canDeleteCustomer');
+    const canEditFollowUp = can(currentUser, 'canEditFollowUp');
+    const canManagePdc = can(currentUser, 'canManagePdc');
+    const canReassignCrm = can(currentUser, 'canReassignCrm');
+    const canExport = can(currentUser, 'canExportData');
     const canViewAllCrms = seesWholeBook(currentUser);
 
     // Filter raw data strictly based on user roles and assigned access rights
@@ -147,6 +153,20 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             return uId === currId || uName === currName || assigned.includes(uId) || assigned.includes(uName);
         });
     }, [users, canViewAllCrms, currentUser]);
+
+    /**
+     * Accounts with nobody against them.
+     *
+     * A name that turns up in the outstanding sheet before it is in the customer
+     * list is added automatically so its money is counted, but the sheet does
+     * not get to say who chases it. That leaves a queue, and a queue nobody can
+     * see is a queue nobody works — so it is counted here and shown as a chip.
+     */
+    const unassigned = useMemo(
+        () => userAllowedData.filter(item => !(item.crmOwnerId || '').trim()),
+        [userAllowedData],
+    );
+    const unassignedOwing = useMemo(() => unassigned.filter(i => Math.abs(Number(i.total) || 0) > 0), [unassigned]);
 
     const allCrmsInDataset = useMemo(() => {
         const set = new Set<string>();
@@ -408,16 +428,16 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         
                     </button>
 
-                    {/* Sync from Google Sheet */}
+                    {/* Balances from the outstanding sheet — the only sync */}
                     {onSyncSheet && (
                         <button
                             onClick={onSyncSheet}
                             disabled={isSyncing}
                             className="px-3 py-1.5 text-xs font-bold rounded-lg bg-card hover:bg-card-3 text-label-2 hover:text-label border border-separator-strong transition-colors flex items-center gap-1"
-                            title="Pull fresh updates from the official Google Sheet"
+                            title="Pull today's balances and ageing from the outstanding sheet. Customer details and CRM owners are left alone."
                         >
                             <SyncIcon className={isSyncing ?"w-3.5 h-3.5 animate-spin" :"w-3.5 h-3.5"} />
-                            <span>{isSyncing ? 'Syncing...' : 'Sync'}</span>
+                            <span>{isSyncing ? 'Syncing...' : 'Sync balances'}</span>
                         </button>
                     )}
 
@@ -499,6 +519,30 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 </div>
             </div>
 
+            {/* Accounts nobody owns yet — one click to work through them */}
+            {canReassignCrm && unassigned.length > 0 && selectedCrm !== 'UNASSIGNED' && (
+                <button
+                    type="button"
+                    onClick={() => setSelectedCrm('UNASSIGNED')}
+                    className="w-full text-left rounded-[16px] border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-5 py-3.5 hover:brightness-[0.98] transition-all"
+                >
+                    <p className="text-[13px] font-bold text-amber-900 dark:text-amber-200">
+                        {unassigned.length} customer{unassigned.length === 1 ? '' : 's'} have no CRM against them
+                        {unassignedOwing.length > 0 && (
+                            <span className="font-semibold">
+                                {' '}— {unassignedOwing.length} of them owing {formatCurrency(
+                                    unassignedOwing.reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+                                )}
+                            </span>
+                        )}
+                    </p>
+                    <p className="text-[12px] text-amber-800 dark:text-amber-300 mt-0.5">
+                        These came in from the outstanding sheet before they were in the customer list.
+                        Click to open them and set an owner — nobody is chasing them until you do.
+                    </p>
+                </button>
+            )}
+
             {/* Compact Filter Controls Card */}
             <div className="bg-card rounded-[16px] shadow-e1 p-5 space-y-3.5">
                 {/* Search, Rank, CRM, Status Filters Row */}
@@ -550,7 +594,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             CRM Owner
                         </label>
-                        <select aria-label="CRM Owner"
+                        <select aria-label="Filter by CRM owner"
                             value={selectedCrm}
                             onChange={e => setSelectedCrm(e.target.value)}
                             disabled={!canViewAllCrms && currentUser?.role === UserRole.CRM}
@@ -560,7 +604,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             {allCrmsInDataset.map(crm => (
                                 <option key={crm} value={crm}>{crm} Portfolio</option>
                             ))}
-                            <option value="UNASSIGNED">Unassigned Accounts</option>
+                            <option value="UNASSIGNED">Unassigned Accounts ({unassigned.length})</option>
                         </select>
                     </div>
 
@@ -702,7 +746,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </select>
 
                         <select
-                            aria-label="Filter by CRM owner"
+                            aria-label="Filter by where the customer came from"
                             value={originFilter}
                             onChange={e => setOriginFilter(e.target.value as any)}
                             className="text-[12.5px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-200"
