@@ -150,6 +150,18 @@ const MENU_PANEL =
 const MENU_ITEM =
   'w-full flex items-center gap-3 px-4 py-2.5 text-[14px] font-medium text-label-2 hover:text-label hover:bg-hover text-left transition-colors';
 
+/**
+ * Whether this is a Mac, for the one place it matters: the search shortcut.
+ *
+ * The badge read ⌘K on every machine. Almost everybody here is on Windows,
+ * where ⌘ is a key they do not have — so the app was advertising a shortcut
+ * nobody could press. The handler has always accepted both.
+ */
+const IS_MAC = typeof navigator !== 'undefined'
+    && /mac|iphone|ipad|ipod/i.test(
+        (navigator as any).userAgentData?.platform || navigator.platform || navigator.userAgent
+    );
+
 const IconButton = ({
   onClick,
   label,
@@ -333,8 +345,11 @@ export const AppShell = ({
                   &times;
                 </button>
               ) : (
-                <kbd className="hidden md:flex absolute right-3.5 top-1/2 -translate-y-1/2 items-center h-6 px-2 text-[11px] font-semibold text-label-3 bg-card rounded-full pointer-events-none">
-                  &#8984;K
+                <kbd
+                  className="hidden md:flex absolute right-3.5 top-1/2 -translate-y-1/2 items-center h-6 px-2 text-[11px] font-semibold text-label-3 bg-card rounded-full pointer-events-none"
+                  title={IS_MAC ? 'Press Command + K to search' : 'Press Ctrl + K to search'}
+                >
+                  {IS_MAC ? '⌘K' : 'Ctrl K'}
                 </kbd>
               )}
             </div>

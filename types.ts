@@ -164,6 +164,34 @@ export function canExportBook(user: User | null | undefined): boolean {
 }
 
 /**
+ * Whether a record matches what somebody typed into a search box.
+ *
+ * Every search in the app used to join the fields into one string and require
+ * each word to appear *somewhere* in it. Searching "4 MAN HOSIERY" returned
+ * THUKRAL HOSIERY FACTORY: "hosiery" matched, "man" matched inside RA**MAN**,
+ * and "4" matched inside the phone number 8**4**27214812. Three separate copies
+ * of that did the same thing, so this is the one implementation now.
+ *
+ * A record matches when either
+ *   - the whole query appears as typed — which keeps "214812" finding a phone
+ *     number by its middle digits, and "bbf packaging" finding one company; or
+ *   - every word starts a word in the record. "man hosiery" finds "4 MAN
+ *     HOSIERY" and no longer finds "RAMAN" in somebody's contact name.
+ */
+const escapeForRegExp = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function matchesSearch(parts: Array<string | null | undefined>, rawQuery: string): boolean {
+    const query = (rawQuery || '').trim().toLowerCase();
+    if (!query) return true;
+    const hay = parts.filter(Boolean).join(' ').toLowerCase();
+    if (hay.includes(query)) return true;
+    return query
+        .split(/\s+/)
+        .filter(Boolean)
+        .every(token => new RegExp('\\b' + escapeForRegExp(token)).test(hay));
+}
+
+/**
  * One CRM code, written one way.
  *
  * The sheet, the user list and anything typed by hand disagree about case and

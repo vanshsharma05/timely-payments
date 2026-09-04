@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -1035,7 +1035,6 @@ const App = () => {
             return item.status === statusFilter;
         }).filter(item => {
             if (!searchTerm.trim()) return true;
-            const searchTokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
             const userObj = users.find(u => u.id === item.crmOwnerId || u.name === item.crmOwnerId);
             const crmDisplayName = userObj ? userObj.name.toLowerCase() : '';
             const collectorObj = users.find(u => u.id === item.assignedCollectorId || u.name === item.assignedCollectorId);
@@ -1051,8 +1050,11 @@ const App = () => {
             const total = String(item.total || '');
             const notes = (item.notes || []).join(' ').toLowerCase();
 
-            const combinedSearchable = `${company} ${contactPerson} ${contactPhone} ${email} ${crmOwnerId} ${crmDisplayName} ${assignedCollectorId} ${collectorDisplayName} ${id} ${total} ${notes}`;
-            return searchTokens.every(tok => combinedSearchable.includes(tok));
+            return matchesSearch(
+                [company, contactPerson, contactPhone, email, crmOwnerId, crmDisplayName,
+                 assignedCollectorId, collectorDisplayName, id, total, notes],
+                searchTerm,
+            );
         });
     }, [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users]);
 

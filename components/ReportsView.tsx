@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -285,7 +285,6 @@ export const ReportsView = ({
 
             // Search Term Filter
             if (searchTerm.trim()) {
-                const searchTokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
                 const crmDisplayName = getUserDisplayName(item.crmOwnerId).toLowerCase();
                 const company = String(item.company || '').toLowerCase();
                 const contactPerson = String(item.contactPerson || '').toLowerCase();
@@ -296,9 +295,10 @@ export const ReportsView = ({
                 const total = String(item.total || '');
                 const notes = (item.notes || []).join(' ').toLowerCase();
 
-                const combinedSearchable = `${company} ${contactPerson} ${contactPhone} ${email} ${crmOwnerId} ${crmDisplayName} ${id} ${total} ${notes}`;
-                const allTokensMatch = searchTokens.every(tok => combinedSearchable.includes(tok));
-                if (!allTokensMatch) return false;
+                if (!matchesSearch(
+                    [company, contactPerson, contactPhone, email, crmOwnerId, crmDisplayName, id, total, notes],
+                    searchTerm,
+                )) return false;
             }
 
             return true;

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -236,21 +236,27 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
     /** Matches a record against a free-text query across every field a
         person might search by. */
-    const matchesQuery = (item: Outstanding, raw: string) => {
-        const q = raw.trim().toLowerCase();
-        if (!q) return true;
-        const hay = [
-            item.company, item.contactPerson, item.contactPost, item.contactNumber,
-            item.email, item.city, item.state, item.gstin, item.address, item.crmOwnerId, item.category,
-            ...(item.additionalContacts || []).flatMap(c => [c.name, c.mobile, c.post || '']),
-            ...(item.notes || []),
-        ].join(' ').toLowerCase();
-        return q.split(/\s+/).every(tok => hay.includes(tok));
-    };
+    const matchesQuery = (item: Outstanding, raw: string) => matchesSearch([
+        item.company, item.contactPerson, item.contactPost, item.contactNumber,
+        item.email, item.city, item.state, item.gstin, item.address, item.crmOwnerId, item.category,
+        ...(item.additionalContacts || []).flatMap(c => [c.name, c.mobile, c.post || '']),
+        ...(item.notes || []),
+    ], raw);
 
     // Filter logic based on userAllowedData
-    const filteredData = useMemo(() => {
-        return userAllowedData.filter(item => {
+    /**
+     * The list, plus how many rows the settlement tab is holding back.
+     *
+     * Searching for a settled customer from the "With dues" tab returned
+     * nothing at all, which reads as a broken search rather than a filter doing
+     * its job. Every other filter is applied here; settlement is applied last
+     * and separately, so the screen can say "one settled customer matches" and
+     * offer to show it.
+     */
+    const { filteredData, hiddenBySettlement } = useMemo(() => {
+        const kept: Outstanding[] = [];
+        let hidden = 0;
+        const passesEverythingElse = (item: Outstanding): boolean => {
             if (!matchesQuery(item, globalSearch)) return false;
             // Search match across company, contact, mobile, email, GSTIN, City, State, additional contacts
             if (searchTerm.trim()) {
@@ -272,9 +278,6 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     return false;
                 }
             }
-
-            // Settled or not — the first thing every other filter narrows.
-            if (!matchesSettlement(item, settlementFilter)) return false;
 
             // Category (Builder / Dealer / Retailer / trade)
             if (categoryFilter !== 'ALL') {
@@ -337,8 +340,18 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             if (originFilter === 'SHEET' && item.isNewCustomer) return false;
 
             return true;
+        };
+
+        userAllowedData.forEach(item => {
+            if (!passesEverythingElse(item)) return;
+            if (matchesSettlement(item, settlementFilter)) kept.push(item);
+            else hidden++;
         });
+        return { filteredData: kept, hiddenBySettlement: hidden };
     }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+
+    /** True while somebody is looking for a particular customer. */
+    const isSearching = Boolean(globalSearch.trim() || searchTerm.trim());
 
     /**
      * On the settled tab, newest first.
@@ -982,10 +995,34 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             {filteredData.length === 0 ? (
                 <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xs">
                     <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
-                    <h3 className="text-sm font-bold text-gray-800 dark:text-white">No Customers Match Current Filters</h3>
+                    <h3 className="text-sm font-bold text-gray-800 dark:text-white">
+                        {hiddenBySettlement > 0
+                            ? `Nothing here, but ${hiddenBySettlement} ${settlementFilter === 'withDues' ? 'settled' : 'unsettled'} customer${hiddenBySettlement === 1 ? '' : 's'} match${hiddenBySettlement === 1 ? 'es' : ''}`
+                            : 'No Customers Match Current Filters'}
+                    </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 max-w-md mx-auto">
-                        Try resetting your search query, Payment Rank, CRM, or ageing filter.
+                        {hiddenBySettlement > 0
+                            ? (isSearching
+                                ? `You are looking at "${SETTLEMENT_LABELS[settlementFilter]}". Whoever you are searching for is on another tab.`
+                                : `The "${SETTLEMENT_LABELS[settlementFilter]}" tab is holding these back.`)
+                            : 'Try resetting your search query, Payment Rank, CRM, or ageing filter.'}
                     </p>
+                    {hiddenBySettlement > 0 && (
+                        <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                            <button
+                                onClick={() => setSettlementFilter(settlementFilter === 'withDues' ? 'settled' : 'withDues')}
+                                className="px-3.5 py-1.5 bg-accent text-on-accent text-xs font-bold rounded-lg shadow-sm"
+                            >
+                                Show {settlementFilter === 'withDues' ? 'settled' : 'with dues'} ({hiddenBySettlement})
+                            </button>
+                            <button
+                                onClick={() => setSettlementFilter('all')}
+                                className="px-3.5 py-1.5 bg-card hover:bg-card-3 text-label-2 border border-separator-strong text-xs font-bold rounded-lg"
+                            >
+                                Search all customers
+                            </button>
+                        </div>
+                    )}
                     {canAddCustomer && (
                         <button
                             onClick={onAddCustomer}
