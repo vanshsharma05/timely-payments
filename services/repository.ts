@@ -133,6 +133,7 @@ export function rowToOutstanding(r: any): Outstanding {
         isUrgent: !!r.is_urgent,
         isNewCustomer: !!r.is_new_customer,
         addedAt: r.added_at || undefined,
+        settledAt: r.settled_at || undefined,
         creationDate: toDate(r.creation_date) || new Date(),
         lastFollowUpOn: toDate(r.last_follow_up_on),
     };
@@ -174,6 +175,7 @@ export function outstandingToRow(c: Outstanding): Record<string, any> {
         is_urgent: !!c.isUrgent,
         is_new_customer: !!c.isNewCustomer,
         added_at: c.addedAt ?? null,
+        settled_at: c.settledAt ?? null,
         creation_date: toIso(c.creationDate) ?? new Date().toISOString(),
         last_follow_up_on: toIso(c.lastFollowUpOn),
     };

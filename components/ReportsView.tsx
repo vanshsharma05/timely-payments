@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -134,6 +134,26 @@ export const ReportsView = ({
     }, [userAllowedData, selectedCrm]);
 
     // Comprehensive Metrics Calculation (Scoped to chosen CRM)
+    const [settlementFilter, setSettlementFilter] = useState<SettlementFilter>('withDues');
+
+    /**
+     * The report is of accounts that owe something, unless asked otherwise.
+     *
+     * Both the boxes and the table read this, so they cannot disagree. Counting
+     * the settled ones is what made "No follow-up set" say 3,835 — three
+     * thousand of which had nothing to follow up because they had already paid.
+     */
+    const settlementCounts = useMemo(() => {
+        let withDues = 0;
+        crmScopedData.forEach(item => { if (hasOutstanding(item)) withDues++; });
+        return { withDues, settled: crmScopedData.length - withDues, all: crmScopedData.length };
+    }, [crmScopedData]);
+
+    const workScopedData = useMemo(
+        () => crmScopedData.filter(item => matchesSettlement(item, settlementFilter)),
+        [crmScopedData, settlementFilter],
+    );
+
     const boxMetrics = useMemo(() => {
         let todayCount = 0;
         let todayAmount = 0;
@@ -144,7 +164,7 @@ export const ReportsView = ({
         let futureCount = 0;
         let futureAmount = 0;
         let totalAmount = 0;
-        let totalCount = crmScopedData.length;
+        let totalCount = workScopedData.length;
         let dueOver45Total = 0;
         let completedCount = 0;
 
@@ -160,7 +180,7 @@ export const ReportsView = ({
         let ageing1_45Count = 0;
         let ageing1_45Amount = 0;
 
-        crmScopedData.forEach(item => {
+        workScopedData.forEach(item => {
             totalAmount += item.total || 0;
             const a1 = item.ageing?.['1-45'] || 0;
             const a2 = item.ageing?.['46-90'] || 0;
@@ -229,11 +249,11 @@ export const ReportsView = ({
             ageing1_45Count,
             ageing1_45Amount
         };
-    }, [crmScopedData, today]);
+    }, [workScopedData, today]);
 
     // Filtered Report Table Data (Applying CRM + Category + Search + Ageing)
     const filteredReportData = useMemo(() => {
-        return crmScopedData.filter(item => {
+        return workScopedData.filter(item => {
             const a1 = item.ageing?.['1-45'] || 0;
             const a2 = item.ageing?.['46-90'] || 0;
             const a3 = item.ageing?.['91-135'] || 0;
@@ -283,7 +303,7 @@ export const ReportsView = ({
 
             return true;
         });
-    }, [crmScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
+    }, [workScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
 
     // Export current report view to Excel with full ageing breakdown
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -413,6 +433,30 @@ export const ReportsView = ({
                                     ✕
                                 </button>
                             )}
+                        </div>
+
+                        {/* Which half of the book this report is of. Settled
+                            accounts keep everything; they are simply not what a
+                            collections report is asking about. */}
+                        <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1" role="group" aria-label="Report on accounts with dues, settled accounts, or all">
+                            {(['withDues', 'settled', 'all'] as SettlementFilter[]).map(key => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => setSettlementFilter(key)}
+                                    aria-pressed={settlementFilter === key}
+                                    className={`h-8 px-3 rounded-lg text-[12.5px] font-bold whitespace-nowrap transition-colors ${
+                                        settlementFilter === key
+                                            ? 'bg-accent text-on-accent shadow-e1'
+                                            : 'text-label-2 hover:bg-hover hover:text-label'
+                                    }`}
+                                >
+                                    {SETTLEMENT_LABELS[key]}
+                                    <span className="ml-1.5 font-semibold opacity-80 num">
+                                        {settlementCounts[key].toLocaleString('en-IN')}
+                                    </span>
+                                </button>
+                            ))}
                         </div>
 
                         {canExport && (

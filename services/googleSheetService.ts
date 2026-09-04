@@ -1,4 +1,4 @@
-import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo, normaliseCategory } from '../types';
+import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo, normaliseCategory, hasOutstanding } from '../types';
 
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
@@ -272,13 +272,35 @@ export function clearedFinancials() {
     };
 }
 
+/**
+ * Records the moment an account stops owing anything, and forgets it the moment
+ * it owes again.
+ *
+ * The settled list runs to a few thousand rows. Without a date on it, a customer
+ * who cleared this morning — the one somebody was mid-conversation with — sits
+ * indistinguishable from one who cleared two years ago. Only the stamp is
+ * touched: the notes, the thread, the cheques and the follow-up all stay exactly
+ * where they were, because a settled account is still the same customer.
+ */
+export function stampSettlement(before: Outstanding, after: Outstanding): Outstanding {
+    const owedBefore = hasOutstanding(before);
+    const owesNow = hasOutstanding(after);
+    if (owedBefore && !owesNow) return { ...after, settledAt: new Date().toISOString() };
+    if (owesNow && after.settledAt) return { ...after, settledAt: undefined };
+    return after;
+}
+
 /** True when this row still carries a balance the sheet no longer accounts for. */
 export const needsClearing = (item: Outstanding): boolean =>
     Math.abs(Number(item.total) || 0) > 0;
 
 /** Settles every account handed to it; summariseUnlisted() counts them first. */
 export function settleUnlisted(rows: Outstanding[]): Outstanding[] {
-    return rows.map(item => (needsClearing(item) ? { ...item, ...clearedFinancials() } : item));
+    return rows.map(item => (
+        needsClearing(item)
+            ? stampSettlement(item, { ...item, ...clearedFinancials() })
+            : item
+    ));
 }
 
 /**
@@ -380,11 +402,11 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
             // still passed through crmFromSheet() so a "#N/A" stored by an
             // older import — when a failed lookup was read as a name — clears
             // itself and the account surfaces in the unassigned queue.
-            return {
+            return stampSettlement(existing, {
                 ...existing,
                 ...financialsFromSheet(item),
                 crmOwnerId: crmFromSheet(existing.crmOwnerId),
-            };
+            });
         }
 
         // A name the app has never seen. Seed it from the row — that is all we

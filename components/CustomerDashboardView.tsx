@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -88,6 +88,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         Late: 'bg-warn-bg text-warn border border-separator',
         Bad: 'bg-dang-bg text-dang border border-separator',
     };
+    // Starts on the accounts that owe something: four customers in five owe
+    // nothing, and listing them all buries the few hundred worth working.
+    const [settlementFilter, setSettlementFilter] = useState<SettlementFilter>('withDues');
     const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
     const [ageingFilter, setAgeingFilter] = useState<AgeingCategoryFilter>('all');
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -128,7 +131,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     // A new filter means a new list; keep the window from carrying over.
     useEffect(() => {
         setVisibleCount(PAGE);
-    }, [searchTerm, globalSearch, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
+    }, [searchTerm, globalSearch, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
 
     // Hiding filters must never hide the fact that they are ON.
     const activeFilterCount = [
@@ -145,6 +148,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * the dropdown never offers a category that would return nothing, and never
      * hides one the sheet introduced that the list has not caught up with.
      */
+    /** How many of this person's accounts sit on each side of the line. */
+    const settlementCounts = useMemo(() => {
+        let withDues = 0;
+        userAllowedData.forEach(item => { if (hasOutstanding(item)) withDues++; });
+        return { withDues, settled: userAllowedData.length - withDues, all: userAllowedData.length };
+    }, [userAllowedData]);
+
     const categoriesInData = useMemo(() => {
         const counts = new Map<string, number>();
         let uncategorised = 0;
@@ -263,6 +273,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 }
             }
 
+            // Settled or not — the first thing every other filter narrows.
+            if (!matchesSettlement(item, settlementFilter)) return false;
+
             // Category (Builder / Dealer / Retailer / trade)
             if (categoryFilter !== 'ALL') {
                 const itemCategory = (item.category || '').trim();
@@ -325,7 +338,28 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             return true;
         });
-    }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+    }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+
+    /**
+     * On the settled tab, newest first.
+     *
+     * The list is three thousand rows and alphabetical by default, which buries
+     * the account that cleared this morning — the one somebody was mid-
+     * conversation with, and the whole reason for looking. Accounts settled
+     * before the app started recording the date keep their alphabetical place
+     * at the bottom.
+     */
+    const orderedData = useMemo(() => {
+        if (settlementFilter !== 'settled') return filteredData;
+        return [...filteredData].sort((a, b) => {
+            const at = a.settledAt || '';
+            const bt = b.settledAt || '';
+            if (at && bt) return bt.localeCompare(at);
+            if (at) return -1;
+            if (bt) return 1;
+            return a.company.localeCompare(b.company);
+        });
+    }, [filteredData, settlementFilter]);
 
     // Metrics summary for filtered dataset
     const metrics = useMemo(() => {
@@ -592,6 +626,40 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             {/* Compact Filter Controls Card */}
             <div className="bg-card rounded-[16px] shadow-e1 p-5 space-y-3.5">
+                {/* Which half of the book. First control on the card, because it
+                    decides what every filter under it is narrowing. Settled
+                    customers keep every note, cheque and word of their history —
+                    they are one click away, not hidden. */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1" role="group" aria-label="Show accounts with dues, settled accounts, or all">
+                        {(['withDues', 'settled', 'all'] as SettlementFilter[]).map(key => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setSettlementFilter(key)}
+                                aria-pressed={settlementFilter === key}
+                                className={`h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors ${
+                                    settlementFilter === key
+                                        ? 'bg-accent text-on-accent shadow-e1'
+                                        : 'text-label-2 hover:bg-hover hover:text-label'
+                                }`}
+                            >
+                                {SETTLEMENT_LABELS[key]}
+                                <span className="ml-1.5 font-semibold opacity-80 num">
+                                    {settlementCounts[key].toLocaleString('en-IN')}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-[12.5px] text-label-3">
+                        {settlementFilter === 'withDues'
+                            ? 'Accounts that owe something, or are in credit. Settled customers are on the next tab, with their full history.'
+                            : settlementFilter === 'settled'
+                                ? 'Paid up and nothing outstanding. Every note, cheque and follow-up they ever had is still on the account.'
+                                : 'Everyone on the books, settled or not.'}
+                    </p>
+                </div>
+
                 {/* Search, Rank, CRM, Status Filters Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2">
                     {/* Live Search */}
@@ -975,7 +1043,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                {filteredData.slice(0, visibleCount).map(item => {
+                                {orderedData.slice(0, visibleCount).map(item => {
                                     const activePdcs = pdcCheques.filter(p => p.customerId === item.id && (p.status === 'Pending' || p.status === 'DueToday'));
                                     const totalPdc = activePdcs.reduce((sum, p) => sum + p.amount, 0);
 
@@ -1054,6 +1122,16 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                             title={`Category: ${item.category}`}
                                                         >
                                                             {item.category}
+                                                        </span>
+                                                    )}
+                                                    {!hasOutstanding(item) && (
+                                                        <span
+                                                            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-pos-bg text-pos border border-separator whitespace-nowrap"
+                                                            title={item.settledAt
+                                                                ? `Nothing outstanding. Cleared ${new Date(item.settledAt).toLocaleString('en-IN')}. Every note, cheque and follow-up is still on the account.`
+                                                                : 'Nothing outstanding. Every note, cheque and follow-up is still on the account.'}
+                                                        >
+                                                            Settled{item.settledAt ? ` ${formatDate(item.settledAt)}` : ''}
                                                         </span>
                                                     )}
                                                     <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
@@ -1281,7 +1359,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             ) : (
                 /* Grid / Cards View */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {filteredData.slice(0, visibleCount).map(item => {
+                    {orderedData.slice(0, visibleCount).map(item => {
 
                         const a3 = item.ageing?.['91-135'] || 0;
                         const a4 = item.ageing?.['>135'] || 0;

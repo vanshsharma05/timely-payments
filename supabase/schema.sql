@@ -91,6 +91,8 @@ create table if not exists public.customers (
 -- has the table, so every column added after the first deployment needs saying
 -- again here. Running this file a second time is a no-op.
 alter table public.customers add column if not exists category text;
+-- When the balance last went to zero. Null while they still owe something.
+alter table public.customers add column if not exists settled_at text;
 
 create index if not exists customers_crm_owner_idx on public.customers (upper(crm_owner_id));
 create index if not exists customers_collector_idx on public.customers (upper(assigned_collector_id));

@@ -185,6 +185,37 @@ export const hasOutstanding = (item: Pick<Outstanding, 'total'>): boolean =>
     Math.abs(Number(item.total) || 0) > 0;
 
 /**
+ * Which half of the book a screen is showing.
+ *
+ * Roughly four customers in five owe nothing. They are real customers — the
+ * ledger, the contacts and every word of the history still matter, and a
+ * settled account is the point of the whole exercise — but they are not work,
+ * and mixed into a worklist they bury the few hundred accounts that are. "No
+ * follow-up set" read 3,835 when the true answer was a few hundred, because the
+ * other three thousand had nothing to follow up.
+ *
+ * So every list about work defaults to `withDues`, and `settled` is a place to
+ * go rather than a thing to wade through. Nothing is hidden and nothing is
+ * dropped: settling an account only zeroes its money.
+ */
+export type SettlementFilter = 'withDues' | 'settled' | 'all';
+
+export const SETTLEMENT_LABELS: Record<SettlementFilter, string> = {
+    withDues: 'With dues',
+    settled: 'Settled',
+    all: 'All',
+};
+
+export const matchesSettlement = (
+    item: Pick<Outstanding, 'total'>,
+    filter: SettlementFilter,
+): boolean => {
+    if (filter === 'all') return true;
+    return filter === 'settled' ? !hasOutstanding(item) : hasOutstanding(item);
+};
+
+
+/**
  * The teammate a stored owner value refers to, whichever spelling was saved.
  *
  * `crmOwnerId` is meant to hold the CRM **code** — `profiles.legacy_id`, the
@@ -507,6 +538,14 @@ export interface Outstanding {
     isUrgent?: boolean;
     isNewCustomer?: boolean;
     addedAt?: string;
+    /**
+     * When this account last went from owing something to owing nothing.
+     *
+     * Without it a customer who cleared this morning is indistinguishable from
+     * one who cleared two years ago, and the settled list — three thousand rows
+     * — is unreadable. Cleared again the moment a balance comes back.
+     */
+    settledAt?: string;
     creationDate: Date;
     lastFollowUpOn?: Date;
 }

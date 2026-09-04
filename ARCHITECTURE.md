@@ -513,6 +513,26 @@ ordinary as a note, and RLS cannot say "this column but not that one". So
 a wall at the database. Anyone who can write anything can, in principle, write
 those columns through PostgREST directly.
 
+### With dues / Settled / All
+
+Roughly four customers in five owe nothing. `SettlementFilter` (types.ts) is the
+one definition of which half a screen is showing, and the customer book and
+Reports each carry the same three-way control, **defaulting to `withDues`**.
+
+It is not a cosmetic filter. Before it, "No follow-up set" on Reports read
+**3,835** — of which some three thousand had nothing to follow up because they
+had already paid. The true figure is **525**. The exports inherit it, because
+both export whatever the screen is showing.
+
+Nothing is hidden and nothing is lost. `clearedFinancials()` zeroes money and
+only money: notes, the activity thread, the follow-up date, cheques, contacts,
+category and owner all stay on the record, so a customer who settles keeps every
+word of the conversation that got them there. `stampSettlement()` records
+`settledAt` on the transition to zero and clears it if a balance returns, and the
+settled tab sorts newest-settled first — three thousand rows in alphabetical
+order would bury the account that cleared this morning, which is the one anybody
+is actually looking for.
+
 ### `hasOutstanding()` — what counts as work
 
 ```ts
