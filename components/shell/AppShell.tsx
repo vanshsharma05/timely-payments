@@ -201,6 +201,14 @@ export interface AppShellProps {
   lastSyncTime?: string;
 
   banner?: React.ReactNode;
+  /**
+   * Hold the page to exactly one screen on a desktop, letting whatever the
+   * page marks as its scrolling panel take the space that is left.
+   *
+   * Only from `lg` up. A phone cannot fit a dashboard without scrolling, and
+   * pinning the body there would trap the content instead of showing it.
+   */
+  fitViewport?: boolean;
   children: React.ReactNode;
 }
 
@@ -223,6 +231,7 @@ export const AppShell = ({
   dataAsOf,
   lastSyncTime,
   banner,
+  fitViewport,
   children,
 }: AppShellProps) => {
   const [choice, setTheme, isDark] = useTheme();
@@ -294,7 +303,10 @@ export const AppShell = ({
   const isSetupActive = setup.some(i => i.key === activeKey);
 
   return (
-    <div className="min-h-screen bg-bg text-label">
+    <div className={cx(
+      'min-h-screen bg-bg text-label',
+      fitViewport && 'lg:h-dvh lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden',
+    )}>
       {/* ================= app bar ================= */}
       <header className="sticky top-0 z-40 bg-card/90 backdrop-blur-xl border-b-[3px] border-brand-yellow">
         <div className="h-16 px-4 sm:px-6 flex items-center gap-3">
@@ -488,7 +500,12 @@ export const AppShell = ({
       {banner}
 
       {/* ================= page heading (Apple large title) ================= */}
-      <div className="px-4 sm:px-6 pt-8 pb-6">
+      <div className={cx(
+        'px-4 sm:px-6 pt-8 pb-6',
+        // A page held to one screen spends its height on content, not on the
+        // gap above the title.
+        fitViewport && 'lg:pt-4 lg:pb-3',
+      )}>
         <div className="flex items-end justify-between gap-6 flex-wrap">
           <div className="min-w-0">
             <h1 className="text-[32px] sm:text-[36px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
@@ -521,7 +538,10 @@ export const AppShell = ({
         </div>
       </div>
 
-      <main className="px-4 sm:px-6 pb-24">{children}</main>
+      <main className={cx(
+        'px-4 sm:px-6 pb-24',
+        fitViewport && 'lg:flex-1 lg:min-h-0 lg:overflow-hidden lg:pb-5',
+      )}>{children}</main>
     </div>
   );
 };

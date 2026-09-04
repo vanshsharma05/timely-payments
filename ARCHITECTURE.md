@@ -936,6 +936,24 @@ Switching on the role name is what once left Manager and Viewer staring at an
 | `templates` — Message templates | Admin + Manager |
 | `source` — Data source | Admin + Manager |
 
+### Two things on Today that follow the role, not the visibility rule
+
+`rights.runsTheTeam` — Admin or Manager — is deliberately narrower than
+`seesWholeBook()`. A Viewer, and any CRM granted "view all", read every account
+without managing anybody.
+
+| | Admin + Manager | Everyone else |
+|---|---|---|
+| **Team Performance & Portfolio Allocation** | shown | hidden — how a colleague is doing is a management view |
+| **Today's page** | scrolls | held to one screen (`fitViewport`, `lg` and up) |
+
+The one-screen layout is not a smaller version of the same page. The summary
+takes a left rail and the account list takes the right, full height, scrolling
+inside its own panel — stacked, the list was the part pushed off the bottom, and
+the list is what the day is worked from. Below `lg` the page scrolls normally:
+none of this fits a phone, and pinning the body there would hide content rather
+than reveal it.
+
 ### 9.1 Today — the workspace
 
 The landing screen is the **queue**, not a summary of it. `Workspace` composes

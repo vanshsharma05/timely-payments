@@ -1086,6 +1086,16 @@ const App = () => {
         /** Importing a sheet rewrites the shared book, so it stays with the seniors. */
         canSyncSheets:
             currentUser?.role === UserRole.Admin || currentUser?.role === UserRole.Manager,
+        /**
+         * Whether this person runs the team rather than working a book.
+         *
+         * Not the same as seeing the whole book: a Viewer, and any CRM given
+         * "view all", read every account without managing anybody. How each
+         * colleague is performing is a management view, so it stays with the
+         * two roles that are accountable for it.
+         */
+        runsTheTeam:
+            currentUser?.role === UserRole.Admin || currentUser?.role === UserRole.Manager,
         seesWholeBook: seesWholeBook(currentUser),
         permissions: permissionsOf(currentUser),
     }), [currentUser]);
@@ -1466,7 +1476,10 @@ const App = () => {
 
     // Shared dashboard view for Admin
     const renderAdminOverviewCards = () => (
-        <div className="flex flex-col gap-7">
+        /* Whoever reads the whole book without running the team gets the same
+           one-screen treatment as everybody else; the cards scroll inside the
+           page rather than the page scrolling under them. */
+        <div className={`flex flex-col gap-7 ${rights.runsTheTeam ? '' : 'lg:h-full lg:min-h-0 lg:gap-5 lg:overflow-y-auto lg:pr-1.5'}`}>
             {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                 <NotificationBanner
                     urgentCount={notificationSummary.urgentCount}
@@ -1649,8 +1662,8 @@ const App = () => {
                 </Card>
             </div>
 
-            {/* ---------- team ---------- */}
-            <CrmPerformanceTable stats={crmPerformanceStats} />
+            {/* ---------- team: a management view, for the people who manage ---------- */}
+            {rights.runsTheTeam && <CrmPerformanceTable stats={crmPerformanceStats} />}
         </div>
     );
 
@@ -1685,7 +1698,10 @@ const App = () => {
         return (
             <>
                 {activeTab === 'overview' && (
-                    <div className="flex flex-col gap-7">
+                    /* One screen, no page scroll: the summary above stays put and the
+                       account list below takes whatever height is left. Only from lg —
+                       a phone scrolls, because none of this fits a phone. */
+                    <div className="flex flex-col gap-7 lg:h-full lg:min-h-0 lg:gap-5">
                         {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                             <NotificationBanner
                                 urgentCount={notificationSummary.urgentCount}
@@ -1697,7 +1713,7 @@ const App = () => {
 
                         {/* ---------- my worklist ---------- */}
                         <section>
-                            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
+                            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5 lg:mb-2.5">
                                 <div>
                                     <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">My worklist</h2>
                                     <p className="text-[13.5px] text-label-3 mt-1">Tap a card to filter the accounts below.</p>
@@ -1743,71 +1759,80 @@ const App = () => {
                             </div>
                         </section>
 
-                        {/* ---------- my book ---------- */}
-                        <div className="grid lg:grid-cols-2 gap-3.5">
-                            <Card className="p-6 flex flex-col">
+                        {/* ---------- my book, and the accounts beside it ----------
+                            Stacked, this ran to about a screen and a half and the
+                            account list was the part pushed off the bottom — which is
+                            the part the day is actually worked from. On a desktop the
+                            summary takes the left column and the list takes the right,
+                            full height, so nothing needs scrolling to be seen. */}
+                        <div className="flex flex-col gap-7 lg:grid lg:grid-cols-12 lg:gap-4 lg:flex-1 lg:min-h-0">
+                        {/* Scrolls only if the screen is too short to hold both cards —
+                            on anything normal there is no scrollbar here at all, and
+                            nothing is ever cut off on a short one. */}
+                        <div className="flex flex-col gap-3.5 lg:col-span-5 lg:gap-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+                            <Card className="p-6 lg:p-5 flex flex-col">
                                 <SectionHeader
                                     title="My book"
-                                    subtitle="Everything assigned to you, by age."
+                                    subtitle={<span className="lg:hidden">Everything assigned to you, by age.</span>}
                                     actions={<AgeingLegend />}
                                 />
-                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7">
+                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7 lg:mt-4">
                                     <div>
                                         <p className="label">Outstanding</p>
-                                        <p className="num text-[34px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
+                                        <p className="num text-[34px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.04em]">
                                             {formatCompact(myAgeing.total)}
                                         </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5">{userBoxMetrics.totalCount} accounts</p>
+                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{userBoxMetrics.totalCount} accounts</p>
                                     </div>
                                     <div>
                                         <p className="label">Past 45 days</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
                                             {formatCompact(myAgeing.over45)}
                                         </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct45}% of your book</p>
+                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{myAgeing.pct45}% of your book</p>
                                     </div>
                                     <div>
                                         <p className="label">Past 90 days</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
                                             {formatCompact(myAgeing.over90)}
                                         </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5">{myAgeing.pct90}% of your book</p>
+                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{myAgeing.pct90}% of your book</p>
                                     </div>
                                 </div>
-                                <div className="mt-auto pt-7">
+                                <div className="mt-auto pt-7 lg:pt-4">
                                     <AgeingBar parts={myAgeing} height={12} />
                                 </div>
                             </Card>
 
-                            <Card className="p-6 flex flex-col">
+                            <Card className="p-6 lg:p-5 flex flex-col">
                                 <SectionHeader
                                     title="Cheques and commitments"
-                                    subtitle="Cheques to present, and what customers promised you."
+                                    subtitle={<span className="lg:hidden">Cheques to present, and what customers promised you.</span>}
                                 />
-                                <div className="flex items-end gap-10 mt-7 flex-wrap">
+                                <div className="flex items-end gap-10 mt-7 lg:mt-4 flex-wrap">
                                     <div>
                                         <p className="label">Cheques today</p>
-                                        <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
+                                        <p className="num text-[32px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]">
                                             {todayPdcMetrics.todayCount}
                                         </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2">{formatCompact(todayPdcMetrics.todayAmount)}</p>
+                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{formatCompact(todayPdcMetrics.todayAmount)}</p>
                                     </div>
                                     <div>
                                         <p className="label">Held in hand</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
+                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
                                             {formatCompact(todayPdcMetrics.activeAmount)}
                                         </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
+                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{todayPdcMetrics.activeCount} cheques</p>
                                     </div>
                                     <div>
                                         <p className="label">Promised today</p>
-                                        <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
+                                        <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.02em]">
                                             {formatCompact(cashFlowForecastMetrics.todayForecast)}
                                         </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.todayCount} commitments</p>
+                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{cashFlowForecastMetrics.todayCount} commitments</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-2.5 mt-auto pt-7">
+                                <div className="flex gap-2.5 mt-auto pt-7 lg:pt-4">
                                     <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
                                         {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
                                     </Button>
@@ -1819,7 +1844,7 @@ const App = () => {
                         </div>
 
                         {/* ---------- the accounts themselves ---------- */}
-                        <Card className="p-6">
+                        <Card className="p-6 lg:col-span-7 lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
                             <SectionHeader
                                 title={
                                     categoryFilter === 'today' ? 'Due today'
@@ -1843,7 +1868,7 @@ const App = () => {
                                     action={<Button size="sm" variant="secondary" onClick={handleClearFilters}>Show all my accounts</Button>}
                                 />
                             ) : (
-                                <div className="mt-6 flex flex-col gap-2.5">
+                                <div className="mt-6 flex flex-col gap-2.5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5">
                                     {filteredData.slice(0, 40).map(customer => {
                                         const cat = getFollowUpCategory(customer, getToday());
                                         const due = relativeDays(customer.followUpDate);
@@ -1911,6 +1936,7 @@ const App = () => {
                                 </div>
                             )}
                         </Card>
+                        </div>
                     </div>
                 )}
 
@@ -2711,6 +2737,11 @@ const App = () => {
             currentUser={currentUser}
             groups={navGroups}
             activeKey={safeKey}
+            // Today is a glance, not a document: for everyone working a book it
+            // is held to one screen, and the account list scrolls inside its own
+            // panel. Managers and Admins keep a scrolling page — they have the
+            // team table under it, which is a read rather than a glance.
+            fitViewport={safeKey === 'overview' && !rights.runsTheTeam}
             onNavigate={setActiveKey}
             onLogout={handleLogout}
             onChangePassword={() => setIsPasswordModalOpen(true)}
