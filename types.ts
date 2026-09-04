@@ -400,9 +400,17 @@ export interface AdditionalContact {
  * How a customer pays, in the three grades the business actually uses.
  *
  *   Good  — pays to terms.
- *   Late  — pays, but late; worth chasing normally.
- *   Bad   — old money stuck. This is the list that goes to the recovery agency,
- *           so it must not be diluted with people who are merely slow.
+ *   Late  — pays, but late; worth chasing normally. However old the money is,
+ *           a customer who is still paying is late, not a defaulter.
+ *   Bad   — a defaulter. This is the list that goes to the recovery agency.
+ *
+ * `Bad` is **declared, never calculated.** Whether somebody has stopped paying
+ * is a judgement about the customer, and ageing cannot make it: money sitting
+ * past 135 days may be a dispute, a retention, or an invoice nobody chased.
+ * Worked out from ageing it called 416 of 696 owing accounts defaulters, which
+ * is both untrue and useless — a recovery list of four hundred names is not a
+ * recovery list. It now comes from the defaulters the business names, set here
+ * or loaded in bulk.
  */
 export type PaymentRank = 'Good' | 'Late' | 'Bad';
 
@@ -725,9 +733,12 @@ export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
 };
 
 /**
- * Determine a customer's Payment Rank: 'Good' or 'Bad'
- * If explicitly assigned on the customer record, use that.
- * Otherwise, intelligently auto-calculate based on credit days terms and overdue ageing.
+ * A customer's payment rank.
+ *
+ * A rank somebody set by hand always wins — including `Bad`, which is the only
+ * way an account becomes one, because being a defaulter is a decision about the
+ * customer and not something ageing can tell you. Everything else is worked out
+ * from what is owed: nothing overdue is Good, anything overdue is Late.
  */
 export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
     // Somebody who knows the account has said what it is; that beats any rule.
@@ -744,16 +755,11 @@ export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
     const a4 = customer.ageing?.['>135'] || 0;
     const over90 = customer.over90 !== undefined ? customer.over90 : (a3 + a4);
     const dueOver45 = customer.dueOver45 !== undefined ? customer.dueOver45 : (a2 + over90);
-    const total = customer.total || 0;
 
-    // Money sitting past 135 days, or most of the balance past 90, is stuck
-    // rather than slow.
-    if (a4 > 0) return 'Bad';
-    if (over90 > 0 && over90 > total * 0.35) return 'Bad';
-
-    // Late but still moving: something is past its date, but none of it is old.
+    // Anything past its date is Late, however far past. Old money is shown by
+    // the ageing buckets, which say how old far better than a grade can; it is
+    // not evidence that a customer has stopped paying.
     if (over90 > 0 || dueOver45 > 0) return 'Late';
-    if (customer.paymentTermsDays && customer.paymentTermsDays <= 45 && dueOver45 > 0) return 'Late';
 
     return 'Good';
 }

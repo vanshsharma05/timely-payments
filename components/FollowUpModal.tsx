@@ -953,7 +953,7 @@ const FollowUpModal = ({
                                     <option value="">Automatic — {PAYMENT_RANK_LABELS[getCustomerPaymentRank({ ...customer, paymentRank: undefined })]} from ageing</option>
                                     <option value="Good">Good — pays to terms</option>
                                     <option value="Late">Late pay — slow but paying</option>
-                                    <option value="Bad">Bad debt — old money stuck</option>
+                                    <option value="Bad">Bad debt — a defaulter</option>
                                 </select>
                             </div>
                         )}

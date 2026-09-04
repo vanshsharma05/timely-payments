@@ -455,7 +455,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     <option value="">Auto (from terms &amp; ageing)</option>
                                     <option value="Good">Good — pays to terms</option>
                                     <option value="Late">Late pay — pays, but slowly</option>
-                                    <option value="Bad">Bad debt — old money stuck</option>
+                                    <option value="Bad">Bad debt — a defaulter</option>
                                 </select>
                             </div>
                             <div>

@@ -576,9 +576,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 </div>
 
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
-                    <p className="label">Bad debt</p>
+                    <p className="label">Bad debt &mdash; defaulters</p>
                     <p className="num text-[19px] font-medium mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-4-ink)' }}>{formatCurrency(metrics.badDebitSum)}</p>
-                    <p className="text-[12px] text-label-3 mt-1">{metrics.badCount} accounts · agency list</p>
+                    <p className="text-[12px] text-label-3 mt-1">{metrics.badCount} named defaulters · agency list</p>
                 </div>
 
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
@@ -700,7 +700,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             <option value="ALL">All ranks ({data.length})</option>
                             <option value="Good">Good — pays to terms ({metrics.goodCount})</option>
                             <option value="Late">Late pay — slow but paying ({metrics.lateCount})</option>
-                            <option value="Bad">Bad debt — old money stuck ({metrics.badCount})</option>
+                            <option value="Bad">Bad debt — named defaulters ({metrics.badCount})</option>
                         </select>
                     </div>
 

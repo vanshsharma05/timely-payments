@@ -605,26 +605,31 @@ Three grades, because the business uses three:
 
 | Rank | Meaning |
 |---|---|
-| `Good` | pays to terms |
-| `Late` | pays, but late — chase normally |
-| `Bad` | old money stuck — **this is the list the recovery agency gets** |
+| `Good` | nothing overdue |
+| `Late` | something is past its date — however far past |
+| `Bad` | **a defaulter.** This is the list that goes to the recovery agency |
 
 `getCustomerPaymentRank()`, in order:
 
-1. A manual `paymentRank` on the record wins over any rule. Somebody who knows
-   the account has said what it is.
+1. A rank set by hand wins. This is the **only** way an account becomes `Bad`.
 2. `Cr` or `total <= 0` → `Good` (owes nothing).
-3. Anything in `>135` → **`Bad`**.
-4. `over90 > total × 0.35` → **`Bad`**.
-5. Any `over90` or `dueOver45` → `Late`.
-6. Otherwise `Good`.
+3. Any `over90` or `dueOver45` → `Late`.
+4. Otherwise `Good`.
 
-The `Bad` list must not be diluted with people who are merely slow — that is
-what rule 3 and the 35% threshold are for.
+**`Bad` is declared, never calculated.** It used to be worked out from ageing —
+anything past 135 days, or more than 35% of the balance past 90 — which made
+**416 of 696** owing accounts defaulters, ₹8.62 Cr of a ₹11.2 Cr book. A recovery
+list of four hundred names is not a recovery list, and most of those customers
+were still paying.
 
-Live: 685 accounts on the automatic rule, 1 manually `Good`, 1 manually `Late`.
-The bulk-grading tool (`handleBulkSetRank`) exists because grading 400+ accounts
-one dialog at a time is not a workflow.
+Ageing cannot answer the question it was being asked. Money sitting past 135 days
+may be a dispute, a retention, or an invoice nobody chased; whether a customer
+has *stopped paying* is a judgement about the customer. So it comes from the
+defaulters the business names — set on the account, or applied to a selection
+with the bulk rank tool, which is what that tool is for.
+
+How old the money is has not gone anywhere: the four ageing buckets say it
+precisely, on every row, in every report and in the exports.
 
 ### 7.5 When a cheque is due
 
