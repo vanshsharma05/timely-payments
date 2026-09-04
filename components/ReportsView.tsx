@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -69,6 +69,9 @@ export const ReportsView = ({
     // Downloading the book and spending money on an AI report are both rights
     // a Viewer or Collector is not given.
     const canExport = can(currentUser, 'canExportData');
+    // The spreadsheet leaves the app; the AI report is read on screen. Only
+    // the download takes a management role — see canExportBook().
+    const canDownloadExcel = canExportBook(currentUser);
 
     const userAllowedData = useMemo(() => scopeTo(currentUser, data), [data, currentUser]);
 
@@ -393,7 +396,7 @@ export const ReportsView = ({
                         </button>
                         )}
 
-                        {canExport && (
+                        {canDownloadExcel && (
                         <button
                             onClick={exportToExcel}
                             className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors whitespace-nowrap"

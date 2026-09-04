@@ -457,7 +457,11 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 />
                                 <div>
                                     <div className="font-bold">Export Reports & Excel</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can download spreadsheet analysis</div>
+                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">
+                                        Can download spreadsheet analysis. Downloading the customer book
+                                        or a report needs Admin or Manager as well — this alone covers
+                                        the cheque register.
+                                    </div>
                                 </div>
                             </label>
 

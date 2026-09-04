@@ -146,6 +146,24 @@ export function seesWholeBook(user: User | null | undefined): boolean {
 }
 
 /**
+ * Whether this person may take the book out of the app as a file.
+ *
+ * An export is not a view of the book, it is a copy of it — names, contacts,
+ * balances and ageing, in a spreadsheet that leaves the app and its audit trail
+ * behind and can be sent anywhere. That is a management decision, so it takes a
+ * management role *and* the permission: an Admin can withdraw it from a
+ * Manager, and nobody below the two can be granted it by ticking a box.
+ *
+ * Deliberately stricter than `canExportData` alone, which still governs the
+ * cheque register's own export.
+ */
+export function canExportBook(user: User | null | undefined): boolean {
+    if (!user) return false;
+    if (user.role !== UserRole.Admin && user.role !== UserRole.Manager) return false;
+    return can(user, 'canExportData');
+}
+
+/**
  * One CRM code, written one way.
  *
  * The sheet, the user list and anything typed by hand disagree about case and

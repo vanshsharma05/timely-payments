@@ -362,6 +362,15 @@ Plus two rules not in the matrix:
 - `canSyncSheets` (importing a sheet, editing templates, changing the data
   source, alerts) is Admin *or* Manager only, computed in `App.tsx`'s `rights`
   memo. It matches the `templates` / `app_settings` / `alert_settings` policies.
+- `runsTheTeam` (the Team Performance table; whether Today is held to one
+  screen) is Admin *or* Manager, in the same memo. Deliberately narrower than
+  `seesWholeBook()` — a Viewer reads every account without managing anybody.
+- `canExportBook()` (types.ts) narrows `canExportData` the same way: **taking
+  the customer book or a report out as a spreadsheet needs Admin or Manager as
+  well as the permission.** An export is a copy of the book — names, contacts,
+  balances — that leaves the app and its audit trail behind, so the checkbox
+  alone does not grant it and an Admin can still withdraw it from a Manager.
+  `canExportData` on its own continues to govern the cheque register's export.
 
 ### 5.2 Row Level Security
 

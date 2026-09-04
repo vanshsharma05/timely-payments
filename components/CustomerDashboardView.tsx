@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -67,7 +67,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const canEditFollowUp = can(currentUser, 'canEditFollowUp');
     const canManagePdc = can(currentUser, 'canManagePdc');
     const canReassignCrm = can(currentUser, 'canReassignCrm');
-    const canExport = can(currentUser, 'canExportData');
+    // Taking the book out as a file is Admin/Manager, not merely whoever has
+    // the export permission — see canExportBook().
+    const canExport = canExportBook(currentUser);
     const canViewAllCrms = seesWholeBook(currentUser);
 
     // Filter raw data strictly based on user roles and assigned access rights
