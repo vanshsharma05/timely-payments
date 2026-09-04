@@ -749,6 +749,14 @@ Everything else survives an import untouched.
 
 ### 8.3 The balance sync
 
+**Every "sync" control in the app is this one, and only this one.** Three of
+them exist — the app bar, the customer book, and Data source — and all three
+call `handleGoogleSync()`, which reads the outstanding sheet and nothing else.
+The customer import has exactly one entry point, the button beside its own URL
+in Data source. Two sheets and a button labelled "Sync from Google Sheets" was
+a fair invitation to assume otherwise, so all three now read **Sync balances**
+and say in their tooltip what is left alone.
+
 `mergeWithExistingFollowUps()` enforces four rules against a shared database:
 
 1. **A matched customer keeps the id it already has.** Old ids carried the

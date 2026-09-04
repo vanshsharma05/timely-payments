@@ -341,15 +341,39 @@ export const AppShell = ({
           </div>
 
           <div className="flex items-center gap-1">
+            {/* There are two Google Sheets behind this app and this button only
+                reads one of them. Unlabelled, with a tooltip that said "Sync from
+                Google Sheets", it was fair to read it as pulling everything —
+                including the customer import, which it has never done and must
+                not. It says what it does now, in the same words as the button on
+                the customer book and the one in Data source. */}
             {onSync && (
-              <IconButton
+              <button
                 onClick={onSync}
                 disabled={isSyncing}
-                label={isSyncing ? 'Syncing' : 'Sync from Google Sheets'}
-                title={lastSyncTime ? `Last synced ${new Date(lastSyncTime).toLocaleString('en-IN')}` : 'Sync from Google Sheets'}
+                aria-label={isSyncing ? 'Syncing balances' : 'Sync balances from the outstanding sheet'}
+                title={
+                  "Pulls today's balances and ageing from the outstanding sheet.\n" +
+                  'Customer details, categories and CRM owners are not read from it — those live here.' +
+                  (lastSyncTime
+                    ? `\n\nLast synced ${new Date(lastSyncTime).toLocaleString('en-IN')}`
+                    : '\n\nNot synced yet')
+                }
+                className={cx(
+                  'flex items-center gap-2 h-9 px-3.5 rounded-full whitespace-nowrap',
+                  'text-[14px] font-semibold border transition-colors',
+                  isSyncing
+                    ? 'border-separator text-label-3 cursor-wait'
+                    : 'border-separator-strong text-label-2 hover:bg-hover hover:text-label active:bg-press',
+                )}
               >
-                {isSyncing ? <Spinner className="w-[18px] h-[18px]" /> : <RefreshGlyph className="w-[18px] h-[18px]" />}
-              </IconButton>
+                {isSyncing
+                  ? <Spinner className="w-[17px] h-[17px]" />
+                  : <RefreshGlyph className="w-[17px] h-[17px]" />}
+                <span className="hidden sm:inline">
+                  {isSyncing ? 'Syncing…' : 'Sync balances'}
+                </span>
+              </button>
             )}
 
             <IconButton
