@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 import * as repo from '../services/repository';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
@@ -43,7 +43,12 @@ const FollowUpModal = ({
         return '';
     });
     const [assignedCollectorId, setAssignedCollectorId] = useState(customer.assignedCollectorId || '');
-    const [assignedCrmOwnerId, setAssignedCrmOwnerId] = useState(customer.crmOwnerId || '');
+    // Resolved to the CRM code, because the options below are keyed by code. An
+    // account saved under a display name matched no option, so this dialog
+    // showed "Unassigned" for a customer that plainly had an owner.
+    const [assignedCrmOwnerId, setAssignedCrmOwnerId] = useState(
+        findOwner(users, customer.crmOwnerId)?.id || customer.crmOwnerId || '',
+    );
     const [paymentRank, setPaymentRank] = useState<PaymentRank | ''>(customer.paymentRank || '');
     const [category, setCategory] = useState(customer.category || '');
     const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>('follow_up');
@@ -986,7 +991,7 @@ const FollowUpModal = ({
                                     className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
                                 >
                                     <option value="">Unassigned</option>
-                                    {assignedCrmOwnerId && !crmUsers.some(u => u.name.toUpperCase() === assignedCrmOwnerId.toUpperCase() || u.id.toUpperCase() === assignedCrmOwnerId.toUpperCase()) && (
+                                    {assignedCrmOwnerId && !findOwner(crmUsers, assignedCrmOwnerId) && (
                                         <option value={assignedCrmOwnerId}>{assignedCrmOwnerId}</option>
                                     )}
                                     {(canReassignCrm ? crmUsers : crmUsers.filter(c => c.id === currentUser.id)).map(c => (

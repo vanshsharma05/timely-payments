@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory } from '../types';
+import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
     customerToEdit: Outstanding | null; // null means Add New Customer
@@ -84,7 +84,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setPaymentTermsDays(customerToEdit.paymentTermsDays);
             setPaymentRank(customerToEdit.paymentRank || '');
             setCategory(customerToEdit.category || '');
-            setCrmOwnerId(customerToEdit.crmOwnerId || '');
+            // An owner saved under an older spelling still has to select its own
+            // option, or opening the form would quietly reset it to blank.
+            setCrmOwnerId(findOwner(crmUsers, customerToEdit.crmOwnerId)?.id || customerToEdit.crmOwnerId || '');
             setTotal(customerToEdit.total || 0);
             setTotalType(customerToEdit.totalType || 'Dr');
             setA1_45(customerToEdit.ageing?.['1-45'] || 0);
@@ -116,7 +118,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             // to whoever happened to be first in the list — which is how
             // thousands of accounts ended up on one person's name without
             // anyone deciding it.
-            setCrmOwnerId(currentUser?.role === UserRole.CRM ? currentUser.name : '');
+            setCrmOwnerId(currentUser?.role === UserRole.CRM ? currentUser.id : '');
             setTotal(0);
             setTotalType('Dr');
             setA1_45(0);
@@ -304,10 +306,14 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     }`}
                                 >
                                     <option value="">Select CRM</option>
+                                    {/* The value is the CRM code, never the display name: the code is
+                                        what a customer row carries and what the accounts sheet uses.
+                                        Saving the name instead put "Vansh Sharma" where VANSH_SHARMA
+                                        belonged, and the account then read as unassigned. */}
                                     {crmUsers.map(u => (
-                                        <option key={u.id} value={u.name}>{u.name}</option>
+                                        <option key={u.id} value={u.id}>{u.name}</option>
                                     ))}
-                                    {crmOwnerId && !crmUsers.some(u => u.name === crmOwnerId || u.id === crmOwnerId) && (
+                                    {crmOwnerId && !findOwner(crmUsers, crmOwnerId) && (
                                         <option value={crmOwnerId}>{crmOwnerId}</option>
                                     )}
                                 </select>

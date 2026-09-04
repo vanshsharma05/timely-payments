@@ -1297,13 +1297,24 @@ const App = () => {
 
         statsMap.set('UNASSIGNED', blank('Unassigned', 'No CRM Assigned'));
 
+        /**
+         * The one bucket this owner belongs in.
+         *
+         * Keyed by the person's CRM code whenever the value names somebody on
+         * the roster, so an account saved as "Vansh Sharma" and one saved as
+         * VANSH_SHARMA count towards the same row. Keying on the raw spelling
+         * gave that person two rows with their book split between them — and,
+         * since both rows carried the same `crmId`, two React children with the
+         * same key.
+         */
         const bucketFor = (raw: string | undefined, key: string) => {
-            if (!statsMap.has(key)) {
-                const known = users.find(u => ownerKey(u.id) === key || ownerKey(u.name) === key);
+            const known = users.find(u => ownerKey(u.id) === key || ownerKey(u.name) === key);
+            const bucketKey = known ? ownerKey(known.id) : key;
+            if (!statsMap.has(bucketKey)) {
                 const label = (raw || '').trim();
-                statsMap.set(key, blank(known?.id || label, known?.name || label));
+                statsMap.set(bucketKey, blank(known?.id || label, known?.name || label));
             }
-            return statsMap.get(key)!;
+            return statsMap.get(bucketKey)!;
         };
 
         outstandingData.forEach(item => {
@@ -1316,7 +1327,11 @@ const App = () => {
             // been handed to them, which is exactly what a manager checks here.
             const buckets = [bucketFor(item.crmOwnerId, ownerK)];
             if (collectorK && collectorK !== ownerK) {
-                buckets.push(bucketFor(item.assignedCollectorId, collectorK));
+                // Two spellings of one person resolve to one bucket, so compare
+                // the buckets rather than the raw keys — otherwise the account
+                // would be counted twice in the same row.
+                const collectorBucket = bucketFor(item.assignedCollectorId, collectorK);
+                if (collectorBucket !== buckets[0]) buckets.push(collectorBucket);
             }
 
             const cat = getFollowUpCategory(item, today);

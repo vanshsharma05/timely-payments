@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -190,13 +190,23 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     );
     const unassignedOwing = useMemo(() => unassigned.filter(i => Math.abs(Number(i.total) || 0) > 0), [unassigned]);
 
+    /**
+     * One entry per owner, under the code their profile actually uses.
+     *
+     * Some accounts were saved under a display name while three of the owner
+     * dropdowns wrote `u.name` instead of `u.id`, which listed the same person
+     * twice — "VISHNU" and "Vishnu" — and split their book across two filters.
+     */
     const allCrmsInDataset = useMemo(() => {
-        const set = new Set<string>();
+        const byKey = new Map<string, string>();
         userAllowedData.forEach(item => {
-            if (item.crmOwnerId && item.crmOwnerId.trim()) set.add(item.crmOwnerId.trim());
+            const raw = (item.crmOwnerId || '').trim();
+            if (!raw) return;
+            const canonical = findOwner(users, raw)?.id || raw;
+            byKey.set(ownerKey(canonical), canonical);
         });
-        return Array.from(set).sort();
-    }, [userAllowedData]);
+        return Array.from(byKey.values()).sort();
+    }, [userAllowedData, users]);
 
     // Formatters
     const formatCurrency = (amount?: number) => {
@@ -267,13 +277,15 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 if (itemRank !== rankFilter) return false;
             }
 
-            // CRM Filter
+            // CRM Filter. Resolved through the roster, so an account saved
+            // under a display name still lands in its owner's portfolio.
             if (selectedCrm !== 'ALL') {
-                const ownerUpper = (item.crmOwnerId || '').trim().toUpperCase();
+                const ownerRaw = (item.crmOwnerId || '').trim();
                 if (selectedCrm === 'UNASSIGNED') {
-                    if (ownerUpper !== '') return false;
+                    if (ownerRaw !== '') return false;
                 } else {
-                    if (ownerUpper !== selectedCrm.toUpperCase()) return false;
+                    const canonical = findOwner(users, ownerRaw)?.id || ownerRaw;
+                    if (ownerKey(canonical) !== ownerKey(selectedCrm)) return false;
                 }
             }
 
@@ -311,7 +323,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             return true;
         });
-    }, [userAllowedData, globalSearch, searchTerm, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+    }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
 
     // Metrics summary for filtered dataset
     const metrics = useMemo(() => {
@@ -881,7 +893,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 >
                                     <option value="">Reassign to…</option>
                                     {crmUsers.map(u => (
-                                        <option key={u.id} value={u.name}>{u.name}</option>
+                                        <option key={u.id} value={u.id}>{u.name}</option>
                                     ))}
                                 </select>
                                 <button
@@ -1162,16 +1174,16 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             <td className="px-2.5 py-2.5 text-left whitespace-nowrap">
                                                 {canReassignCrm && onReassignCrm ? (
                                                     <select
-                                                        value={item.crmOwnerId || ''}
+                                                        value={findOwner(crmUsers, item.crmOwnerId)?.id || item.crmOwnerId || ''}
                                                         onChange={e => onReassignCrm(item.id, e.target.value)}
                                                         aria-label={`CRM owner for ${item.company}`}
                                                         className="text-[12.5px] h-8 px-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 font-semibold text-gray-800 dark:text-gray-200 cursor-pointer"
                                                     >
                                                         <option value="">Unassigned</option>
                                                         {crmUsers.map(u => (
-                                                            <option key={u.id} value={u.name}>{u.name}</option>
+                                                            <option key={u.id} value={u.id}>{u.name}</option>
                                                         ))}
-                                                        {item.crmOwnerId && !crmUsers.some(u => u.name === item.crmOwnerId) && (
+                                                        {item.crmOwnerId && !findOwner(crmUsers, item.crmOwnerId) && (
                                                             <option value={item.crmOwnerId}>{item.crmOwnerId}</option>
                                                         )}
                                                     </select>

@@ -166,6 +166,27 @@ export const ownerKey = (value?: string | null): string => (value || '').trim().
 export const hasOutstanding = (item: Pick<Outstanding, 'total'>): boolean =>
     Math.abs(Number(item.total) || 0) > 0;
 
+/**
+ * The teammate a stored owner value refers to, whichever spelling was saved.
+ *
+ * `crmOwnerId` is meant to hold the CRM **code** — `profiles.legacy_id`, the
+ * same string the accounts sheet uses. For a while three of the four owner
+ * dropdowns wrote the display **name** instead, so the column also holds
+ * "Vishnu", "kapil" and "Vansh Sharma". Matching on the code first and the name
+ * second resolves every one of them to the right person, so a dropdown selects
+ * the owner an account actually has rather than falling back to its first
+ * option and reading as "Unassigned".
+ */
+export function findOwner<T extends Pick<User, 'id' | 'name'>>(
+    people: T[],
+    value?: string | null,
+): T | undefined {
+    const key = ownerKey(value);
+    if (!key) return undefined;
+    return people.find(u => ownerKey(u.id) === key)
+        || people.find(u => ownerKey(u.name) === key);
+}
+
 /** True when this person owns the account, or is the collector working it. */
 export function isResponsibleFor(user: Pick<User, 'id' | 'name'>, item: Pick<Outstanding, 'crmOwnerId' | 'assignedCollectorId'>): boolean {
     const me = [ownerKey(user.id), ownerKey(user.name)].filter(Boolean);

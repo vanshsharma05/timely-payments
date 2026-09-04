@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE } from '../types';
+import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE, findOwner, ownerKey } from '../types';
 import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
 interface PdcChequesViewProps {
@@ -145,7 +145,12 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             if (selectedCrm !== 'all') {
                 const customer = customers.find(cust => cust.id === c.customerId);
                 const crmId = customer ? customer.crmOwnerId : c.crmOwnerId;
-                if (crmId !== selectedCrm) return false;
+                // Compared through the roster: the dropdown holds a CRM code
+                // and the stored value may be either spelling. A plain !==
+                // matched neither case nor a display name, so picking a CRM
+                // here emptied the list instead of narrowing it.
+                const canonical = findOwner(users, crmId)?.id || (crmId || '');
+                if (ownerKey(canonical) !== ownerKey(selectedCrm)) return false;
             }
 
             // Customer Filter
@@ -208,7 +213,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
             return true;
         }).sort((a, b) => a.chequeDate.getTime() - b.chequeDate.getTime());
-    }, [chequesWithComputedStatus, selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm, customers, today]);
+    }, [chequesWithComputedStatus, selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm, customers, users, today]);
 
     // Export to Excel / CSV
     const handleExport = () => {
@@ -529,7 +534,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         >
                             <option value="all">{canViewAll ? 'All CRM Owners' : 'Assigned CRM Owners'}</option>
                             {availableCrms.map(u => (
-                                <option key={u.id} value={u.name}>
+                                <option key={u.id} value={u.id}>
                                     {u.name} ({u.role})
                                 </option>
                             ))}
