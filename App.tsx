@@ -40,6 +40,22 @@ import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
 
 // Helper to get today's date at midnight
+/**
+ * The tab the app is on lives in the URL.
+ *
+ * It used to live only in React state, so every refresh dropped you back on
+ * Today — mid-way through the customer book, or a report you had filtered down,
+ * and you were on the dashboard again. In the address bar it survives a
+ * refresh, and a link to a particular screen is a link somebody can send.
+ */
+const TAB_KEYS = ['overview', 'customers', 'pdc', 'reports', 'users', 'alerts', 'templates', 'source'];
+
+const tabFromLocation = (): string => {
+    if (typeof window === 'undefined') return 'overview';
+    const key = (window.location.hash || '').replace(/^#\/?/, '');
+    return TAB_KEYS.includes(key) ? key : 'overview';
+};
+
 const getToday = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -89,8 +105,8 @@ const App = () => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     // Dashboard Tab States (Lifted up to prevent reset on re-renders)
-    const [adminTab, setAdminTab] = useState('overview');
-    const [userTab, setUserTab] = useState('overview');
+    const [adminTab, setAdminTab] = useState(tabFromLocation);
+    const [userTab, setUserTab] = useState(tabFromLocation);
 
     // This state holds the"Master" data for the application
     const [appData, setAppData] = useState<Outstanding[]>([]);
@@ -1099,6 +1115,30 @@ const App = () => {
         seesWholeBook: seesWholeBook(currentUser),
         permissions: permissionsOf(currentUser),
     }), [currentUser]);
+
+    const navKey = rights.seesWholeBook ? adminTab : userTab;
+
+    useEffect(() => {
+        if (!isAuthenticated || typeof window === 'undefined') return;
+        if (tabFromLocation() === navKey) return;
+        // replaceState, not push: tab changes are not journeys, and stacking one
+        // history entry per click would make Back a way out of the app only
+        // after a dozen presses.
+        window.history.replaceState(null, '', `#${navKey}`);
+    }, [navKey, isAuthenticated]);
+
+    // Somebody editing the address bar, or arriving on a link, still lands on
+    // the screen the URL names.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onHashChange = () => {
+            const key = tabFromLocation();
+            setAdminTab(prev => (prev === key ? prev : key));
+            setUserTab(prev => (prev === key ? prev : key));
+        };
+        window.addEventListener('hashchange', onHashChange);
+        return () => window.removeEventListener('hashchange', onHashChange);
+    }, []);
 
     /** Same shape as portfolioAgeing, but only what this person is chasing. */
     const myAgeing = useMemo(() => {
