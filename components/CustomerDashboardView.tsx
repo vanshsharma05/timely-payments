@@ -253,9 +253,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * and separately, so the screen can say "one settled customer matches" and
      * offer to show it.
      */
-    const { filteredData, hiddenBySettlement } = useMemo(() => {
+    const { filteredData, hiddenBySettlement, rankCounts } = useMemo(() => {
         const kept: Outstanding[] = [];
         let hidden = 0;
+        const rankCounts: Record<'ALL' | PaymentRank, number> = { ALL: 0, Good: 0, Late: 0, Bad: 0 };
         const passesEverythingElse = (item: Outstanding): boolean => {
             if (!matchesQuery(item, globalSearch)) return false;
             // Search match across company, contact, mobile, email, GSTIN, City, State, additional contacts
@@ -289,11 +290,6 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 }
             }
 
-            // Payment Rank Filter (Good vs Bad Payment)
-            if (rankFilter !== 'ALL') {
-                const itemRank = getCustomerPaymentRank(item);
-                if (itemRank !== rankFilter) return false;
-            }
 
             // CRM Filter. Resolved through the roster, so an account saved
             // under a display name still lands in its owner's portfolio.
@@ -344,10 +340,21 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
         userAllowedData.forEach(item => {
             if (!passesEverythingElse(item)) return;
-            if (matchesSettlement(item, settlementFilter)) kept.push(item);
+            const rank = getCustomerPaymentRank(item);
+            const inThisTab = matchesSettlement(item, settlementFilter);
+
+            // Counted before the rank filter is applied, and only for the tab
+            // in view: a rank button has to say how many rows it would show, not
+            // how many survived the button already pressed. Counting after meant
+            // choosing "Late pay" left Good and Bad reading (0), which looks
+            // like the app losing the customers rather than a filter working.
+            if (inThisTab) { rankCounts.ALL++; rankCounts[rank]++; }
+
+            if (rankFilter !== 'ALL' && rank !== rankFilter) return;
+            if (inThisTab) kept.push(item);
             else hidden++;
         });
-        return { filteredData: kept, hiddenBySettlement: hidden };
+        return { filteredData: kept, hiddenBySettlement: hidden, rankCounts };
     }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
 
     /** True while somebody is looking for a particular customer. */
@@ -710,10 +717,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setRankFilter(e.target.value as any)}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
                         >
-                            <option value="ALL">All ranks ({data.length})</option>
-                            <option value="Good">Good — pays to terms ({metrics.goodCount})</option>
-                            <option value="Late">Late pay — slow but paying ({metrics.lateCount})</option>
-                            <option value="Bad">Bad debt — named defaulters ({metrics.badCount})</option>
+                            <option value="ALL">All ranks ({rankCounts.ALL})</option>
+                            <option value="Good">Good — pays to terms ({rankCounts.Good})</option>
+                            <option value="Late">Late pay — slow but paying ({rankCounts.Late})</option>
+                            <option value="Bad">Bad debt — named defaulters ({rankCounts.Bad})</option>
                         </select>
                     </div>
 
@@ -803,7 +810,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
                             }`}
                         >
-                            All ({data.length})
+                            All ({rankCounts.ALL})
                         </button>
                         <button
                             onClick={() => setRankFilter(rankFilter === 'Good' ? 'ALL' : 'Good')}
@@ -813,7 +820,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-pos-bg text-pos border border-separator'
                             }`}
                         >
-                            Good ({metrics.goodCount})
+                            Good ({rankCounts.Good})
                         </button>
                         <button
                             onClick={() => setRankFilter(rankFilter === 'Late' ? 'ALL' : 'Late')}
@@ -823,7 +830,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-warn-bg text-warn border border-separator'
                             }`}
                         >
-                            Late pay ({metrics.lateCount})
+                            Late pay ({rankCounts.Late})
                         </button>
                         <button
                             onClick={() => setRankFilter(rankFilter === 'Bad' ? 'ALL' : 'Bad')}
@@ -833,7 +840,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-dang-bg text-dang border border-separator'
                             }`}
                         >
-                            Bad debt ({metrics.badCount})
+                            Bad debt ({rankCounts.Bad})
                         </button>
 
                         <span className="text-[11.5px] font-bold text-gray-400 dark:text-gray-500 mx-1">|</span>
