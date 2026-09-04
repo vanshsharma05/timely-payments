@@ -12,6 +12,9 @@ interface PdcChequesViewProps {
     onEditPdc: (cheque: PdcCheque) => void;
     onDeletePdc: (chequeId: string) => void;
     onUpdatePdcStatus: (chequeId: string, status: PdcStatus) => void;
+    /** The same status across a selection, in one pass. */
+    onBulkPdcStatus?: (chequeIds: string[], status: PdcStatus) => void;
+    onBulkDeletePdc?: (chequeIds: string[]) => void;
     onOpenCustomerFollowUp?: (customer: Outstanding) => void;
     initialStatusFilter?: string | null;
     initialCustomerFilter?: string | null;
@@ -34,6 +37,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     onEditPdc,
     onDeletePdc,
     onUpdatePdcStatus,
+    onBulkPdcStatus,
+    onBulkDeletePdc,
     onOpenCustomerFollowUp,
     initialStatusFilter,
     initialCustomerFilter,
@@ -44,6 +49,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || 'all');
     const [bankFilter, setBankFilter] = useState<string>('all');
     const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'passed'>('all');
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
     const today = useMemo(() => new Date(), []);
 
@@ -214,6 +220,22 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             return true;
         }).sort((a, b) => a.chequeDate.getTime() - b.chequeDate.getTime());
     }, [chequesWithComputedStatus, selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm, customers, users, today]);
+
+    /** Selecting rows then filtering them away would act on cheques nobody can
+        see, so the selection is trimmed to whatever is currently listed. */
+    const visibleIds = useMemo(() => new Set(filteredCheques.map(c => c.id)), [filteredCheques]);
+    const selected = useMemo(() => selectedIds.filter(id => visibleIds.has(id)), [selectedIds, visibleIds]);
+    const allSelected = selected.length > 0 && selected.length === filteredCheques.length;
+    const toggleRow = (id: string) =>
+        setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    const toggleAll = (checked: boolean) =>
+        setSelectedIds(checked ? filteredCheques.map(c => c.id) : []);
+    const applyBulk = (status: PdcStatus) => {
+        if (!onBulkPdcStatus || selected.length === 0) return;
+        onBulkPdcStatus(selected, status);
+        setSelectedIds([]);
+    };
+
 
     // Export to Excel / CSV
     const handleExport = () => {
@@ -625,10 +647,78 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     </span>
                 </div>
 
+                {canManagePdc && selected.length > 0 && (
+                    <div className="mb-2.5 p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-label">
+                            <span>{selected.length} cheque{selected.length === 1 ? '' : 's'} selected</span>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-label-2 hover:bg-hover"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                                onClick={() => applyBulk(PdcStatus.Cleared)}
+                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                                Mark cleared
+                            </button>
+                            <button
+                                onClick={() => applyBulk(PdcStatus.Hold)}
+                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
+                            >
+                                Put on hold
+                            </button>
+                            <button
+                                onClick={() => applyBulk(PdcStatus.Bounced)}
+                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
+                            >
+                                Mark bounced
+                            </button>
+                            <button
+                                onClick={() => applyBulk(PdcStatus.Pending)}
+                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
+                            >
+                                Back to pending
+                            </button>
+                            {onBulkDeletePdc && (
+                                <button
+                                    onClick={() => {
+                                        if (!window.confirm(`Delete ${selected.length} cheque${selected.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+                                        onBulkDeletePdc(selected);
+                                        setSelectedIds([]);
+                                    }}
+                                    className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold text-dang hover:bg-dang-bg border border-separator-strong"
+                                >
+                                    Delete
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
                     <table className="w-full text-left border-collapse text-xs sm:text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                             <tr>
+                                {canManagePdc && (
+                                    <th className="px-2.5 py-2.5 w-10 text-center">
+                                        <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={allSelected}
+                                                onChange={e => toggleAll(e.target.checked)}
+                                                aria-label="Select all cheques in view"
+                                                title="Select all cheques in view"
+                                                className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
+                                                style={{ outlineOffset: 6 }}
+                                            />
+                                        </label>
+                                    </th>
+                                )}
                                 <th className="px-3 py-2.5">Customer</th>
                                 <th className="px-2.5 py-2.5">Cheque Details</th>
                                 <th className="px-2.5 py-2.5">PDC Date</th>
@@ -642,7 +732,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
                             {filteredCheques.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={canManagePdc ? 9 : 8} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
                                         <div className="flex flex-col items-center justify-center space-y-1.5">
                                             <ChequeIcon className="w-8 h-8 text-gray-300 dark:text-gray-600" />
                                             <p className="text-sm font-semibold">No PDC cheques found</p>
@@ -668,7 +758,24 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                     const isPastDue = cheque.state === 'overdue';
 
                                     return (
-                                        <tr key={cheque.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors">
+                                        <tr
+                                            key={cheque.id}
+                                            className={`transition-colors ${selected.includes(cheque.id) ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'}`}
+                                        >
+                                            {canManagePdc && (
+                                                <td className="px-2.5 py-2.5 text-center">
+                                                    <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selected.includes(cheque.id)}
+                                                            onChange={() => toggleRow(cheque.id)}
+                                                            aria-label={`Select cheque ${cheque.chequeNumber || ''} for ${cheque.customerName}`}
+                                                            className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
+                                                            style={{ outlineOffset: 6 }}
+                                                        />
+                                                    </label>
+                                                </td>
+                                            )}
                                             {/* Customer Name */}
                                             <td className="px-3 py-2.5 min-w-[150px] max-w-[220px]">
                                                 <div className="flex items-start flex-col">

@@ -1454,6 +1454,37 @@ const App = () => {
         }));
     };
 
+    /**
+     * The same two actions across a whole selection.
+     *
+     * A morning's clearing is a dozen cheques at once, and marking them one
+     * dialog at a time is the reason the register goes stale. One pass over the
+     * list, one render, one message.
+     */
+    const handleBulkPdcStatus = (chequeIds: string[], newStatus: PdcStatus) => {
+        const idSet = new Set(chequeIds);
+        setPdcCheques(prev => prev.map(p => (
+            idSet.has(p.id)
+                ? { ...p, status: newStatus, clearedDate: newStatus === PdcStatus.Cleared ? new Date() : p.clearedDate }
+                : p
+        )));
+        setSyncMessage({
+            type: 'success',
+            text: `Marked ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'} as ${newStatus}.`,
+        });
+        setTimeout(() => setSyncMessage(null), 4000);
+    };
+
+    const handleBulkDeletePdc = (chequeIds: string[]) => {
+        const idSet = new Set(chequeIds);
+        setPdcCheques(prev => prev.filter(p => !idSet.has(p.id)));
+        setSyncMessage({
+            type: 'success',
+            text: `Deleted ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'}.`,
+        });
+        setTimeout(() => setSyncMessage(null), 4000);
+    };
+
     const handleOpenPdcForCustomer = (customerId: string) => {
         if (currentUser?.role === UserRole.Admin) {
             setAdminTab('pdc');
@@ -1951,6 +1982,8 @@ const App = () => {
                             onEditPdc={handleOpenEditPdc}
                             onDeletePdc={handleDeletePdc}
                             onUpdatePdcStatus={handleUpdatePdcStatus}
+                            onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
+                            onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
                         />
@@ -1966,6 +1999,8 @@ const App = () => {
                         initialCategoryFilter={categoryFilter}
                         onFollowUp={handleOpenFollowUp}
                         onWhatsApp={handleSendWhatsApp}
+                        onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+                        onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
                         pdcCheques={pdcCheques}
                         onOpenPdcForCustomer={handleOpenPdcForCustomer}
                     />
@@ -2073,6 +2108,8 @@ const App = () => {
                             onEditPdc={handleOpenEditPdc}
                             onDeletePdc={handleDeletePdc}
                             onUpdatePdcStatus={handleUpdatePdcStatus}
+                            onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
+                            onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
                         />
@@ -2240,6 +2277,8 @@ const App = () => {
                                 initialCategoryFilter={categoryFilter}
                                 onFollowUp={handleOpenFollowUp}
                                 onWhatsApp={handleSendWhatsApp}
+                                onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+                                onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
                                 pdcCheques={pdcCheques}
                                 onOpenPdcForCustomer={handleOpenPdcForCustomer}
                             />

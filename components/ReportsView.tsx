@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -26,6 +26,9 @@ interface ReportsViewProps {
     companyProfile?: CompanyProfile;
     onFollowUp: (customer: Outstanding) => void;
     onWhatsApp: (customer: Outstanding) => void;
+    /** Applied to a whole selection at once, the same two the customer book offers. */
+    onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
+    onBulkReassignCrm?: (customerIds: string[], newCrm: string) => void;
     initialCrmFilter?: string;
     initialCategoryFilter?: FollowUpCategoryFilter;
     pdcCheques?: PdcCheque[];
@@ -39,6 +42,8 @@ export const ReportsView = ({
     companyProfile = DEFAULT_COMPANY_PROFILE,
     onFollowUp,
     onWhatsApp,
+    onBulkSetRank,
+    onBulkReassignCrm,
     initialCrmFilter = 'ALL',
     initialCategoryFilter = 'all',
     pdcCheques = [],
@@ -281,6 +286,28 @@ export const ReportsView = ({
     }, [crmScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
 
     // Export current report view to Excel with full ageing breakdown
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
+    const [bulkCrm, setBulkCrm] = useState('');
+
+    /** A selection only ever means rows currently on screen; filtering away a
+        selected account must not leave it quietly queued for a bulk action. */
+    const visibleIds = useMemo(() => new Set(filteredReportData.map(c => c.id)), [filteredReportData]);
+    const selected = useMemo(() => selectedIds.filter(id => visibleIds.has(id)), [selectedIds, visibleIds]);
+    const allSelected = selected.length > 0 && selected.length === filteredReportData.length;
+    const toggleRow = (id: string) =>
+        setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    const toggleAll = (checked: boolean) =>
+        setSelectedIds(checked ? filteredReportData.map(c => c.id) : []);
+
+    const canEditCustomer = can(currentUser, 'canEditCustomer');
+    const canReassignCrm = can(currentUser, 'canReassignCrm');
+    const crmUsers = useMemo(() => users.filter(u => u.role === UserRole.CRM), [users]);
+    /** No tickboxes at all unless there is something a tick could lead to. */
+    const selectable = (canEditCustomer && !!onBulkSetRank)
+        || (canReassignCrm && !!onBulkReassignCrm)
+        || canDownloadExcel;
+
     /** True when a stored contact number is worth offering as a dial link. */
     const dialable = (raw?: string) => (raw || '').replace(/D/g, '').length >= 7;
 
@@ -290,7 +317,10 @@ export const ReportsView = ({
             return;
         }
 
-        const rows = filteredReportData.map(item => {
+        // With rows ticked, the download is those rows — otherwise the whole
+        // filtered report, exactly as before.
+        const source = selected.length ? filteredReportData.filter(r => selected.includes(r.id)) : filteredReportData;
+        const rows = source.map(item => {
             const a1 = item.ageing?.['1-45'] || 0;
             const a2 = item.ageing?.['46-90'] || 0;
             const a3 = item.ageing?.['91-135'] || 0;
@@ -750,11 +780,105 @@ export const ReportsView = ({
                     </div>
                 </div>
 
+                {selectable && selected.length > 0 && (
+                    <div className="mb-2.5 p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-label">
+                            <span>{selected.length} account{selected.length === 1 ? '' : 's'} selected</span>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds([])}
+                                className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-label-2 hover:bg-hover"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {canEditCustomer && onBulkSetRank && (
+                                <>
+                                    <select
+                                        aria-label="Set the payment rank on the selected accounts"
+                                        value={bulkRank}
+                                        onChange={e => setBulkRank(e.target.value as PaymentRank | '')}
+                                        className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                    >
+                                        <option value="">Set rank to…</option>
+                                        <option value="Good">{PAYMENT_RANK_LABELS.Good}</option>
+                                        <option value="Late">{PAYMENT_RANK_LABELS.Late}</option>
+                                        <option value="Bad">{PAYMENT_RANK_LABELS.Bad}</option>
+                                    </select>
+                                    <button
+                                        onClick={() => {
+                                            if (!bulkRank) return;
+                                            onBulkSetRank(selected, bulkRank);
+                                            setBulkRank('');
+                                            setSelectedIds([]);
+                                        }}
+                                        disabled={!bulkRank}
+                                        className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent text-on-accent disabled:opacity-40"
+                                    >
+                                        Apply rank
+                                    </button>
+                                </>
+                            )}
+                            {canReassignCrm && onBulkReassignCrm && (
+                                <>
+                                    <select
+                                        aria-label="Reassign the selected accounts to a CRM"
+                                        value={bulkCrm}
+                                        onChange={e => setBulkCrm(e.target.value)}
+                                        className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                    >
+                                        <option value="">Reassign to…</option>
+                                        {crmUsers.map(u => (
+                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={() => {
+                                            if (!bulkCrm) return;
+                                            onBulkReassignCrm(selected, bulkCrm);
+                                            setBulkCrm('');
+                                            setSelectedIds([]);
+                                        }}
+                                        disabled={!bulkCrm}
+                                        className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent text-on-accent disabled:opacity-40"
+                                    >
+                                        Reassign
+                                    </button>
+                                </>
+                            )}
+                            {canDownloadExcel && (
+                                <button
+                                    onClick={exportToExcel}
+                                    className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                                >
+                                    Export these {selected.length}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Table with Live 1-45d, 46-90d, 91-135d, >135d on Screen */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs min-w-[900px]">
                         <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                             <tr>
+                                {selectable && (
+                                    <th className="px-2.5 py-2.5 w-10 text-center">
+                                        <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={allSelected}
+                                                onChange={e => toggleAll(e.target.checked)}
+                                                aria-label="Select all accounts in this report"
+                                                title="Select all accounts in this report"
+                                                className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
+                                                style={{ outlineOffset: 6 }}
+                                            />
+                                        </label>
+                                    </th>
+                                )}
                                 <th className="px-3 py-2.5 text-left min-w-[180px]">Company / Contact</th>
                                 <th className="px-2.5 py-2.5 text-right">Total Due</th>
                                 
@@ -774,7 +898,7 @@ export const ReportsView = ({
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
                             {filteredReportData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={11} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={selectable ? 12 : 11} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
                                         <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No customer records match the selected report criteria.</p>
                                         <p className="text-[12.5px] text-gray-400 mt-1">Try switching to"All" or choosing another ageing bucket.</p>
                                     </td>
@@ -810,7 +934,21 @@ export const ReportsView = ({
                                     const totalPdcAmount = activePdcs.reduce((sum, p) => sum + p.amount, 0);
 
                                     return (
-                                        <tr key={item.id} className={`${rowBorder} ${hasOver90Dues ? 'hover:bg-red-50/30 dark:hover:bg-red-950/20' : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'} transition-colors`}>
+                                        <tr key={item.id} className={`${rowBorder} ${selected.includes(item.id) ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : hasOver90Dues ? 'hover:bg-red-50/30 dark:hover:bg-red-950/20' : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'} transition-colors`}>
+                                            {selectable && (
+                                                <td className="px-2.5 py-2.5 text-center">
+                                                    <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selected.includes(item.id)}
+                                                            onChange={() => toggleRow(item.id)}
+                                                            aria-label={`Select ${item.company}`}
+                                                            className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
+                                                            style={{ outlineOffset: 6 }}
+                                                        />
+                                                    </label>
+                                                </td>
+                                            )}
                                             <td className="px-3 py-2.5">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <button
