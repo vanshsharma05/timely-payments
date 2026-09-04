@@ -245,6 +245,9 @@ Groups of columns:
 - **Master data** — `city`, `state`, `address`, `gstin`, `pan`,
   `credit_limit`, `payment_terms_days`
 - **Grade** — `payment_rank` ∈ `Good` / `Late` / `Bad`, nullable
+- **Kind of business** — `category`, nullable and unconstrained on purpose
+  (§7.8): the master holds spellings the app's list has not met yet, and losing
+  one on import is worse than storing it
 - **Money** — `total`, `total_type` (`Dr`/`Cr`), `ageing` jsonb
   (`1-45`, `46-90`, `91-135`, `>135`), `ageing_types` jsonb,
   `over90` + `over90_type`, `due_over45` + `due_over45_type`
@@ -658,6 +661,28 @@ should be ringing.
 Set on import: `dueOver45 > ₹10,00,000` (Dr) **or** `>135 > ₹5,00,000` (Dr).
 Editable by hand in the follow-up dialog.
 
+### 7.8 Customer category
+
+What kind of business the customer is. Seeded from the Customer Master's
+`CATEGORY` column, edited in the app afterwards — customer data, so it follows
+the rule in §8.2 and the app owns it.
+
+The column carries two things at once. **Builder, Dealer, Dealer Offset,
+Retailer** are the customer classes the business talks about; the rest name the
+trade the account is in, and Screen Printing alone is 3,480 of 4,083 rows.
+`CUSTOMER_CATEGORIES` (types.ts) lists both, the four classes first, and it is
+what the dropdown offers.
+
+It is a suggestion list, not a constraint. `normaliseCategory()` folds the
+spellings the master actually holds into one each — `OFFSET` / `offset` /
+`Offset` are one category, `SCREEN PRINTOR` is Screen Printing, `ONLY DTF` is
+DTF, `DETAILER` is Retailer — and anything it does not recognise is kept word
+for word, title-cased. Twenty-eight raw spellings in the sheet become
+twenty-four categories, and nothing is dropped: a category nobody has told us
+about is still the truth about that customer.
+
+`isSheetBlank()` runs first, so `#N/A` and `0` do not become categories.
+
 ---
 
 ## 8. Data flow
@@ -709,6 +734,7 @@ The Google Sheet is the ledger of what is owed and is read for nothing else.
 | Balances, ageing, roll-ups | the outstanding sheet | the accounts team, in the sheet |
 | Customer name, contacts, address, GSTIN, credit terms | the app | whoever works the account |
 | — the name included: `financialsFromSheet()` does **not** carry `company`, so a spelling corrected here is not overwritten on the next sync. Matching does not depend on it (normalised key, or the id, both survive a rename). | | |
+| Category (Builder / Dealer / Retailer / trade) | the app | seeded once from the master's `CATEGORY` column, edited on the account after that — see §7.8 |
 | CRM owner | the app | assigned when the customer is created, changed in the customer list |
 | Follow-ups, notes, cheques, activity | the app | the collections team |
 

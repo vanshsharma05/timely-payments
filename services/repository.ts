@@ -109,6 +109,7 @@ export function rowToOutstanding(r: any): Outstanding {
         creditLimit: r.credit_limit ?? undefined,
         paymentTermsDays: r.payment_terms_days ?? undefined,
         paymentRank: r.payment_rank || undefined,
+        category: r.category || undefined,
         total: num(r.total),
         totalType: (r.total_type as BalanceType) || undefined,
         ageing: {
@@ -154,6 +155,7 @@ export function outstandingToRow(c: Outstanding): Record<string, any> {
         credit_limit: c.creditLimit ?? null,
         payment_terms_days: c.paymentTermsDays ?? null,
         payment_rank: c.paymentRank ?? null,
+        category: c.category ?? null,
         total: c.total ?? 0,
         total_type: c.totalType ?? null,
         ageing: c.ageing ?? { '1-45': 0, '46-90': 0, '91-135': 0, '>135': 0 },

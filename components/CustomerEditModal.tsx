@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can } from '../types';
+import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory } from '../types';
 
 interface CustomerEditModalProps {
     customerToEdit: Outstanding | null; // null means Add New Customer
@@ -46,6 +46,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     const [creditLimit, setCreditLimit] = useState<number | undefined>(undefined);
     const [paymentTermsDays, setPaymentTermsDays] = useState<number | undefined>(undefined);
     const [paymentRank, setPaymentRank] = useState<PaymentRank | ''>('');
+    const [category, setCategory] = useState('');
     const [crmOwnerId, setCrmOwnerId] = useState('');
     
     // Financials
@@ -82,6 +83,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setCreditLimit(customerToEdit.creditLimit);
             setPaymentTermsDays(customerToEdit.paymentTermsDays);
             setPaymentRank(customerToEdit.paymentRank || '');
+            setCategory(customerToEdit.category || '');
             setCrmOwnerId(customerToEdit.crmOwnerId || '');
             setTotal(customerToEdit.total || 0);
             setTotalType(customerToEdit.totalType || 'Dr');
@@ -106,6 +108,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setCreditLimit(undefined);
             setPaymentTermsDays(undefined);
             setPaymentRank('');
+            setCategory('');
             // A CRM adding a customer is obviously its owner. For anybody else
             // it is left blank on purpose and the form will not save without an
             // answer: the customer database lives here now, so "who chases this
@@ -211,7 +214,8 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             gstin: gstin.trim() || undefined,
             creditLimit: creditLimit,
             paymentTermsDays: paymentTermsDays,
-            paymentRank: (paymentRank === 'Good' || paymentRank === 'Bad') ? paymentRank : undefined,
+            paymentRank: (paymentRank === 'Good' || paymentRank === 'Late' || paymentRank === 'Bad') ? paymentRank : undefined,
+            category: normaliseCategory(category) || undefined,
             crmOwnerId: crmOwnerId.trim(),
             total: finalTotal,
             totalType: totalType,
@@ -449,6 +453,27 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 </select>
                             </div>
                             <div>
+                                <label htmlFor="customerCategory" className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Category
+                                </label>
+                                {/* A list to pick from, but still typable: the master
+                                    carries spellings this list has never seen, and a
+                                    closed dropdown would have no way to hold them. */}
+                                <input
+                                    id="customerCategory"
+                                    type="text"
+                                    list="customer-category-options"
+                                    value={category}
+                                    onChange={e => setCategory(e.target.value)}
+                                    onBlur={e => setCategory(normaliseCategory(e.target.value))}
+                                    placeholder="e.g. Dealer / Screen Printing"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-900 dark:text-white"
+                                />
+                                <datalist id="customer-category-options">
+                                    {CUSTOMER_CATEGORIES.map(c => <option key={c} value={c} />)}
+                                </datalist>
+                            </div>
+                            <div className="sm:col-span-2 lg:col-span-4">
                                 <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">Billing / Plant Address</label>
                                 <input
                                     type="text"

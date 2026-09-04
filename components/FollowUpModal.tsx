@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory } from '../types';
 import * as repo from '../services/repository';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
@@ -45,6 +45,7 @@ const FollowUpModal = ({
     const [assignedCollectorId, setAssignedCollectorId] = useState(customer.assignedCollectorId || '');
     const [assignedCrmOwnerId, setAssignedCrmOwnerId] = useState(customer.crmOwnerId || '');
     const [paymentRank, setPaymentRank] = useState<PaymentRank | ''>(customer.paymentRank || '');
+    const [category, setCategory] = useState(customer.category || '');
     const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>('follow_up');
     const [isUrgent, setIsUrgent] = useState(customer.isUrgent || false);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
@@ -288,7 +289,20 @@ const FollowUpModal = ({
                 body: `Payment rank changed from ${before} to ${after}.`,
             }, currentUser).catch(() => { /* the rank still saves; the note is a courtesy */ });
         }
-        
+
+        // Same reasoning for the category: it decides how an account is grouped
+        // in every report, so a change to it is worth a line in the thread.
+        if (canEditCustomer && normaliseCategory(category) !== (customer.category || '')) {
+            const next = normaliseCategory(category);
+            updatedCustomer.category = next || undefined;
+            repo.addActivity({
+                customerId: customer.id,
+                kind: 'system',
+                body: `Category changed from ${customer.category || 'not set'} to ${next || 'not set'}.`,
+            }, currentUser).catch(() => { /* the category still saves; the note is a courtesy */ });
+        }
+
+
         onUpdate(updatedCustomer);
         onClose();
     };
@@ -936,6 +950,27 @@ const FollowUpModal = ({
                                     <option value="Late">Late pay — slow but paying</option>
                                     <option value="Bad">Bad debt — old money stuck</option>
                                 </select>
+                            </div>
+                        )}
+
+                        {canEditCustomer && (
+                            <div className="relative">
+                                <label htmlFor="customerCategoryFollowUp" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                    Category
+                                </label>
+                                <input
+                                    id="customerCategoryFollowUp"
+                                    type="text"
+                                    list="customer-category-options-followup"
+                                    value={category}
+                                    onChange={e => setCategory(e.target.value)}
+                                    onBlur={e => setCategory(normaliseCategory(e.target.value))}
+                                    placeholder="Not set — e.g. Dealer / Screen Printing"
+                                    className="block w-full border rounded-lg shadow-xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
+                                />
+                                <datalist id="customer-category-options-followup">
+                                    {CUSTOMER_CATEGORIES.map(c => <option key={c} value={c} />)}
+                                </datalist>
                             </div>
                         )}
 

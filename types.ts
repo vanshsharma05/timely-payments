@@ -342,6 +342,87 @@ export const PAYMENT_RANK_LABELS: Record<PaymentRank, string> = {
     Bad: 'Bad debt',
 };
 
+/**
+ * What kind of business a customer is, as the Customer Master records it.
+ *
+ * Builder, Dealer, Dealer Offset and Retailer are the four the business talks
+ * about, so they lead the list. The master's CATEGORY column also carries the
+ * trade an account is in — Screen Printing alone is roughly 3,400 of the 4,000
+ * accounts — and both meanings share the one column, so both are kept.
+ *
+ * The list is what the dropdown offers, not a fence. A value the sheet holds
+ * that is not on it is kept word for word: a category nobody has told us about
+ * is still the truth about that customer, and dropping it would quietly lose
+ * data on import.
+ */
+export const CUSTOMER_CATEGORIES: readonly string[] = [
+    'Builder',
+    'Dealer',
+    'Dealer Offset',
+    'Retailer',
+    'Screen Printing',
+    'Garmentor',
+    'Offset',
+    'Offset & Packaging',
+    'Paint',
+    'Fabric Printing',
+    'Fabric Distributor',
+    'Digital Printing',
+    'Transfer Printing',
+    'Sublimation',
+    'DTF',
+    'Dyeing',
+    'Finishing',
+    'Nonwoven',
+    'Waterproofing',
+    'Sports',
+    'Soap',
+    'General',
+];
+
+/** Letters and digits only, so spacing and punctuation cannot split a category. */
+const categoryKey = (v: string): string => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Spellings the master uses for a category that already has a name here.
+ *
+ * `detailer` is the odd one: there is no detailing trade in a textile chemicals
+ * book, and Retailer is the category the business actually names, so the two
+ * rows spelt that way are read as Retailer.
+ */
+const CATEGORY_ALIASES: Record<string, string> = {
+    screenprintor: 'Screen Printing',
+    screenprinter: 'Screen Printing',
+    onlydtf: 'DTF',
+    detailer: 'Retailer',
+    nonvoven: 'Nonwoven',
+    nonwovens: 'Nonwoven',
+    garmenter: 'Garmentor',
+    offsetdealer: 'Dealer Offset',
+};
+
+const CATEGORY_BY_KEY: Record<string, string> = CUSTOMER_CATEGORIES.reduce(
+    (acc, c) => { acc[categoryKey(c)] = c; return acc; },
+    {} as Record<string, string>,
+);
+
+/**
+ * One spelling for a category, whoever typed it.
+ *
+ * The master holds "OFFSET", "offset" and "Offset" for the same thing; left
+ * alone they would be three entries in the filter and three groups in a report.
+ * An unrecognised value keeps its own words, title-cased so it reads like the
+ * rest of the list.
+ */
+export function normaliseCategory(raw?: string | null): string {
+    const trimmed = (raw || '').trim();
+    const key = categoryKey(trimmed);
+    if (!key) return '';
+    return CATEGORY_BY_KEY[key]
+        || CATEGORY_ALIASES[key]
+        || trimmed.toLowerCase().replace(/\b[a-z]/g, ch => ch.toUpperCase());
+}
+
 export interface Outstanding {
     id: string;
     company: string;
@@ -358,6 +439,7 @@ export interface Outstanding {
     creditLimit?: number;      // Sanctioned Credit limit
     paymentTermsDays?: number; // Standard credit terms in days (e.g. 30, 45, 60)
     paymentRank?: PaymentRank; // Customer payment behaviour rank: 'Good' (timely payer) or 'Bad' (delayed/habitual defaulter)
+    category?: string;         // Kind of business — Builder / Dealer / Retailer / the trade. See CUSTOMER_CATEGORIES.
     total: number;
     totalType?: BalanceType;       // 'Dr' = Outstanding payment to take, 'Cr' = Payment excess with us
     ageing: {

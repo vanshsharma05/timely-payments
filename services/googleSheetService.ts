@@ -1,4 +1,4 @@
-import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo } from '../types';
+import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo, normaliseCategory } from '../types';
 
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
@@ -512,7 +512,7 @@ export async function fetchGoogleSheetData(sheetUrl: string): Promise<{ data: Ou
 export type MasterField =
     | 'company' | 'contactPerson' | 'contactPost' | 'mobile' | 'altPhone' | 'altPerson'
     | 'email' | 'city' | 'state' | 'address' | 'gstin' | 'crm'
-    | 'creditLimit' | 'paymentTermsDays' | 'rank' | 'notes';
+    | 'creditLimit' | 'paymentTermsDays' | 'rank' | 'category' | 'notes';
 
 const headerKey = (h: string): string => (h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -535,6 +535,12 @@ const HEADER_RULES: { field: MasterField | null; any: string[] }[] = [
     // payment mode (cash / advance / A / B / C), which is not a grade, so it is
     // left out rather than mapped to something it does not mean.
     { field: 'rank', any: ['ranking', 'creditrating'] },
+
+    // What kind of business the account is. Named narrowly on purpose: the same
+    // sheet has a "Customer types" column holding DEBTOR for every row, which
+    // is a ledger side rather than a category, so 'customertype' is not a name
+    // this rule answers to.
+    { field: 'category', any: ['category', 'segment', 'businesstype'] },
 
     { field: 'creditLimit', any: ['creditlimit', 'limitamount', 'sanctionedlimit'] },
     { field: 'paymentTermsDays', any: ['creditday', 'creditperiod', 'paymentterm', 'term'] },
@@ -628,6 +634,7 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
         const noteStr = (colMap.notes >= 0 && colMap.notes < r.length) ? r[colMap.notes]?.trim() : '';
         const altPerson = (colMap.altPerson >= 0 && colMap.altPerson < r.length) ? r[colMap.altPerson]?.trim() : '';
         const rankRaw = (colMap.rank >= 0 && colMap.rank < r.length) ? r[colMap.rank]?.trim() : '';
+        const categoryRaw = (colMap.category >= 0 && colMap.category < r.length) ? r[colMap.category]?.trim() : '';
 
         const item: Outstanding = {
             id: customerIdFor(companyName),
@@ -651,6 +658,8 @@ export function parseCustomerMasterSheetCsv(csvText: string): { records: Outstan
             status: FollowUpStatus.Pending,
             notes: noteStr ? [noteStr] : [],
             paymentRank: rankFromSheet(rankRaw),
+            // "#N/A" and "0" are the sheet saying nothing, not a category.
+            category: isSheetBlank(categoryRaw) ? undefined : (normaliseCategory(categoryRaw) || undefined),
             additionalContacts: (altPhone || altPerson) ? [{
                 id: `alt_${customerIdFor(companyName)}_2`,
                 name: altPerson || (contactPerson ? `${contactPerson} (Alt)` : 'Alternate Contact'),
@@ -733,7 +742,7 @@ export interface CrmConflict {
  * disagreement is reported, so the sheet can be brought in line rather than
  * silently fighting the app.
  */
-export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], masterData: Outstanding[]): { updatedData: Outstanding[]; enrichedCount: number; newAccountsCount: number; crmConflicts: CrmConflict[] } {
+export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], masterData: Outstanding[]): { updatedData: Outstanding[]; enrichedCount: number; newAccountsCount: number; categorisedCount: number; crmConflicts: CrmConflict[] } {
     const existingMap = new Map<string, Outstanding>();
     existingData.forEach(item => {
         const key = companyKey(item.company);
@@ -742,6 +751,11 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
 
     let enrichedCount = 0;
     let newAccountsCount = 0;
+    // Accounts that had no category and now have one. Worth counting on its
+    // own: it is the whole point of re-running the import after the category
+    // column was added, and without it the run reports "0 new, 4018 already on
+    // file" and looks like it did nothing.
+    let categorisedCount = 0;
     const crmConflicts: CrmConflict[] = [];
     const mergedList: Outstanding[] = [...existingData];
 
@@ -792,6 +806,10 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
                 // A grade somebody set in the app is a judgement about the
                 // account; the sheet only fills the gap where nobody has.
                 paymentRank: current.paymentRank || masterItem.paymentRank,
+                // Same rule: a category set here is somebody's decision about
+                // the account, and the sheet only fills the gap where there
+                // isn't one.
+                category: current.category || masterItem.category,
                 additionalContacts: [
                     ...(current.additionalContacts || []),
                     ...(masterItem.additionalContacts || []).filter(mc => 
@@ -799,6 +817,7 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
                     )
                 ]
             };
+            if (!current.category && updated.category) categorisedCount++;
             mergedList[existingIdx] = updated;
             enrichedCount++;
         } else {
@@ -813,6 +832,7 @@ export function mergeCustomerMasterIntoAppData(existingData: Outstanding[], mast
         updatedData: processStatuses(mergedList),
         enrichedCount,
         newAccountsCount,
+        categorisedCount,
         crmConflicts
     };
 }

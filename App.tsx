@@ -232,7 +232,7 @@ const App = () => {
      */
     const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => {
         if (XLSX) {
-            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","City","State","GSTIN","Payment Rank","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
+            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","City","State","GSTIN","Category","Payment Rank","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
             ];
             const rows = rowsToExport.map(c => [
                 c.id,
@@ -244,6 +244,7 @@ const App = () => {
                 c.city || '',
                 c.state || '',
                 c.gstin || '',
+                c.category || '',
                 PAYMENT_RANK_LABELS[getCustomerPaymentRank(c)],
                 c.total,
                 c.totalType || 'Dr',
@@ -920,7 +921,9 @@ const App = () => {
                 'The customer list is maintained in the software, not in this sheet. ' +
                 'This is for loading customers in bulk — normally you add a customer here instead.\n\n' +
                 'It fills in details that are missing and overwrites nothing: names, phone numbers, ' +
-                'addresses, credit terms and CRM owners already recorded here are left exactly as they are.\n\n' +
+                'addresses, credit terms, categories and CRM owners already recorded here are left exactly as they are.\n\n' +
+                'Run it now to bring in the CATEGORY column (Builder, Dealer, Dealer Offset, Retailer and the trades) ' +
+                'for customers that do not have one yet.\n\n' +
                 'Continue?'
             );
             if (!proceed) return;
@@ -935,7 +938,7 @@ const App = () => {
                 throw new Error("No customer records found in the Customer Master Google Sheet.");
             }
 
-            const { updatedData, enrichedCount, newAccountsCount, crmConflicts } = mergeCustomerMasterIntoAppData(appData, records);
+            const { updatedData, enrichedCount, newAccountsCount, categorisedCount, crmConflicts } = mergeCustomerMasterIntoAppData(appData, records);
             setAppData(updatedData);
             setCrmConflicts(crmConflicts);
 
@@ -948,6 +951,7 @@ const App = () => {
                 text:
                     `Customer import done: ${newAccountsCount} new customer${newAccountsCount === 1 ? '' : 's'} added, ` +
                     `${enrichedCount} already on file were left as they are (blanks filled in only).` +
+                    (categorisedCount ? ` ${categorisedCount} got a category from the sheet.` : '') +
                     (crmConflicts.length
                         ? ` ${crmConflicts.length} kept the CRM set here rather than the one in the sheet.`
                         : '')

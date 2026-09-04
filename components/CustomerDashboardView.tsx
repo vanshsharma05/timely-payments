@@ -86,6 +86,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         Late: 'bg-warn-bg text-warn border border-separator',
         Bad: 'bg-dang-bg text-dang border border-separator',
     };
+    const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
     const [ageingFilter, setAgeingFilter] = useState<AgeingCategoryFilter>('all');
     const [statusFilter, setStatusFilter] = useState<string>('ALL');
     const [balanceTypeFilter, setBalanceTypeFilter] = useState<'ALL' | 'Dr' | 'Cr'>('ALL');
@@ -125,15 +126,36 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     // A new filter means a new list; keep the window from carrying over.
     useEffect(() => {
         setVisibleCount(PAGE);
-    }, [searchTerm, globalSearch, rankFilter, selectedCrm, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
+    }, [searchTerm, globalSearch, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
 
     // Hiding filters must never hide the fact that they are ON.
     const activeFilterCount = [
         rankFilter !== 'ALL',
+        categoryFilter !== 'ALL',
         ageingFilter !== 'all',
         balanceTypeFilter !== 'ALL',
         originFilter !== 'ALL',
     ].filter(Boolean).length;
+
+    /**
+     * The categories this book actually contains, commonest first, each with
+     * its count. Built from the data rather than from CUSTOMER_CATEGORIES so
+     * the dropdown never offers a category that would return nothing, and never
+     * hides one the sheet introduced that the list has not caught up with.
+     */
+    const categoriesInData = useMemo(() => {
+        const counts = new Map<string, number>();
+        let uncategorised = 0;
+        userAllowedData.forEach(item => {
+            const c = (item.category || '').trim();
+            if (!c) { uncategorised++; return; }
+            counts.set(c, (counts.get(c) || 0) + 1);
+        });
+        return {
+            list: [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+            uncategorised,
+        };
+    }, [userAllowedData]);
 
     // Bulk selection
     const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
@@ -197,7 +219,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         if (!q) return true;
         const hay = [
             item.company, item.contactPerson, item.contactPost, item.contactNumber,
-            item.email, item.city, item.state, item.gstin, item.address, item.crmOwnerId,
+            item.email, item.city, item.state, item.gstin, item.address, item.crmOwnerId, item.category,
             ...(item.additionalContacts || []).flatMap(c => [c.name, c.mobile, c.post || '']),
             ...(item.notes || []),
         ].join(' ').toLowerCase();
@@ -220,10 +242,21 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 const matchState = (item.state || '').toLowerCase().includes(q);
                 const matchGstin = (item.gstin || '').toLowerCase().includes(q);
                 const matchAddress = (item.address || '').toLowerCase().includes(q);
+                const matchCategory = (item.category || '').toLowerCase().includes(q);
                 const matchAdditional = (item.additionalContacts || []).some(
                     c => c.name.toLowerCase().includes(q) || c.mobile.toLowerCase().includes(q) || (c.post || '').toLowerCase().includes(q)
                 );
-                if (!matchCompany && !matchContact && !matchPost && !matchNumber && !matchEmail && !matchCity && !matchState && !matchGstin && !matchAddress && !matchAdditional) {
+                if (!matchCompany && !matchContact && !matchPost && !matchNumber && !matchEmail && !matchCity && !matchState && !matchGstin && !matchAddress && !matchCategory && !matchAdditional) {
+                    return false;
+                }
+            }
+
+            // Category (Builder / Dealer / Retailer / trade)
+            if (categoryFilter !== 'ALL') {
+                const itemCategory = (item.category || '').trim();
+                if (categoryFilter === 'UNCATEGORISED') {
+                    if (itemCategory) return false;
+                } else if (itemCategory !== categoryFilter) {
                     return false;
                 }
             }
@@ -278,7 +311,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             return true;
         });
-    }, [userAllowedData, globalSearch, searchTerm, rankFilter, selectedCrm, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+    }, [userAllowedData, globalSearch, searchTerm, rankFilter, selectedCrm, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
 
     // Metrics summary for filtered dataset
     const metrics = useMemo(() => {
@@ -573,7 +606,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* Payment Rank Filter Dropdown */}
-                    <div className="lg:col-span-3">
+                    <div className="lg:col-span-2">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Payment Rank
                         </label>
@@ -589,8 +622,28 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </select>
                     </div>
 
+                    {/* Category Filter Dropdown — Builder / Dealer / Retailer / trade */}
+                    <div className="lg:col-span-2">
+                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
+                            Category
+                        </label>
+                        <select aria-label="Filter by customer category"
+                            value={categoryFilter}
+                            onChange={e => setCategoryFilter(e.target.value)}
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
+                        >
+                            <option value="ALL">All categories ({userAllowedData.length})</option>
+                            {categoriesInData.list.map(([name, count]) => (
+                                <option key={name} value={name}>{name} ({count})</option>
+                            ))}
+                            {categoriesInData.uncategorised > 0 && (
+                                <option value="UNCATEGORISED">Not set ({categoriesInData.uncategorised})</option>
+                            )}
+                        </select>
+                    </div>
+
                     {/* CRM Filter Dropdown */}
-                    <div className="lg:col-span-3">
+                    <div className="lg:col-span-2">
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             CRM Owner
                         </label>
@@ -981,6 +1034,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     >
                                                         {PAYMENT_RANK_LABELS[rank]}
                                                     </span>
+                                                    {item.category && (
+                                                        <span
+                                                            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-separator whitespace-nowrap"
+                                                            title={`Category: ${item.category}`}
+                                                        >
+                                                            {item.category}
+                                                        </span>
+                                                    )}
                                                     <span className="text-[11.5px] font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
                                                         {item.paymentTermsDays ? `${item.paymentTermsDays}d terms` : 'Std credit'}
                                                         {item.creditLimit ? ` • ₹${(item.creditLimit / 100000).toFixed(1)}L` : ''}
@@ -1256,6 +1317,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             <span className="font-semibold">{item.contactPerson || 'Accounts Dept'}</span>
                                             {item.city && <span className="text-[11.5px] text-gray-500 font-medium">{item.city}</span>}
                                         </div>
+                                        {item.category && (
+                                            <div>
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-separator">
+                                                    {item.category}
+                                                </span>
+                                            </div>
+                                        )}
                                         {item.contactNumber && (
                                             <div className="flex items-center justify-between text-[12.5px]">
                                                 <a href={dialable(item.contactNumber) ? `tel:${item.contactNumber}` : undefined} className="inline-flex items-center min-h-[30px] px-1 -mx-1 font-bold text-emerald-700 dark:text-emerald-400 hover:underline">

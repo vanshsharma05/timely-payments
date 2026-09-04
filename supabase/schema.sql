@@ -52,6 +52,12 @@ create table if not exists public.customers (
     -- Good pays to terms, Late pays slowly, Bad is old money stuck — the
     -- last of which is what the recovery agency is given.
     payment_rank         text check (payment_rank is null or payment_rank in ('Good','Late','Bad')),
+    -- Kind of business: Builder / Dealer / Dealer Offset / Retailer, or the
+    -- trade the account is in. Seeded from the Customer Master's CATEGORY
+    -- column, edited here afterwards. Deliberately unconstrained — the master
+    -- carries spellings nobody has told us about yet, and losing one on import
+    -- is worse than storing it.
+    category             text,
 
     total                numeric not null default 0,
     total_type           text check (total_type in ('Dr','Cr')),
@@ -80,6 +86,11 @@ create table if not exists public.customers (
     updated_at           timestamptz not null default now(),
     updated_by           uuid references public.profiles(id) on delete set null
 );
+
+-- `create table if not exists` above does nothing to a database that already
+-- has the table, so every column added after the first deployment needs saying
+-- again here. Running this file a second time is a no-op.
+alter table public.customers add column if not exists category text;
 
 create index if not exists customers_crm_owner_idx on public.customers (upper(crm_owner_id));
 create index if not exists customers_collector_idx on public.customers (upper(assigned_collector_id));
