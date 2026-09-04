@@ -384,9 +384,9 @@ export const ReportsView = ({
         <div className="space-y-5">
             {/* Top Controls: CRM Filter, Search, AI & Excel Export */}
             <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 sm:p-5">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     {/* CRM Selector */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
                         <label htmlFor="crmSelect" className="text-sm font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap flex items-center gap-1.5">
                             <UsersIcon />
                             <span>Select CRM Owner:</span>
@@ -408,33 +408,6 @@ export const ReportsView = ({
                             ))}
                             <option value="UNASSIGNED">Unassigned Accounts ({data.filter(d => !d.crmOwnerId || d.crmOwnerId.toUpperCase() === 'UNASSIGNED').length})</option>
                         </select>
-                    </div>
-
-                    {/* Customer Search Filter & Action Buttons */}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:max-w-md">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                placeholder="Search by customer, phone, email, CRM..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-8 py-2 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                            />
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                            </div>
-                            {searchTerm && (
-                                <button
-                                    onClick={() => setSearchTerm('')}
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                                >
-                                    ✕
-                                </button>
-                            )}
-                        </div>
-
                         {/* Which half of the book this report is of. Settled
                             accounts keep everything; they are simply not what a
                             collections report is asking about. */}
@@ -458,11 +431,37 @@ export const ReportsView = ({
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    {/* Customer Search Filter & Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-3 flex-1 xl:justify-end">
+                        <div className="relative flex-1 min-w-[220px] xl:max-w-[300px]">
+                            <input
+                                type="text"
+                                placeholder="Search by customer, phone, email, CRM..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-8 py-2 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                            />
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                            {searchTerm && (
+                                <button
+                                    onClick={() => setSearchTerm('')}
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                >
+                                    ✕
+                                </button>
+                            )}
+                        </div>
 
                         {canExport && (
                         <button
                             onClick={() => setIsAiReportOpen(true)}
-                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-bold shadow-sm transition-all whitespace-nowrap"
+                            className="flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-bold shadow-sm transition-all whitespace-nowrap"
                             title="Generate AI Financial & Credit Days Reduction Report"
                         >
                             <SparklesIcon className="w-4 h-4 text-yellow-300 animate-pulse" />
@@ -473,7 +472,7 @@ export const ReportsView = ({
                         {canDownloadExcel && (
                         <button
                             onClick={exportToExcel}
-                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors whitespace-nowrap"
+                            className="flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors whitespace-nowrap"
                             title="Export Filtered Report to Excel with 1-45d, 46-90d, 91-135d, >135d breakdown"
                         >
                             <DownloadIcon />

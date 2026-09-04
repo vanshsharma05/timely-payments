@@ -422,9 +422,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 />
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                             <div>
-                                <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">Sanctioned Credit Limit (₹)</label>
+                                <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1 whitespace-nowrap">Credit Limit (₹)</label>
                                 <input
                                     type="number"
                                     value={creditLimit !== undefined ? creditLimit : ''}
@@ -522,44 +522,42 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                             <input
                                 type="text"
                                 value={newContactName}
                                 onChange={e => setNewContactName(e.target.value)}
                                 placeholder="Name (e.g. Sunil)"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <input
                                 type="text"
                                 value={newContactPost}
                                 onChange={e => setNewContactPost(e.target.value)}
                                 placeholder="Role (e.g. Purchase)"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <input
                                 type="text"
                                 value={newContactMobile}
                                 onChange={e => setNewContactMobile(e.target.value)}
                                 placeholder="Mobile Number"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
-                            <div className="flex gap-1">
-                                <input
-                                    type="email"
-                                    value={newContactEmail}
-                                    onChange={e => setNewContactEmail(e.target.value)}
-                                    placeholder="Email (optional)"
-                                    className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={handleAddContact}
-                                    className="px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg"
-                                >
-                                    + Add
-                                </button>
-                            </div>
+                            <input
+                                type="email"
+                                value={newContactEmail}
+                                onChange={e => setNewContactEmail(e.target.value)}
+                                placeholder="Email (optional)"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAddContact}
+                                className="flex-none px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg whitespace-nowrap"
+                            >
+                                + Add
+                            </button>
                         </div>
                     </div>
 
