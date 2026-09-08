@@ -987,7 +987,16 @@ without managing anybody.
 | | Admin + Manager | Everyone else |
 |---|---|---|
 | **Team Performance & Portfolio Allocation** | shown | hidden — how a colleague is doing is a management view |
-| **Today's page** | scrolls | held to one screen (`fitViewport`, `lg` and up) |
+| **Today's page** | scrolls | held to one screen where there is room for it |
+
+One screen is a layout, not a squeeze — so it applies only when the window can
+hold it: `lg` and up, **and** at least `MIN_HEIGHT_FOR_ONE_SCREEN` (900px) of
+viewport. Above the list sit the app bar, the title, the worklist cards and
+sometimes the attention banner, about 510px of them. On a 1366x768 laptop the
+viewport is roughly 640px, and forcing the layout there left the account list
+two pixels tall: "Due today: 2 accounts" and not one row under it, on a page
+that could not scroll to reveal them. Below the threshold the page scrolls as it
+always did.
 
 The one-screen layout is not a smaller version of the same page. The summary
 takes a left rail and the account list takes the right, full height, scrolling

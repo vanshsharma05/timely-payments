@@ -56,6 +56,36 @@ const tabFromLocation = (): string => {
     return TAB_KEYS.includes(key) ? key : 'overview';
 };
 
+/**
+ * The shortest window that can hold the Today page without hiding the work.
+ *
+ * Above the account list sit the app bar, the page title, the worklist cards
+ * and (when there is one) the attention banner — about 510px of them. Below
+ * that the list needs its own header and a few rows to be worth looking at.
+ * On a 1366x768 laptop the viewport is roughly 640px, and holding that page to
+ * one screen left the list two pixels tall with not one row visible: "Due
+ * today: 2 accounts" and nothing under it.
+ *
+ * So the one-screen layout applies where it fits and the page scrolls where it
+ * does not. A dashboard nobody can read is not a dashboard.
+ */
+const MIN_HEIGHT_FOR_ONE_SCREEN = 900;
+
+/** Whether this window is tall enough for a page held to one screen. */
+function useFitsOneScreen(): boolean {
+    const [fits, setFits] = useState(
+        () => typeof window === 'undefined' || window.innerHeight >= MIN_HEIGHT_FOR_ONE_SCREEN,
+    );
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const onResize = () => setFits(window.innerHeight >= MIN_HEIGHT_FOR_ONE_SCREEN);
+        onResize();
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    return fits;
+}
+
 const getToday = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1119,6 +1149,7 @@ const App = () => {
     }), [currentUser]);
 
     const navKey = rights.seesWholeBook ? adminTab : userTab;
+    const fitsOneScreen = useFitsOneScreen();
 
     useEffect(() => {
         if (!isAuthenticated || typeof window === 'undefined') return;
@@ -1552,7 +1583,7 @@ const App = () => {
         /* Whoever reads the whole book without running the team gets the same
            one-screen treatment as everybody else; the cards scroll inside the
            page rather than the page scrolling under them. */
-        <div className={`flex flex-col gap-7 ${rights.runsTheTeam ? '' : 'lg:h-full lg:min-h-0 lg:gap-5 lg:overflow-y-auto lg:pr-1.5'}`}>
+        <div className={`flex flex-col gap-7 ${!rights.runsTheTeam && fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5 lg:overflow-y-auto lg:pr-1.5' : ''}`}>
             {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                 <NotificationBanner
                     urgentCount={notificationSummary.urgentCount}
@@ -1774,7 +1805,7 @@ const App = () => {
                     /* One screen, no page scroll: the summary above stays put and the
                        account list below takes whatever height is left. Only from lg —
                        a phone scrolls, because none of this fits a phone. */
-                    <div className="flex flex-col gap-7 lg:h-full lg:min-h-0 lg:gap-5">
+                    <div className={`flex flex-col gap-7 ${fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5' : ''}`}>
                         {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
                             <NotificationBanner
                                 urgentCount={notificationSummary.urgentCount}
@@ -1838,11 +1869,11 @@ const App = () => {
                             the part the day is actually worked from. On a desktop the
                             summary takes the left column and the list takes the right,
                             full height, so nothing needs scrolling to be seen. */}
-                        <div className="flex flex-col gap-7 lg:grid lg:grid-cols-12 lg:gap-4 lg:flex-1 lg:min-h-0">
+                        <div className={`flex flex-col gap-7 lg:grid lg:grid-cols-12 lg:gap-4 ${fitsOneScreen ? 'lg:flex-1 lg:min-h-0' : ''}`}>
                         {/* Scrolls only if the screen is too short to hold both cards —
                             on anything normal there is no scrollbar here at all, and
                             nothing is ever cut off on a short one. */}
-                        <div className="flex flex-col gap-3.5 lg:col-span-5 lg:gap-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+                        <div className={`flex flex-col gap-3.5 lg:col-span-5 lg:gap-4 ${fitsOneScreen ? 'lg:min-h-0 lg:overflow-y-auto lg:pr-1' : ''}`}>
                             <Card className="p-6 lg:p-5 flex flex-col">
                                 <SectionHeader
                                     title="My book"
@@ -1917,7 +1948,7 @@ const App = () => {
                         </div>
 
                         {/* ---------- the accounts themselves ---------- */}
-                        <Card className="p-6 lg:col-span-7 lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden">
+                        <Card className={`p-6 lg:col-span-7 ${fitsOneScreen ? 'lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden' : ''}`}>
                             <SectionHeader
                                 title={
                                     categoryFilter === 'today' ? 'Due today'
@@ -1941,7 +1972,7 @@ const App = () => {
                                     action={<Button size="sm" variant="secondary" onClick={handleClearFilters}>Show all my accounts</Button>}
                                 />
                             ) : (
-                                <div className="mt-6 flex flex-col gap-2.5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5">
+                                <div className={`mt-6 flex flex-col gap-2.5 ${fitsOneScreen ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5' : ''}`}>
                                     {filteredData.slice(0, 40).map(customer => {
                                         const cat = getFollowUpCategory(customer, getToday());
                                         const due = relativeDays(customer.followUpDate);
@@ -2822,7 +2853,7 @@ const App = () => {
             // is held to one screen, and the account list scrolls inside its own
             // panel. Managers and Admins keep a scrolling page — they have the
             // team table under it, which is a read rather than a glance.
-            fitViewport={safeKey === 'overview' && !rights.runsTheTeam}
+            fitViewport={safeKey === 'overview' && !rights.runsTheTeam && fitsOneScreen}
             onNavigate={setActiveKey}
             onLogout={handleLogout}
             onChangePassword={() => setIsPasswordModalOpen(true)}
