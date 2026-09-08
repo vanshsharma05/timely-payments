@@ -542,16 +542,32 @@ const App = () => {
     }, [currentUser, appData]);
 
     useEffect(() => {
-        if (isAuthenticated && currentUser) {
-            updateViewData();
-            // Reset notification banner and filters on data refresh/user switch
-            setShowNotificationBanner(true);
-            setPriorityFilter(false);
-            setUnattendedFilter(false);
-            setStatusFilter(null);
-            setCategoryFilter('all');
-        }
+        if (isAuthenticated && currentUser) updateViewData();
     }, [updateViewData, currentUser, isAuthenticated]);
+
+    /**
+     * Filters belong to the person looking, not to the data.
+     *
+     * These used to be cleared in the same effect that recomputes the view —
+     * and that effect depends on `appData`, so *every save* reset them. Log a
+     * follow-up from "Due today" and the filter silently fell back to "My
+     * accounts": the list you were working stopped showing today's follow-ups
+     * and showed all 87 instead, which reads as the follow-ups disappearing.
+     * The same happened after grading an account, reassigning one, or a sync
+     * landing while you worked.
+     *
+     * Keyed on who is signed in, so it still clears on sign-in and on a switch
+     * of account, and never because a row was written.
+     */
+    useEffect(() => {
+        if (!isAuthenticated || !currentUser) return;
+        setShowNotificationBanner(true);
+        setPriorityFilter(false);
+        setUnattendedFilter(false);
+        setStatusFilter(null);
+        setCategoryFilter('all');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUser?.id, isAuthenticated]);
 
     const handleLogin = (user: User) => {
         const fullUser: User = {
