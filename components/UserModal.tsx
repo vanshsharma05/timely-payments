@@ -160,8 +160,8 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
     const allCrmChoices = Array.from(new Set([...existingCrms, ...assignedCrms]));
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
                     <div>
@@ -490,7 +490,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                             {error}
                         </div>
                     )}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3">
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3 max-md:pb-[env(safe-area-inset-bottom)] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
                         <button
                             type="button"
                             onClick={onClose}

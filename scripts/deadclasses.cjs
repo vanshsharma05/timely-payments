@@ -33,16 +33,24 @@ const files = [];
   }
 })('.');
 
-/** A class token: optional variant prefixes, then <prefix>-<value>. */
+/**
+ * A class token: optional variant prefixes, then <prefix>-<value>.
+ *
+ * A variant may be arbitrary — `max-md:[&>button]:flex-1` styles the buttons
+ * inside an element — so a prefix is either a plain word or a bracketed
+ * selector, which may contain `>`, `*` and `:`.
+ */
+const VARIANT = String.raw`(?:[a-z][a-z0-9-]*|\[[^\]]+\])`;
 const TOKEN = new RegExp(
-  String.raw`^(?:[a-z][a-z0-9-]*:)*(?:${PREFIXES.join('|')})-\S+$`
+  String.raw`^(?:${VARIANT}:)*(?:${PREFIXES.join('|')})-\S+$`
 );
 
 const seen = new Map();
 for (const f of files) {
   const src = fs.readFileSync(f, 'utf8');
-  // split on everything that cannot appear inside a class name
-  for (const tok of src.split(/[\s"'`{}()<>=;,]+/)) {
+  // split on everything that cannot appear inside a class name — but not
+  // inside square brackets, where an arbitrary variant may use `>` or `*`.
+  for (const tok of src.split(/(?![^[]*\])[\s"'`{}()<>=;,]+/)) {
     if (!tok || !TOKEN.test(tok)) continue;
     if (!seen.has(tok)) seen.set(tok, new Set());
     seen.get(tok).add(f);
@@ -50,7 +58,7 @@ for (const f of files) {
 }
 
 /** Tailwind escapes these characters in the emitted selector. */
-const esc = c => c.replace(/[:\/.\[\]%,#!]/g, ch => '\\' + ch);
+const esc = c => c.replace(/[:\/.\[\]%,#!&>*+()]/g, ch => '\\' + ch);
 
 const SKIP = /^(text|bg|border|fill|stroke|divide|ring|outline|placeholder|decoration|shadow|from|to|via)-(white|black|transparent|current|inherit|none)$/;
 

@@ -79,8 +79,8 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4 overflow-y-auto max-md:p-0 max-md:items-start">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 <form onSubmit={handleSubmit}>
                     <div className="p-6">
                         <div className="flex justify-between items-center mb-4">
@@ -133,7 +133,7 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
                             </div>
                         </div>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-800 px-6 py-3 flex justify-end space-x-3">
+                    <div className="bg-gray-50 dark:bg-gray-800 px-6 py-3 flex justify-end space-x-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
                         <button onClick={onClose} type="button" className="px-4 py-2 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600" aria-label="Close">Cancel</button>
                         <button type="submit" className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700">Save Template</button>
                     </div>

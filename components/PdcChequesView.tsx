@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useIsPhone } from './ui/usePhone';
 import * as XLSX from 'xlsx';
 import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE, findOwner, ownerKey } from '../types';
 import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
@@ -223,6 +224,14 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
     /** Selecting rows then filtering them away would act on cheques nobody can
         see, so the selection is trimmed to whatever is currently listed. */
+    /** Below `md` the table becomes a list of cheque cards; the filter
+        selects fold away behind one button. */
+    const isPhone = useIsPhone();
+    const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+    /** Cheque cards are tall; the phone list grows as it is read. */
+    const PHONE_PAGE = 40;
+    const [phoneVisible, setPhoneVisible] = useState(PHONE_PAGE);
+    useEffect(() => { setPhoneVisible(PHONE_PAGE); }, [selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm]);
     const visibleIds = useMemo(() => new Set(filteredCheques.map(c => c.id)), [filteredCheques]);
     const selected = useMemo(() => selectedIds.filter(id => visibleIds.has(id)), [selectedIds, visibleIds]);
     const allSelected = selected.length > 0 && selected.length === filteredCheques.length;
@@ -279,25 +288,25 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     return (
         <div className="space-y-6">
             {/* Header with Title & Action */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 max-md:p-4 max-md:gap-3">
                 <div className="flex items-center space-x-3">
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-pos rounded-xl">
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-pos rounded-xl max-md:hidden">
                         <ChequeIcon className="w-7 h-7" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 max-md:text-[19px] max-md:flex-wrap">
                             PDC Cheques Management
                             <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-semibold">
                                 {pdcCheques.length} Cheques
                             </span>
                         </h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 max-md:text-[13px]">
                             Track post-dated cheques, bank presentation schedules, and clearing status
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex items-center gap-3 w-full sm:w-auto max-md:[&>button]:flex-1 max-md:[&>button]:justify-center max-md:[&>button]:min-h-[44px]">
                     {canExport && (
                         <button
                             onClick={handleExport}
@@ -321,7 +330,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             </div>
 
             {/* 5 Main Focus Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Stacked, five of these were a screen and a half before the list;
+                on a phone they run sideways and snap one at a time. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:snap-mandatory max-md:-mx-4 max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&>div]:min-w-[236px] max-md:[&>div]:snap-start">
                 {/* 1. Today's Cheques to Present in Bank */}
                 <div
                     onClick={() => {
@@ -511,7 +522,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             </div>
 
             {/* Filter Bar */}
-            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4 max-md:p-4 max-md:space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {/* Search Input */}
                     <div className="lg:col-span-2 relative">
@@ -529,8 +540,24 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         </div>
                     </div>
 
+                    {/* Phone only: the selects below fold behind this. */}
+                    <button
+                        type="button"
+                        onClick={() => setPhoneFiltersOpen(v => !v)}
+                        aria-expanded={phoneFiltersOpen}
+                        className="md:hidden h-11 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2 flex items-center justify-center gap-2"
+                    >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                        {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
+                        {(selectedCustomer !== 'all' || selectedCrm !== 'all' || bankFilter !== 'all' || dateRangeFilter !== 'all') && (
+                            <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
+                                {[selectedCustomer !== 'all', selectedCrm !== 'all', bankFilter !== 'all', dateRangeFilter !== 'all'].filter(Boolean).length}
+                            </span>
+                        )}
+                    </button>
+
                     {/* Customer Filter */}
-                    <div>
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
                         <select
                             aria-label="Filter by customer"
                             value={selectedCustomer}
@@ -547,7 +574,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     </div>
 
                     {/* CRM Owner Filter */}
-                    <div>
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
                         <select
                             aria-label="Filter by CRM owner"
                             value={selectedCrm}
@@ -564,7 +591,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     </div>
 
                     {/* Bank Filter */}
-                    <div>
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
                         <select
                             aria-label="Filter by bank"
                             value={bankFilter}
@@ -580,9 +607,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                 </div>
 
                 {/* Status and Time Preset Pills */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-700 max-md:pt-3">
+                    <div className="flex flex-wrap items-center gap-2 max-md:flex-nowrap max-md:overflow-x-auto max-md:-mx-4 max-md:px-4 max-md:w-[calc(100%+2rem)] max-md:[scrollbar-width:none] max-md:[&>button]:flex-none max-md:[&>button]:h-9">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1 max-md:hidden">
                             Status:
                         </span>
                         {[
@@ -607,7 +634,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         ))}
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className={`flex items-center gap-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1">
                             Due Date:
                         </span>
@@ -638,7 +665,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
             {/* Cheque Table */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between max-md:flex-wrap max-md:gap-2 max-md:p-3.5">
                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Showing {filteredCheques.length} of {pdcCheques.length} PDC Cheques
                     </span>
@@ -700,6 +727,149 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     </div>
                 )}
 
+                {isPhone ? (
+                    /* Phone: a card per cheque. The customer, the amount and the
+                       state on top; the cheque itself under it; the same three
+                       quick actions as the table, sized for a thumb. */
+                    <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                        {canManagePdc && filteredCheques.length > 0 && (
+                            <div className="px-3.5 py-2 flex items-center justify-end">
+                                <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-gray-600 dark:text-gray-300 min-h-[32px]">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={e => toggleAll(e.target.checked)}
+                                        aria-label="Select all cheques in view"
+                                        className="w-5 h-5 rounded text-accent focus:ring-accent"
+                                    />
+                                    Select all
+                                </label>
+                            </div>
+                        )}
+                        {filteredCheques.length === 0 ? (
+                            <div className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                                <ChequeIcon className="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600" />
+                                <p className="text-sm font-semibold mt-2">No PDC cheques found</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    {hasActiveFilters ? 'Try adjusting your filters or search terms.' : 'Add a cheque to start the register.'}
+                                </p>
+                                {canManagePdc && (
+                                    <button onClick={() => onAddPdc()} className="mt-3 h-10 px-4 bg-emerald-600 text-white rounded-xl text-sm font-semibold">
+                                        + Add PDC Cheque
+                                    </button>
+                                )}
+                            </div>
+                        ) : filteredCheques.slice(0, phoneVisible).map(cheque => {
+                            const customer = customers.find(c => c.id === cheque.customerId);
+                            const isDueToday = cheque.state === 'due';
+                            const isPastDue = cheque.state === 'overdue';
+                            const isSelected = selected.includes(cheque.id);
+                            const state = cheque.status === PdcStatus.Cleared ? ['Cleared', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300']
+                                : cheque.status === PdcStatus.Hold ? ['On hold', 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300']
+                                : cheque.status === PdcStatus.Bounced ? ['Bounced', 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300']
+                                : isDueToday ? ['Due today', 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300']
+                                : isPastDue ? ['Date passed', 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300']
+                                : ['Pending', 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'];
+                            return (
+                                <div key={cheque.id} className={`px-3.5 py-3 ${isSelected ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''}`}>
+                                    <div className="flex gap-3">
+                                        {canManagePdc && (
+                                            <label className="flex-none pt-0.5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleRow(cheque.id)}
+                                                    aria-label={`Select cheque ${cheque.chequeNumber || ''} for ${cheque.customerName}`}
+                                                    className="w-5 h-5 rounded text-accent focus:ring-accent"
+                                                />
+                                            </label>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    {customer && onOpenCustomerFollowUp ? (
+                                                        <button onClick={() => onOpenCustomerFollowUp(customer)} className="text-[15px] font-bold text-gray-900 dark:text-white text-left leading-snug break-words">
+                                                            {cheque.customerName}
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-[15px] font-bold text-gray-900 dark:text-white leading-snug break-words">{cheque.customerName}</span>
+                                                    )}
+                                                    <p className="text-[12.5px] text-gray-500 dark:text-gray-400 mt-1 font-mono">
+                                                        #{cheque.chequeNumber} · {cheque.bankName}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right flex-none">
+                                                    <p className="num text-[15.5px] font-extrabold text-pos">₹{cheque.amount.toLocaleString('en-IN')}</p>
+                                                    <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${state[1]}`}>{state[0]}</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[12.5px] text-gray-600 dark:text-gray-300 mt-1.5">
+                                                Dated <span className="font-semibold">{cheque.chequeDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                                {customer ? ` · O/S ₹${customer.total.toLocaleString('en-IN')}` : ''}
+                                                {(customer?.crmOwnerId || cheque.crmOwnerId) ? ` · ${customer?.crmOwnerId || cheque.crmOwnerId}` : ''}
+                                            </p>
+                                            {cheque.remarks && (
+                                                <p className="text-[12px] text-gray-400 italic mt-1 truncate">"{cheque.remarks}"</p>
+                                            )}
+                                            {canManagePdc && (
+                                                <div className="flex items-center gap-2 mt-2.5">
+                                                    <div className="flex-1 inline-flex items-center gap-1 bg-card-2 p-1 rounded-xl border border-separator">
+                                                        <button
+                                                            onClick={() => onUpdatePdcStatus(cheque.id, PdcStatus.Cleared)}
+                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Cleared ? 'bg-emerald-600 text-white' : 'text-label-2 active:bg-pos-bg'}`}
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                        <button
+                                                            onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Hold ? PdcStatus.Pending : PdcStatus.Hold)}
+                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Hold ? 'bg-orange-600 text-white' : 'text-label-2 active:bg-warn-bg'}`}
+                                                        >
+                                                            Hold
+                                                        </button>
+                                                        <button
+                                                            onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Bounced ? PdcStatus.Pending : PdcStatus.Bounced)}
+                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Bounced ? 'bg-rose-600 text-white' : 'text-label-2 active:bg-dang-bg'}`}
+                                                        >
+                                                            Bounce
+                                                        </button>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onEditPdc(cheque)}
+                                                        className="w-11 h-11 grid place-items-center rounded-full text-gray-500 active:bg-blue-50 dark:active:bg-blue-900/30"
+                                                        aria-label="Edit cheque"
+                                                    >
+                                                        <EditIcon />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (window.confirm(`Are you sure you want to delete Cheque #${cheque.chequeNumber} for ${cheque.customerName}?`)) {
+                                                                onDeletePdc(cheque.id);
+                                                            }
+                                                        }}
+                                                        className="w-11 h-11 grid place-items-center rounded-full text-gray-500 active:text-dang active:bg-rose-50 dark:active:bg-rose-900/30"
+                                                        aria-label="Delete cheque"
+                                                    >
+                                                        <TrashIcon />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {phoneVisible < filteredCheques.length && (
+                            <div className="p-3">
+                                <button
+                                    onClick={() => setPhoneVisible(c => c + PHONE_PAGE * 2)}
+                                    className="w-full h-11 rounded-xl bg-gray-100 dark:bg-gray-700 active:bg-gray-200 text-[14px] font-semibold text-gray-700 dark:text-gray-200"
+                                >
+                                    Show more &mdash; {(filteredCheques.length - phoneVisible).toLocaleString('en-IN')} left
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
                     <table className="w-full text-left border-collapse text-xs sm:text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
@@ -956,6 +1126,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         </tbody>
                     </table>
                 </div>
+                )}
             </div>
         </div>
     );

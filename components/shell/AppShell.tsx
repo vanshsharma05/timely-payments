@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from '../../types';
 import { cx, Spinner } from '../ui/Primitives';
 import { initials } from '../ui/format';
+import { useIsPhone } from '../ui/usePhone';
 import shoriMark from '../../assets/shori-mark.png';
 
 /* ============================================================================
@@ -127,12 +128,18 @@ const Wordmark = () => (
 
 /* ------------------------------- menus ---------------------------------- */
 
-function useDismiss(open: boolean, close: () => void) {
+function useDismiss(open: boolean, close: () => void, also: React.RefObject<HTMLElement | null>[] = []) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
+      const t = e.target as Node;
+      // The phone renders the same menu as a sheet from the tab bar, in a
+      // different part of the tree: a press inside either copy, or on the
+      // tab that opens it, must not count as pressing outside.
+      if (ref.current?.contains(t)) return;
+      if (also.some(r => r.current?.contains(t))) return;
+      close();
     };
     const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && close();
     document.addEventListener('mousedown', onDoc);
@@ -247,12 +254,15 @@ export const AppShell = ({
   children,
 }: AppShellProps) => {
   const [choice, setTheme, isDark] = useTheme();
+  const isPhone = useIsPhone();
   const [userOpen, setUserOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const setupSheetRef = useRef<HTMLDivElement>(null);
+  const setupTabRef = useRef<HTMLButtonElement>(null);
   const userRef = useDismiss(userOpen, () => setUserOpen(false));
-  const setupRef = useDismiss(setupOpen, () => setSetupOpen(false));
+  const setupRef = useDismiss(setupOpen, () => setSetupOpen(false), [setupSheetRef, setupTabRef]);
 
   /**
    * When the book was last pulled, in words.
@@ -332,7 +342,9 @@ export const AppShell = ({
                 ref={searchRef}
                 value={searchTerm}
                 onChange={e => onSearch(e.target.value)}
-                placeholder={searchPlaceholder}
+                // The full placeholder is cut to "Search customers, co" in the
+                // width a phone leaves for it; say less rather than half.
+                placeholder={isPhone ? 'Search customers' : searchPlaceholder}
                 aria-label="Search"
                 className="w-full h-11 pl-12 pr-12 rounded-full bg-card-3 border border-transparent text-[14px] text-label placeholder:text-label-3 focus:bg-card focus:border-accent focus:shadow-e2 outline-none transition-all"
               />
@@ -362,6 +374,9 @@ export const AppShell = ({
                 including the customer import, which it has never done and must
                 not. It says what it does now, in the same words as the button on
                 the customer book and the one in Data source. */}
+            {/* On a phone the bar has room for the search and the avatar and
+                not much else, so Sync and the theme switch live in the avatar
+                menu there. Nothing is lost; it is a tap further away. */}
             {onSync && (
               <button
                 onClick={onSync}
@@ -375,7 +390,7 @@ export const AppShell = ({
                     : '\n\nNot synced yet')
                 }
                 className={cx(
-                  'flex items-center gap-2 h-9 px-3.5 rounded-full whitespace-nowrap',
+                  'max-md:hidden flex items-center gap-2 h-9 px-3.5 rounded-full whitespace-nowrap',
                   'text-[14px] font-semibold border transition-colors',
                   isSyncing
                     ? 'border-separator text-label-3 cursor-wait'
@@ -391,13 +406,15 @@ export const AppShell = ({
               </button>
             )}
 
-            <IconButton
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-              title={`${isDark ? 'Light' : 'Dark'} mode${choice === 'system' ? ' (following system)' : ''}`}
-            >
-              {isDark ? <SunGlyph className="w-[18px] h-[18px]" /> : <MoonGlyph className="w-[18px] h-[18px]" />}
-            </IconButton>
+            <span className="max-md:hidden">
+              <IconButton
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={`${isDark ? 'Light' : 'Dark'} mode${choice === 'system' ? ' (following system)' : ''}`}
+              >
+                {isDark ? <SunGlyph className="w-[18px] h-[18px]" /> : <MoonGlyph className="w-[18px] h-[18px]" />}
+              </IconButton>
+            </span>
 
             <div className="relative ml-1" ref={userRef}>
               <button
@@ -436,6 +453,33 @@ export const AppShell = ({
                     </p>
                   )}
 
+                  {/* Phone only: the two controls the app bar has no room for. */}
+                  {onSync && (
+                    <button
+                      role="menuitem"
+                      disabled={isSyncing}
+                      onClick={() => {
+                        setUserOpen(false);
+                        onSync();
+                      }}
+                      className={cx(MENU_ITEM, 'md:hidden mt-1 disabled:opacity-50')}
+                    >
+                      {isSyncing ? <Spinner className="w-[18px] h-[18px]" /> : <RefreshGlyph className="w-[18px] h-[18px]" />}
+                      <span className="flex flex-col items-start leading-tight">
+                        <span>{isSyncing ? 'Syncing…' : 'Sync balances'}</span>
+                        {syncedLabel && <span className="text-[11.5px] text-label-3 font-normal">{syncedLabel}</span>}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    role="menuitem"
+                    onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                    className={cx(MENU_ITEM, 'md:hidden', !onSync && 'mt-1')}
+                  >
+                    {isDark ? <SunGlyph className="w-[18px] h-[18px]" /> : <MoonGlyph className="w-[18px] h-[18px]" />}
+                    {isDark ? 'Light mode' : 'Dark mode'}
+                  </button>
+
                   {onChangePassword && (
                     <button
                       role="menuitem"
@@ -443,7 +487,7 @@ export const AppShell = ({
                         setUserOpen(false);
                         onChangePassword();
                       }}
-                      className={cx(MENU_ITEM, 'mt-1')}
+                      className={cx(MENU_ITEM, 'md:mt-1')}
                     >
                       <KeyGlyph className="w-[18px] h-[18px]" />
                       Change password
@@ -463,7 +507,7 @@ export const AppShell = ({
         {/* ================= pill tabs ================= */}
         {/* No overflow-x here: it makes overflow-y compute to auto, which clipped
             the Settings dropdown to the height of this bar. Wrap instead. */}
-        <nav className="px-4 sm:px-6 pb-2.5 flex items-center gap-1.5 flex-wrap" aria-label="Sections">
+        <nav className="max-md:hidden px-4 sm:px-6 pb-2.5 flex items-center gap-1.5 flex-wrap" aria-label="Sections">
           {primary.map(item => {
             const active = item.key === activeKey;
             return (
@@ -540,18 +584,18 @@ export const AppShell = ({
 
       {/* ================= page heading (Apple large title) ================= */}
       <div className={cx(
-        'px-4 sm:px-6 pt-8 pb-6',
+        'px-4 sm:px-6 pt-8 pb-6 max-md:pt-5 max-md:pb-4',
         // A page held to one screen spends its height on content, not on the
         // gap above the title.
         fitViewport && 'lg:pt-4 lg:pb-3',
       )}>
-        <div className="flex items-end justify-between gap-6 flex-wrap">
+        <div className="flex items-end justify-between gap-6 flex-wrap max-md:gap-3">
           <div className="min-w-0">
-            <h1 className="text-[32px] sm:text-[36px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
+            <h1 className="text-[32px] sm:text-[36px] max-md:text-[27px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
               {title}
             </h1>
             {(subtitle || dataAsOf || lastSyncTime) && (
-              <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3">
+              <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3 max-md:mt-2 max-md:text-[13px] max-md:gap-x-2 max-md:gap-y-1">
                 {subtitle}
                 {dataAsOf && (
                   <>
@@ -579,8 +623,117 @@ export const AppShell = ({
 
       <main className={cx(
         'px-4 sm:px-6 pb-24',
+        // Clears the tab bar below, plus the home indicator on phones that have one.
+        'max-md:pb-[calc(84px+env(safe-area-inset-bottom))]',
         fitViewport && 'lg:flex-1 lg:min-h-0 lg:overflow-hidden lg:pb-5',
       )}>{children}</main>
+
+      {/* ================= phone tab bar ================= */}
+      {/* Thumb-height navigation. The pill row above wraps into two ragged
+          lines on a phone and sits at the top, where a thumb does not reach;
+          the sections go along the bottom instead, the way every phone app
+          does it, and Setup opens as a sheet from its own tab. */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-xl border-t border-separator pb-[env(safe-area-inset-bottom)]"
+        aria-label="Sections"
+      >
+        <div className="grid h-[64px]" style={{ gridTemplateColumns: `repeat(${primary.length + (setup.length ? 1 : 0)}, minmax(0, 1fr))` }}>
+          {primary.map(item => {
+            const active = item.key === activeKey;
+            return (
+              <button
+                key={item.key}
+                onClick={() => { setSetupOpen(false); onNavigate(item.key); }}
+                aria-current={active ? 'page' : undefined}
+                className={cx(
+                  'relative flex flex-col items-center justify-center gap-1 min-w-0 px-1 transition-colors',
+                  active ? 'text-accent' : 'text-label-3 active:text-label',
+                )}
+              >
+                <span className={cx(
+                  'relative grid place-items-center h-7 w-12 rounded-full transition-colors [&>svg]:w-[22px] [&>svg]:h-[22px]',
+                  active && 'bg-accent-tint',
+                )}>
+                  {item.icon}
+                  {item.badge != null && item.badge > 0 && (
+                    <span
+                      className={cx(
+                        'num absolute -top-1.5 left-[calc(50%+6px)] text-[10.5px] font-bold leading-none px-1.5 py-[3px] rounded-full ring-2 ring-card',
+                        item.badgeTone === 'dang'
+                          ? 'bg-dang text-card'
+                          : item.badgeTone === 'warn'
+                          ? 'bg-warn text-card'
+                          : 'bg-label-3 text-card',
+                      )}
+                    >
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
+                </span>
+                <span className={cx('text-[11px] leading-none truncate max-w-full', active ? 'font-bold' : 'font-medium')}>
+                  {/* "My performance" does not fit a fifth of a phone; the tab
+                      bar is already yours, so the "My" says nothing there. */}
+                  {item.label.replace(/^My /, '')}
+                </span>
+              </button>
+            );
+          })}
+          {setup.length > 0 && (
+            <button
+              ref={setupTabRef}
+              onClick={() => setSetupOpen(o => !o)}
+              aria-haspopup="menu"
+              aria-expanded={setupOpen}
+              className={cx(
+                'relative flex flex-col items-center justify-center gap-1 min-w-0 px-1 transition-colors',
+                isSetupActive || setupOpen ? 'text-accent' : 'text-label-3 active:text-label',
+              )}
+            >
+              <span className={cx(
+                'grid place-items-center h-7 w-12 rounded-full transition-colors',
+                (isSetupActive || setupOpen) && 'bg-accent-tint',
+              )}>
+                <GearGlyph className="w-[22px] h-[22px]" />
+              </span>
+              <span className={cx('text-[11px] leading-none', isSetupActive ? 'font-bold' : 'font-medium')}>Settings</span>
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* The Setup sheet, phone only: rises from the tab bar and lists the
+          same pages the desktop dropdown does. */}
+      {setupOpen && setup.length > 0 && (
+        <div className="md:hidden fixed inset-0 z-50" role="presentation" ref={setupSheetRef}>
+          <button
+            type="button"
+            aria-label="Close settings"
+            onClick={() => setSetupOpen(false)}
+            className="absolute inset-0 bg-black/40"
+          />
+          <div
+            role="menu"
+            className="absolute inset-x-0 bottom-0 bg-card rounded-t-[22px] shadow-e3 pt-2 pb-[calc(12px+env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-4 fade-in duration-150"
+          >
+            <span className="block mx-auto w-9 h-1 rounded-full bg-separator-strong" aria-hidden="true" />
+            <p className="px-5 pt-3 pb-1 label">Setup</p>
+            {setup.map(item => (
+              <button
+                key={item.key}
+                role="menuitem"
+                onClick={() => { setSetupOpen(false); onNavigate(item.key); }}
+                className={cx(
+                  'w-full flex items-center gap-3.5 px-5 min-h-[52px] text-[15.5px] font-medium text-left transition-colors active:bg-press',
+                  item.key === activeKey ? 'text-accent' : 'text-label',
+                )}
+              >
+                <span className="text-label-3 [&>svg]:w-[20px] [&>svg]:h-[20px]">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

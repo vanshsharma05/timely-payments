@@ -152,8 +152,8 @@ const PdcModal: React.FC<PdcModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full border border-gray-100 dark:border-gray-700 overflow-hidden transform transition-all">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 max-md:p-0 max-md:items-start">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full border border-gray-100 dark:border-gray-700 overflow-hidden transform transition-all max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Modal Header */}
                 <div className="px-6 py-5 bg-accent text-on-accent flex items-center justify-between">
                     <div className="flex items-center space-x-3">
@@ -364,7 +364,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                     </div>
 
                     {/* Footer Actions */}
-                    <div className="pt-4 flex items-center justify-end space-x-3 border-t border-gray-100 dark:border-gray-700">
+                    <div className="pt-4 flex items-center justify-end space-x-3 border-t border-gray-100 dark:border-gray-700 max-md:pb-[env(safe-area-inset-bottom)] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
                         <button
                             type="button"
                             onClick={onClose}

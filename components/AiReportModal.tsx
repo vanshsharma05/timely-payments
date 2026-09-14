@@ -217,8 +217,8 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
     const formatInr = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto max-md:p-0">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-card-2 text-label">
                     <div className="flex items-center gap-3">

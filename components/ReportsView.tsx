@@ -15,6 +15,8 @@ import {
 } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
+import { useIsPhone } from './ui/usePhone';
+import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
 export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
@@ -313,6 +315,17 @@ export const ReportsView = ({
     }, [workScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
 
     // Export current report view to Excel with full ageing breakdown
+    /**
+     * A phone gets a row list instead of the table, and only the first
+     * stretch of it: every row carries an ageing bar, and mounting six
+     * hundred of them at once is what made this screen a hundred and sixty
+     * thousand pixels tall on a phone.
+     */
+    const isPhone = useIsPhone();
+    const PHONE_PAGE = 50;
+    const [phoneVisible, setPhoneVisible] = useState(PHONE_PAGE);
+    useEffect(() => { setPhoneVisible(PHONE_PAGE); }, [selectedCrm, categoryFilter, ageingFilter, searchTerm, settlementFilter]);
+
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
     const [bulkCrm, setBulkCrm] = useState('');
@@ -698,7 +711,7 @@ export const ReportsView = ({
                 {/* Table Header Controls & Filter Tabs */}
                 <div className="p-4 sm:p-5 border-b border-gray-200 dark:border-gray-800 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 max-md:flex-wrap">
                             <h4 className="text-base font-bold text-gray-900 dark:text-white">
                                 Customer Report List
                             </h4>
@@ -955,6 +968,69 @@ export const ReportsView = ({
                 )}
 
                 {/* Table with Live 1-45d, 46-90d, 91-135d, >135d on Screen */}
+                {isPhone ? (
+                    <div>
+                        {selectable && filteredReportData.length > 0 && (
+                            <div className="px-3.5 py-2.5 bg-gray-50 dark:bg-gray-800/90 border-b border-gray-200 dark:border-gray-700 flex items-center justify-end">
+                                <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-gray-600 dark:text-gray-300 min-h-[32px]">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={e => toggleAll(e.target.checked)}
+                                        aria-label="Select all accounts in this report"
+                                        className="w-5 h-5 rounded text-accent focus:ring-accent"
+                                    />
+                                    Select all
+                                </label>
+                            </div>
+                        )}
+                        {filteredReportData.length === 0 ? (
+                            <div className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No customer records match the selected report criteria.</p>
+                                <p className="text-[12.5px] text-gray-400 mt-1">Try switching to "All" or choosing another ageing bucket.</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                                {filteredReportData.slice(0, phoneVisible).map(item => {
+                                    const activePdcs = pdcCheques.filter(p => p.customerId === item.id && CHEQUE_ACTIVE.includes(chequeState(p, today)));
+                                    const totalPdcAmount = activePdcs.reduce((sum, p) => sum + p.amount, 0);
+                                    return (
+                                        <PhoneAccountRow
+                                            key={item.id}
+                                            item={item}
+                                            today={today}
+                                            ownerName={getUserDisplayName(item.crmOwnerId)}
+                                            onOpen={() => onFollowUp(item)}
+                                            onWhatsApp={() => onWhatsApp(item)}
+                                            selectable={selectable}
+                                            selected={selected.includes(item.id)}
+                                            onToggleSelect={() => toggleRow(item.id)}
+                                            extras={activePdcs.length > 0 ? (
+                                                <span
+                                                    className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full text-[11.5px] font-bold bg-pos-bg text-pos"
+                                                    title={`Active PDC Cheques: ₹${totalPdcAmount.toLocaleString('en-IN')} (${activePdcs.length} cheques)`}
+                                                >
+                                                    <ChequeIcon className="w-3 h-3" />
+                                                    {formatCurrency(totalPdcAmount)}
+                                                </span>
+                                            ) : undefined}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {phoneVisible < filteredReportData.length && (
+                            <div className="p-3 border-t border-gray-200 dark:border-gray-800">
+                                <button
+                                    onClick={() => setPhoneVisible(c => c + PHONE_PAGE * 2)}
+                                    className="w-full h-11 rounded-xl bg-gray-100 dark:bg-gray-800 active:bg-gray-200 text-[14px] font-semibold text-gray-700 dark:text-gray-300"
+                                >
+                                    Show more &mdash; {(filteredReportData.length - phoneVisible).toLocaleString('en-IN')} left
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs min-w-[900px]">
                         <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
@@ -1214,6 +1290,7 @@ export const ReportsView = ({
                         </tbody>
                     </table>
                 </div>
+                )}
             </div>
 
             {/* AI Report Modal */}

@@ -1766,7 +1766,7 @@ const App = () => {
                     actions={<AgeingLegend />}
                 />
 
-                <div className="flex flex-wrap items-end gap-x-12 gap-y-5 mt-7">
+                <div className="flex flex-wrap items-end gap-x-12 gap-y-5 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
                     <div>
                         <p className="label">Outstanding</p>
                         <p className="num text-[40px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
@@ -1817,7 +1817,7 @@ const App = () => {
                         title="Cheques to present today"
                         subtitle="Post-dated cheques whose date has arrived."
                     />
-                    <div className="flex items-end gap-10 mt-7">
+                    <div className="flex items-end gap-10 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
                         <div>
                             <p className="label">Due today</p>
                             <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
@@ -1838,7 +1838,7 @@ const App = () => {
                             <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
                         </div>
                     </div>
-                    <div className="flex gap-2.5 mt-auto pt-7">
+                    <div className="flex gap-2.5 mt-auto pt-7 max-md:[&>button]:flex-1 max-md:[&>button]:h-11">
                         <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
                             {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
                         </Button>
@@ -1851,7 +1851,7 @@ const App = () => {
                         title="Committed collections"
                         subtitle="What customers have promised, and by when."
                     />
-                    <div className="flex items-end gap-10 mt-7">
+                    <div className="flex items-end gap-10 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
                         <div>
                             <p className="label">Today</p>
                             <p className="num text-[32px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-1-ink)' }}>
@@ -1998,7 +1998,7 @@ const App = () => {
                                     subtitle={<span className="lg:hidden">Everything assigned to you, by age.</span>}
                                     actions={<AgeingLegend />}
                                 />
-                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7 lg:mt-4">
+                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7 lg:mt-4 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
                                     <div>
                                         <p className="label">Outstanding</p>
                                         <p className="num text-[34px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.04em]">
@@ -2031,7 +2031,7 @@ const App = () => {
                                     title="Cheques and commitments"
                                     subtitle={<span className="lg:hidden">Cheques to present, and what customers promised you.</span>}
                                 />
-                                <div className="flex items-end gap-10 mt-7 lg:mt-4 flex-wrap">
+                                <div className="flex items-end gap-10 mt-7 lg:mt-4 flex-wrap max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
                                     <div>
                                         <p className="label">Cheques today</p>
                                         <p className="num text-[32px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]">
@@ -2054,7 +2054,7 @@ const App = () => {
                                         <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{cashFlowForecastMetrics.todayCount} commitments</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-2.5 mt-auto pt-7 lg:pt-4">
+                                <div className="flex gap-2.5 mt-auto pt-7 lg:pt-4 max-md:[&>button]:flex-1 max-md:[&>button]:h-11">
                                     <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
                                         {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
                                     </Button>
@@ -2120,8 +2120,8 @@ const App = () => {
                                                     </p>
                                                 </div>
 
-                                                <div className="flex items-center gap-4 md:gap-5 flex-none">
-                                                    <div className="text-right">
+                                                <div className="flex items-center gap-4 md:gap-5 flex-none max-md:justify-between">
+                                                    <div className="text-right max-md:text-left">
                                                         <p className="num text-[16px] font-semibold text-label">
                                                             {formatCompact(customer.total)}
                                                         </p>
@@ -2163,7 +2163,7 @@ const App = () => {
                 )}
 
                 {activeTab === 'pdc' && (
-                    <Card className="p-6">
+                    <Card className="p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
                         <PdcChequesView
                             pdcCheques={pdcCheques}
                             customers={appData}
@@ -2290,7 +2290,7 @@ const App = () => {
                 {activeTab === 'customers' && renderCustomerListView()}
 
                 {activeTab === 'pdc' && (
-                    <Card className="p-6">
+                    <Card className="p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
                         <PdcChequesView
                             pdcCheques={pdcCheques}
                             customers={appData}
@@ -2309,7 +2309,9 @@ const App = () => {
                 )}
 
                 {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && (
-                    <div className="bg-card rounded-lg shadow-md p-6">
+                    // On a phone the reports bring their own cards, so the wrapper
+                    // steps out of the way; the setup pages keep it, a little tighter.
+                    <div className={`bg-card rounded-lg shadow-md p-6 ${activeTab === 'reports' ? 'max-md:p-0 max-md:bg-transparent max-md:shadow-none' : 'max-md:p-4'}`}>
                         {activeTab === 'users' && rights.isAdmin && (
                             <div className="space-y-6">
                                 {/* Sub-navigation tabs inside User Management */}
@@ -2355,7 +2357,59 @@ const App = () => {
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="overflow-x-auto rounded-xl border border-separator">
+                                        {/* Phone: five columns will not fit, so each person is a
+                                            card — name, role, scope, and the two actions. Rights are
+                                            on the edit form, one tap away. */}
+                                        <div className="md:hidden rounded-xl border border-separator divide-y divide-separator bg-card">
+                                            {users.map(user => (
+                                                <div key={user.id} className="px-4 py-3.5">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-label text-[15px] truncate">{user.name}</p>
+                                                            <p className="text-[12px] text-label-3 font-mono mt-0.5">ID: {user.id}</p>
+                                                            {user.email && <p className="text-[12px] text-label-3 truncate">{user.email}</p>}
+                                                        </div>
+                                                        <span className={`inline-flex flex-none px-2.5 py-1 text-xs font-bold rounded-lg ${
+                                                            user.role === UserRole.Admin ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
+                                                            user.role === UserRole.Manager ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' :
+                                                            user.role === UserRole.CRM ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
+                                                            user.role === UserRole.Collector ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                                                            'bg-card-3 text-label-2 border border-separator'
+                                                        }`}>
+                                                            {user.role}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-1 mt-2.5">
+                                                        {user.role === UserRole.Admin || user.dataVisibility === DataVisibility.All ? (
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">All accounts</span>
+                                                        ) : (
+                                                            (user.assignedCrms && user.assignedCrms.length > 0 ? user.assignedCrms : [user.id]).map(c => (
+                                                                <span key={c} className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">{c}</span>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-3">
+                                                        <button
+                                                            onClick={() => handleOpenUserModal(user)}
+                                                            className="flex-1 h-10 flex items-center justify-center gap-1.5 text-[13px] font-semibold rounded-lg bg-green-50 text-green-700 dark:bg-green-950/60 dark:text-green-300 border border-green-200 dark:border-green-800"
+                                                        >
+                                                            <EditIcon className="w-3.5 h-3.5" />
+                                                            Edit rights
+                                                        </button>
+                                                        {user.role !== UserRole.Admin && (
+                                                            <button
+                                                                onClick={() => handleDeleteUser(user.id)}
+                                                                className="w-10 h-10 grid place-items-center text-dang rounded-lg border border-separator"
+                                                                aria-label={`Remove ${user.name}`}
+                                                            >
+                                                                <TrashIcon className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="overflow-x-auto rounded-xl border border-separator max-md:hidden">
                                             <table className="min-w-full divide-y divide-separator text-left text-xs sm:text-sm">
                                                 <thead className="bg-card-2">
                                                     <tr>
@@ -2520,15 +2574,15 @@ const App = () => {
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                     
                                     {/* Data Format Section */}
-                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2 bg-accent-tint">
-                                        <div className="flex justify-between items-start">
+                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2 bg-accent-tint max-md:p-4">
+                                        <div className="flex justify-between items-start max-md:flex-col max-md:gap-3">
                                             <div>
                                                 <h3 className="text-lg font-semibold mb-2 text-label">1. Data Format Required</h3>
                                                 <p className="text-sm text-label-2 mb-4">
                                                     Your Excel file or Google Sheet must have the following columns in this exact order (starting row 1):
                                                 </p>
                                             </div>
-                                            <div className="flex space-x-2">
+                                            <div className="flex space-x-2 max-md:w-full max-md:[&>button]:flex-1 max-md:[&>button]:justify-center max-md:[&>button]:min-h-[44px]">
                                                  <button onClick={downloadTemplate} className="flex items-center px-3 py-2 bg-card border border-separator-strong rounded-md text-sm font-medium hover:bg-hover transition-colors">
                                                     <DownloadIcon />
                                                     <span className="ml-2">Download Excel Template</span>

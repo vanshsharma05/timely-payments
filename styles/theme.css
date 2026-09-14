@@ -347,6 +347,17 @@ body {
 
 /* Apple and Google both set figures in the UI face with tabular numerals —
    a monospace here reads as a developer tool, not a finance app. */
+/* Phones: a field smaller than 16px makes iOS zoom the page in on focus,
+   and it never zooms back out. Every field is 16px there, whatever size the
+   utility on it asked for; the utilities stay in charge everywhere else. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
 table { font-variant-numeric: tabular-nums; }
 

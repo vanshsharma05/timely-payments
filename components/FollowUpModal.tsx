@@ -5,6 +5,7 @@ import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, 
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
 import CustomerActivityPanel from './CustomerActivityPanel';
+import { useIsPhone } from './ui/usePhone';
 
 interface FollowUpModalProps {
     customer: Outstanding;
@@ -100,6 +101,15 @@ const FollowUpModal = ({
 
     const collectors = users.filter(u => u.role === UserRole.Collector);
     const crmUsers = users.filter(u => u.role === UserRole.CRM);
+
+    /**
+     * On a phone the form and the shared record cannot share the screen: with
+     * the record pinned under the form, the form was left about a hundred and
+     * eighty pixels to scroll in. So the sheet has two segments — Follow-up,
+     * Activity — and shows one at a time, each with the whole height.
+     */
+    const isPhone = useIsPhone();
+    const [phoneTab, setPhoneTab] = useState<'form' | 'activity'>('form');
 
     // Rights, not job titles: a Manager reassigns accounts too, and a Viewer
     // may read this panel but not record anything on it.
@@ -344,10 +354,10 @@ const FollowUpModal = ({
     }, [activeRecipient.number]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl max-md:px-4 max-md:py-3 max-md:rounded-none">
                     <div>
                         <div className="flex items-center gap-2">
                             <BuildingOfficeIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
@@ -378,12 +388,33 @@ const FollowUpModal = ({
                     </button>
                 </div>
 
+                {isPhone && (
+                    <div className="flex-none px-4 py-2 border-b border-separator bg-card">
+                        <div className="flex rounded-xl bg-card-2 p-1 gap-1" role="tablist" aria-label="Follow-up or account activity">
+                            {([['form', 'Follow-up'], ['activity', 'Activity']] as const).map(([key, label]) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={phoneTab === key}
+                                    onClick={() => setPhoneTab(key)}
+                                    className={`flex-1 h-10 rounded-lg text-[14px] font-bold transition-colors ${
+                                        phoneTab === key ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Body: the form on the left, the shared record on the right.
                     Narrow screens have no room for two columns, so the record
                     drops underneath the form instead. */}
                 <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-                  <div className="flex flex-col min-h-0 lg:flex-1 lg:border-r border-separator">
-                <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+                  <div className={`flex flex-col min-h-0 lg:flex-1 lg:border-r border-separator max-md:flex-1 ${isPhone && phoneTab !== 'form' ? 'hidden' : ''}`}>
+                <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 max-md:p-4">
                     
                     {/* Financial & Ageing Summary Card */}
                     <div className="p-3.5 bg-slate-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 text-xs shadow-xs">
@@ -1062,7 +1093,7 @@ const FollowUpModal = ({
                 </div>
 
                 {/* Modal Footer */}
-                <div className="bg-gray-50 dark:bg-gray-800/80 px-6 py-3.5 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-800 rounded-b-2xl">
+                <div className="bg-gray-50 dark:bg-gray-800/80 px-6 py-3.5 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-800 rounded-b-2xl max-md:px-4 max-md:py-3 max-md:rounded-none max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:h-11 max-md:[&>button]:text-[14px]">
                     <button 
                         onClick={onClose} 
                         type="button" 
@@ -1082,7 +1113,7 @@ const FollowUpModal = ({
                 </div>
                   </div>
 
-                  <div className="lg:w-[380px] xl:w-[420px] flex-none min-h-0 h-[46vh] lg:h-auto border-t lg:border-t-0 border-separator">
+                  <div className={`lg:w-[380px] xl:w-[420px] flex-none min-h-0 h-[46vh] lg:h-auto border-t lg:border-t-0 border-separator max-md:h-auto max-md:flex-1 max-md:border-t-0 ${isPhone && phoneTab !== 'activity' ? 'hidden' : ''}`}>
                     <CustomerActivityPanel
                         customer={customer}
                         currentUser={currentUser}

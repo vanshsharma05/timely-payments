@@ -22,7 +22,10 @@ const NotificationBanner = ({ urgentCount, overdueCount, onView, onDismiss }: No
     <div>
       <div
         role="status"
-        className={`flex items-center gap-3.5 rounded-[16px] px-4 py-3.5 ${
+        // On a phone the message and the button do not fit side by side, so
+        // the button drops under the message — full width, where a thumb
+        // lands — and the dismiss stays up beside the text.
+        className={`flex items-center gap-3.5 rounded-[16px] px-4 py-3.5 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-3 ${
           critical ? 'bg-dang-bg' : 'bg-warn-bg'
         }`}
       >
@@ -48,7 +51,7 @@ const NotificationBanner = ({ urgentCount, overdueCount, onView, onDismiss }: No
         {onView && (
           <button
             onClick={onView}
-            className={`h-9 px-4 rounded-full text-[13.5px] font-bold transition-transform active:scale-[.98] ${
+            className={`h-9 px-4 rounded-full text-[13.5px] font-bold transition-transform active:scale-[.98] max-md:order-last max-md:basis-full max-md:h-11 ${
               critical ? 'bg-dang text-card' : 'bg-warn text-card'
             }`}
           >

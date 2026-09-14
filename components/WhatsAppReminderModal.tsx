@@ -71,8 +71,8 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
     }, [whatsAppMessage]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0 max-md:items-start">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-green-50/50 dark:bg-green-950/20 rounded-t-2xl">
                     <div className="flex items-center gap-2">
@@ -226,7 +226,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                 </div>
 
                 {/* Footer */}
-                <div className="px-5 py-3.5 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-2 rounded-b-2xl">
+                <div className="px-5 py-3.5 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-2 rounded-b-2xl max-md:mt-auto max-md:rounded-none max-md:pb-[calc(14px+env(safe-area-inset-bottom))] max-md:[&>*]:flex-1 max-md:[&>*]:min-h-[44px]">
                     <button
                         type="button"
                         onClick={onClose}

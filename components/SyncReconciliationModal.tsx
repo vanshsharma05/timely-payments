@@ -133,8 +133,8 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 max-md:max-h-none max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start">
                     <div>

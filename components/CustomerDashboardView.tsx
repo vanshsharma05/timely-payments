@@ -5,6 +5,8 @@ import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatCompact, formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
+import { useIsPhone } from './ui/usePhone';
+import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
 interface CustomerDashboardViewProps {
     data: Outstanding[];
@@ -104,6 +106,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const [balanceTypeFilter, setBalanceTypeFilter] = useState<'ALL' | 'Dr' | 'Cr'>('ALL');
     const [originFilter, setOriginFilter] = useState<'ALL' | 'NEW' | 'SHEET'>('ALL');
     const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+    /**
+     * A phone gets neither the table nor the card grid: it gets a row list
+     * (PhoneAccountRow), and the filter selects fold away behind one button
+     * so the list starts within a thumb's reach of the search box.
+     */
+    const isPhone = useIsPhone();
+    const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+    const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
     /** How many rows are mounted. Grows as the reader reaches the bottom. */
     const PAGE = 60;
@@ -524,7 +534,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 </div>
 
                 {/* Primary Action Buttons */}
-                <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto max-md:[&>button]:min-h-[40px]">
                     {/* Add Customer Button */}
                     <button
                         onClick={onAddCustomer}
@@ -566,7 +576,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     )}
 
                     {/* Table / Cards toggle */}
-                    <div className="flex bg-card-3 p-0.5 rounded-lg border border-separator">
+                    <div className="flex bg-card-3 p-0.5 rounded-lg border border-separator max-md:hidden">
                         <button
                             onClick={() => setViewMode('table')}
                             className={`h-8 px-3 text-xs font-semibold rounded-lg transition-all ${viewMode === 'table' ? 'bg-card text-label ' : 'text-label-3 hover:text-label'}`}
@@ -587,7 +597,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             {/* Book summary. Flat and divided, not boxed: under the colour rule
                 only the ageing figures are allowed hue, so the tiles stay grey. */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+            {/* On a phone seven tiles stacked two-up push the list a screen and a
+                half down, so they run sideways in a strip that snaps tile by
+                tile — the figures are all still there, one swipe away. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:snap-mandatory max-md:-mx-4 max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&>div]:min-w-[172px] max-md:[&>div]:snap-start">
                 <div className="bg-card rounded-[14px] shadow-e1 px-4 py-3.5">
                     <p className="label">Receivables</p>
                     <p className="num text-[19px] font-medium text-label mt-1.5 tracking-[-0.02em]">{formatCurrency(metrics.debitSum)}</p>
@@ -662,14 +675,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     customers keep every note, cheque and word of their history —
                     they are one click away, not hidden. */}
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1" role="group" aria-label="Show accounts with dues, settled accounts, or all">
+                    <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1 max-md:flex max-md:w-full" role="group" aria-label="Show accounts with dues, settled accounts, or all">
                         {(['withDues', 'settled', 'all'] as SettlementFilter[]).map(key => (
                             <button
                                 key={key}
                                 type="button"
                                 onClick={() => setSettlementFilter(key)}
                                 aria-pressed={settlementFilter === key}
-                                className={`h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors ${
+                                className={`h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors max-md:flex-1 max-md:px-1 max-md:h-9 max-md:text-[12.5px] max-md:whitespace-nowrap ${
                                     settlementFilter === key
                                         ? 'bg-accent text-on-accent shadow-e1'
                                         : 'text-label-2 hover:bg-hover hover:text-label'
@@ -682,7 +695,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             </button>
                         ))}
                     </div>
-                    <p className="text-[12.5px] text-label-3">
+                    <p className="text-[12.5px] text-label-3 max-md:hidden">
                         {settlementFilter === 'withDues'
                             ? 'Accounts that owe something, or are in credit. Settled customers are on the next tab, with their full history.'
                             : settlementFilter === 'settled'
@@ -695,7 +708,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2">
                     {/* Live Search */}
                     <div className="lg:col-span-4 relative">
-                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
+                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5 max-md:hidden">
                             Search Customer / Phone / City
                         </label>
                         <div className="relative">
@@ -704,9 +717,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 value={searchDraft}
                                 onChange={e => setSearchDraft(e.target.value)}
                                 placeholder="Search by name, contact, mobile, GST, city..."
-                                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-accent font-medium"
+                                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-accent font-medium max-md:h-11 max-md:text-[15px] max-md:pl-10 max-md:rounded-xl"
                             />
-                            <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
+                            <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400 max-md:top-3.5 max-md:left-3.5 max-md:w-4 max-md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
                             {searchTerm && (
                                 <button
                                     onClick={() => { setSearchDraft(''); setSearchTerm(''); }}
@@ -718,15 +731,31 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </div>
                     </div>
 
+                    {/* Phone only: the four selects below fold behind this until asked for. */}
+                    <button
+                        type="button"
+                        onClick={() => setPhoneFiltersOpen(v => !v)}
+                        aria-expanded={phoneFiltersOpen}
+                        className="md:hidden h-10 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2 flex items-center justify-center gap-2"
+                    >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                        {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
+                        {(rankFilter !== 'ALL' || selectedCrm !== 'ALL' || statusFilter !== 'ALL' || categoryFilter !== 'ALL' || activeFilterCount > 0) && (
+                            <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
+                                {[rankFilter !== 'ALL', selectedCrm !== 'ALL', statusFilter !== 'ALL', categoryFilter !== 'ALL', ageingFilter !== 'all', balanceTypeFilter !== 'ALL', originFilter !== 'ALL'].filter(Boolean).length}
+                            </span>
+                        )}
+                    </button>
+
                     {/* Payment Rank Filter Dropdown */}
-                    <div className="lg:col-span-2">
+                    <div className={`lg:col-span-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Payment Rank
                         </label>
                         <select aria-label="Payment Rank"
                             value={rankFilter}
                             onChange={e => setRankFilter(e.target.value as any)}
-                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent max-md:h-11 max-md:text-[14px]"
                         >
                             <option value="ALL">All ranks ({rankCounts.ALL})</option>
                             <option value="Good">Good — pays to terms ({rankCounts.Good})</option>
@@ -736,14 +765,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* Category Filter Dropdown — Builder / Dealer / Retailer / trade */}
-                    <div className="lg:col-span-2">
+                    <div className={`lg:col-span-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Category
                         </label>
                         <select aria-label="Filter by customer category"
                             value={categoryFilter}
                             onChange={e => setCategoryFilter(e.target.value)}
-                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent"
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent max-md:h-11 max-md:text-[14px]"
                         >
                             <option value="ALL">All categories ({userAllowedData.length})</option>
                             {categoriesInData.list.map(([name, count]) => (
@@ -756,7 +785,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* CRM Filter Dropdown */}
-                    <div className="lg:col-span-2">
+                    <div className={`lg:col-span-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             CRM Owner
                         </label>
@@ -764,7 +793,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             value={selectedCrm}
                             onChange={e => setSelectedCrm(e.target.value)}
                             disabled={!canViewAllCrms && currentUser?.role === UserRole.CRM}
-                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent disabled:opacity-60"
+                            className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent disabled:opacity-60 max-md:h-11 max-md:text-[14px]"
                         >
                             <option value="ALL">All CRMs ({data.length} Accounts)</option>
                             {allCrmsInDataset.map(crm => (
@@ -775,14 +804,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     </div>
 
                     {/* Status Filter */}
-                    <div className="lg:col-span-2">
+                    <div className={`lg:col-span-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                         <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">
                             Status
                         </label>
                         <select aria-label="Status"
                             value={statusFilter}
                             onChange={e => setStatusFilter(e.target.value)}
-                            className="w-full py-1.5 px-2 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-accent"
+                            className="w-full py-1.5 px-2 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-accent max-md:h-11 max-md:text-[14px]"
                         >
                             <option value="ALL">All Statuses</option>
                             <option value={FollowUpStatus.Today}>Due Today</option>
@@ -795,7 +824,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 </div>
 
                 {/* Secondary filters stay available, just out of the way until asked for. */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-separator">
+                <div className={`flex items-center justify-between gap-2 pt-2 border-t border-separator ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
                     <button
                         type="button"
                         onClick={() => setShowMoreFilters(v => !v)}
@@ -1088,6 +1117,52 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         >
                             <span>Add New Customer</span>
                         </button>
+                    )}
+                </div>
+            ) : isPhone ? (
+                /* Phone: one row per account, the whole row opens it. */
+                <div className="bg-card rounded-[16px] shadow-e1 overflow-hidden">
+                    <div className="px-3.5 py-2.5 bg-card-2 border-b border-separator flex items-center justify-between gap-3 text-[12.5px]">
+                        <span className="font-bold text-label">
+                            {filteredData.length.toLocaleString('en-IN')} account{filteredData.length === 1 ? '' : 's'}
+                        </span>
+                        {(canReassignCrm || canEditCustomer) && (
+                            <label className="inline-flex items-center gap-2 font-semibold text-label-2 min-h-[32px]">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedCustomerIds.length === filteredData.length && filteredData.length > 0}
+                                    onChange={e => handleSelectAll(e.target.checked)}
+                                    aria-label="Select all customers in view"
+                                    className="w-5 h-5 rounded text-accent focus:ring-accent"
+                                />
+                                Select all
+                            </label>
+                        )}
+                    </div>
+                    <div className="divide-y divide-separator">
+                        {orderedData.slice(0, visibleCount).map(item => (
+                            <PhoneAccountRow
+                                key={item.id}
+                                item={item}
+                                today={today}
+                                ownerName={findOwner(users, item.crmOwnerId)?.name}
+                                onOpen={() => onFollowUp(item)}
+                                onWhatsApp={() => onWhatsApp(item)}
+                                selectable={canReassignCrm || canEditCustomer}
+                                selected={selectedCustomerIds.includes(item.id)}
+                                onToggleSelect={() => handleToggleRow(item.id)}
+                            />
+                        ))}
+                    </div>
+                    {visibleCount < filteredData.length && (
+                        <div className="p-3 border-t border-separator">
+                            <button
+                                onClick={() => setVisibleCount(c => c + PAGE * 2)}
+                                className="w-full h-11 rounded-xl bg-card-2 active:bg-press text-[14px] font-semibold text-label-2"
+                            >
+                                Show more &mdash; {(filteredData.length - visibleCount).toLocaleString('en-IN')} left
+                            </button>
+                        </div>
                     )}
                 </div>
             ) : viewMode === 'table' ? (

@@ -1311,6 +1311,51 @@ mode where white text still clears contrast on it.
 - `:focus-visible` is a 2 px accent halo with 2 px offset.
 - `@media (prefers-reduced-motion: reduce)` kills animation globally.
 
+### Phone layout
+
+Most of the team opens the app on a phone. The laptop layout is the reference
+and is **not** the phone layout squeezed: below `md` (768px) the app is
+re-laid out, and every phone rule is written so the laptop cannot see it.
+
+**The two mechanisms, and the line they share.**
+
+- Styling: `max-md:` variants only — `max-md:hidden`, `max-md:flex-1`,
+  `max-md:[&>button]:h-11`. They compile to `@media not all and
+  (min-width: 48rem)`, so nothing at `md` or above changes by construction.
+  Never restyle a base class to get a phone look; the base is the laptop.
+- Rendering: `useIsPhone()` (`components/ui/usePhone.ts`) answers
+  `(max-width: 767px)` — the same line — for the places a phone needs a
+  *different tree*, not a differently styled one: a row list instead of a
+  table, a segmented sheet instead of two columns. On a laptop the hook is
+  false and the original branch renders unchanged.
+
+**What the phone gets.**
+
+| Piece | Laptop | Phone |
+|---|---|---|
+| Navigation | pill row under the app bar | fixed bottom tab bar (`AppShell`), Setup as a sheet from its own tab |
+| App bar | search, Sync, theme, avatar | search and avatar; Sync and theme live in the avatar menu |
+| Customer book, Reports | tables | `PhoneAccountRow` — name, grade, state, contact, balance, ageing bar; the row opens the account, WhatsApp is the one button |
+| PDC register | table | a card per cheque with Clear / Hold / Bounce sized for a thumb |
+| Team table, team performance | tables | a card per person |
+| Summary tiles | grids | a sideways strip that snaps tile by tile |
+| Filter selects | always shown | folded behind one **Filters** button; search stays out |
+| Dialogs | centred cards | full-screen sheets; the follow-up sheet has **Follow-up / Activity** segments because the record under the form left the form 180px to scroll in |
+| Long lists | all rows | windowed, with **Show more** — the reports page was 160,000px tall on a phone |
+| Fields | as styled | 16px on a phone (`theme.css`), because iOS zooms into anything smaller and never zooms back |
+
+`index.html` declares `viewport-fit=cover`, and the tab bar and sheet footers
+pad by `env(safe-area-inset-bottom)` so the home indicator does not sit on a
+button.
+
+**Proving the laptop is untouched.** `scripts/`-style screenshot runs at
+1440x900 and 1366x768, before and after, pixel-diffed: every screen was
+identical apart from animation frames (`animate-pulse` badges, the sync
+dot) — and one thing worth knowing: Puppeteer's *full-page* capture mode
+renders the app-bar placeholder a few pixels wider on some pages, while a
+viewport capture of the same page is identical. Diff viewport captures, or
+expect that one.
+
 ### Money formatting
 
 `components/ui/format.ts` — the people using this think in lakhs and crores, and
@@ -1569,7 +1614,13 @@ components/
   shell/NavIcons.tsx        Nav glyphs.
   ui/Primitives.tsx           320. Button, Badge, Card, SectionHeader, Money,
                             AgeingBar, AgeingLegend, Stat, EmptyState, Spinner.
-  ui/format.ts                 87. Indian money and date formatting.
+  ui/format.ts                110. Indian money and date formatting, and the
+                            local-day helpers date inputs need.
+  ui/usePhone.ts               25. useIsPhone(): the (max-width: 767px) line,
+                            for a component that renders a different tree
+                            on a phone.
+  ui/PhoneAccountRow.tsx      150. One account as a phone row — used by the
+                            customer book and the reports below md.
 
   work/Workspace.tsx          Master-detail: the queue and the account together.
   work/Worklist.tsx           The six queues, their counts and their rows.
