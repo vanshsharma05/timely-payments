@@ -719,6 +719,38 @@ export async function addActivity(entry: NewActivity, author: User): Promise<Act
     return rowToActivity(data);
 }
 
+/**
+ * Appends many entries at once — one request per chunk rather than one per
+ * account, for the bulk tools that write a line on every account they touch.
+ * Stamped exactly as addActivity() stamps a single entry.
+ */
+export async function addActivities(entries: NewActivity[], author: User): Promise<ActivityEntry[]> {
+    if (!entries.length) return [];
+    const db = requireSupabase();
+    const { data: session } = await db.auth.getSession();
+    const authorId = session.session?.user?.id;
+
+    const saved: ActivityEntry[] = [];
+    await inChunks(entries, async (chunk) => {
+        const { data, error } = await db
+            .from('customer_activity')
+            .insert(chunk.map(entry => ({
+                customer_id: entry.customerId,
+                author_id: authorId,
+                author_name: author.name,
+                kind: entry.kind,
+                body: entry.body,
+                promised_amount: entry.promisedAmount ?? null,
+                promised_on: entry.promisedOn || null,
+                resolves_id: entry.resolvesId || null,
+            })))
+            .select();
+        fail('Could not save those entries', error);
+        (data || []).forEach(r => saved.push(rowToActivity(r)));
+    });
+    return saved;
+}
+
 export async function deleteActivity(id: string): Promise<void> {
     const { error } = await requireSupabase().from('customer_activity').delete().eq('id', id);
     fail('Could not remove that entry', error);

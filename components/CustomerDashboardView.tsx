@@ -4,7 +4,7 @@ import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatCompact, formatINR } from './ui/format';
+import { formatCompact, formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
 
 interface CustomerDashboardViewProps {
     data: Outstanding[];
@@ -20,6 +20,12 @@ interface CustomerDashboardViewProps {
     onBulkReassignCrm?: (customerIds: string[], newCrm: string) => void;
     /** Grading 417 bad debts one dialog at a time is not a workflow. */
     onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
+    /**
+     * Puts one follow-up date on the selection. Admin only: it is how the
+     * overdue list is brought back to today when the owners have not done it,
+     * and every account it touches gets a line in its activity saying so.
+     */
+    onBulkSetFollowUp?: (customerIds: string[], isoDate: string) => void;
     pdcCheques?: PdcCheque[];
     /**
      * Pulls the outstanding sheet. It is the only sync there is: the sheet
@@ -49,6 +55,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     onReassignCrm,
     onBulkReassignCrm,
     onBulkSetRank,
+    onBulkSetFollowUp,
     pdcCheques = [],
     onSyncSheet,
     isSyncing = false,
@@ -173,6 +180,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
     const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
     const [bulkCrm, setBulkCrm] = useState('');
+    // Starts on today, because "bring the overdue ones back to today" is the
+    // job this is for; the date is there for anyone who wants a different day.
+    const todayIso = localIsoDate();
+    const [bulkFollowUp, setBulkFollowUp] = useState(todayIso);
 
     // List of CRM options (Scoped to user rights)
     const crmUsers = useMemo(() => {
@@ -991,6 +1002,46 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     className="px-3 py-1.5 min-h-[32px] bg-accent text-card text-xs font-bold rounded-lg"
                                 >
                                     Reassign
+                                </button>
+                            </>
+                        )}
+                        {onBulkSetFollowUp && (
+                            <>
+                                <label className="inline-flex items-center gap-1.5 text-[12px] font-bold text-label-2">
+                                    <span>Follow-up on</span>
+                                    <input
+                                        type="date"
+                                        aria-label="Follow-up date to set on the selected customers"
+                                        value={bulkFollowUp}
+                                        min={todayIso}
+                                        onChange={e => setBulkFollowUp(e.target.value)}
+                                        className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                    />
+                                </label>
+                                {bulkFollowUp !== todayIso && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setBulkFollowUp(todayIso)}
+                                        className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-accent hover:bg-hover"
+                                    >
+                                        Today
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => {
+                                        if (!bulkFollowUp) return;
+                                        const n = selectedCustomerIds.length;
+                                        if (!window.confirm(
+                                            `Set the follow-up date to ${formatDay(bulkFollowUp)} on ${n} account${n === 1 ? '' : 's'}?\n\n`
+                                            + 'Each account\'s activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.',
+                                        )) return;
+                                        onBulkSetFollowUp(selectedCustomerIds, bulkFollowUp);
+                                        setSelectedCustomerIds([]);
+                                    }}
+                                    disabled={!bulkFollowUp}
+                                    className="px-3 py-1.5 min-h-[32px] bg-accent text-card text-xs font-bold rounded-lg disabled:opacity-40"
+                                >
+                                    Set follow-up
                                 </button>
                             </>
                         )}

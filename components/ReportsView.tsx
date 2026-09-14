@@ -14,7 +14,7 @@ import {
     SparklesIcon
 } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatINR } from './ui/format';
+import { formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
 
 export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
@@ -29,6 +29,12 @@ interface ReportsViewProps {
     /** Applied to a whole selection at once, the same two the customer book offers. */
     onBulkSetRank?: (customerIds: string[], rank: PaymentRank | '') => void;
     onBulkReassignCrm?: (customerIds: string[], newCrm: string) => void;
+    /**
+     * Puts one follow-up date on the selection. Admin only: it is how the
+     * overdue list is brought back to today when the owners have not done it,
+     * and every account it touches gets a line in its activity saying so.
+     */
+    onBulkSetFollowUp?: (customerIds: string[], isoDate: string) => void;
     initialCrmFilter?: string;
     initialCategoryFilter?: FollowUpCategoryFilter;
     pdcCheques?: PdcCheque[];
@@ -44,6 +50,7 @@ export const ReportsView = ({
     onWhatsApp,
     onBulkSetRank,
     onBulkReassignCrm,
+    onBulkSetFollowUp,
     initialCrmFilter = 'ALL',
     initialCategoryFilter = 'all',
     pdcCheques = [],
@@ -309,6 +316,10 @@ export const ReportsView = ({
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
     const [bulkCrm, setBulkCrm] = useState('');
+    // Starts on today, because "bring the overdue ones back to today" is the
+    // job this is for; the date is there for anyone who wants a different day.
+    const todayIso = localIsoDate();
+    const [bulkFollowUp, setBulkFollowUp] = useState(todayIso);
 
     /** A selection only ever means rows currently on screen; filtering away a
         selected account must not leave it quietly queued for a bulk action. */
@@ -326,6 +337,7 @@ export const ReportsView = ({
     /** No tickboxes at all unless there is something a tick could lead to. */
     const selectable = (canEditCustomer && !!onBulkSetRank)
         || (canReassignCrm && !!onBulkReassignCrm)
+        || !!onBulkSetFollowUp
         || canDownloadExcel;
 
     /** True when a stored contact number is worth offering as a dial link. */
@@ -887,6 +899,46 @@ export const ReportsView = ({
                                         className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent text-on-accent disabled:opacity-40"
                                     >
                                         Reassign
+                                    </button>
+                                </>
+                            )}
+                            {onBulkSetFollowUp && (
+                                <>
+                                    <label className="inline-flex items-center gap-1.5 text-[12px] font-bold text-label-2">
+                                        <span>Follow-up on</span>
+                                        <input
+                                            type="date"
+                                            aria-label="Follow-up date to set on the selected accounts"
+                                            value={bulkFollowUp}
+                                            min={todayIso}
+                                            onChange={e => setBulkFollowUp(e.target.value)}
+                                            className="px-2 py-1.5 min-h-[32px] text-xs rounded-lg border border-separator bg-card font-bold text-label"
+                                        />
+                                    </label>
+                                    {bulkFollowUp !== todayIso && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setBulkFollowUp(todayIso)}
+                                            className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-accent hover:bg-hover"
+                                        >
+                                            Today
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            if (!bulkFollowUp) return;
+                                            const n = selected.length;
+                                            if (!window.confirm(
+                                                `Set the follow-up date to ${formatDay(bulkFollowUp)} on ${n} account${n === 1 ? '' : 's'}?\n\n`
+                                                + 'Each account\'s activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.',
+                                            )) return;
+                                            onBulkSetFollowUp(selected, bulkFollowUp);
+                                            setSelectedIds([]);
+                                        }}
+                                        disabled={!bulkFollowUp}
+                                        className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent text-on-accent disabled:opacity-40"
+                                    >
+                                        Set follow-up
                                     </button>
                                 </>
                             )}

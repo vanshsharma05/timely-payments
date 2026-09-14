@@ -197,6 +197,21 @@ const FollowUpModal = ({
     };
 
     /**
+     * What is past 90 days, as a preset beside Full Due and 50% Due.
+     *
+     * A call about an overdue account is usually a call about this figure —
+     * the oldest money, the part the customer is asked to clear first — and
+     * it was on the summary above but had to be retyped into the amount box.
+     * Held in credit it is not a receivable, so it is not offered.
+     */
+    const over90Due = useMemo(() => {
+        if (customer.over90Type === 'Cr') return 0;
+        const a3 = customer.ageing?.['91-135'] || 0;
+        const a4 = customer.ageing?.['>135'] || 0;
+        return Math.round(customer.over90 !== undefined ? customer.over90 : a3 + a4);
+    }, [customer]);
+
+    /**
      * Mirrors a new activity entry into the customer's flat notes list.
      *
      * The thread is the record, but search, the Excel export, the AI report and
@@ -902,6 +917,16 @@ const FollowUpModal = ({
                                     >
                                         Full Due (₹{formatCurrency(customer.total)})
                                     </button>
+                                    {over90Due > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSetPresetForecast(over90Due)}
+                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 transition-colors"
+                                            title="Everything past 90 days: the 91-135 and >135 day buckets together"
+                                        >
+                                            &gt;90d Due (₹{formatCurrency(over90Due)})
+                                        </button>
+                                    )}
                                     {customer.total > 0 && (
                                         <button
                                             type="button"

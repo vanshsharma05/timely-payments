@@ -1056,7 +1056,11 @@ without being a dialog:
 - **Money** — outstanding, past 45, past 90, follow-up in words, ageing bar
 - **What happens next** — outcome (`follow up again` / `payment collected` /
   `no follow-up`), next date, expected amount and date, payment grade, CRM
-  owner, collector, urgent toggle, Save
+  owner, collector, urgent toggle, Save. The expected-amount presets are
+  **Full Due · >90d Due · 50% Due · ₹1 Lakh · ₹5 Lakh**: the >90d one is the
+  91-135 and >135 buckets together, offered only when it is Dr and above
+  zero, because a call about an overdue account is usually a call about that
+  figure and it used to have to be retyped from the summary above.
 - **Who to call** — primary and additional contacts, each with call and WhatsApp;
   add and remove people; the full template picker opens `WhatsAppReminderModal`
 - **Cheques held** — every cheque with its derived state, and Cleared / Bounced
@@ -1086,9 +1090,10 @@ beside the panel.
 ### 9.4 Customer book (`CustomerDashboardView`)
 
 The whole book as a table: filters for rank, CRM, status, ageing bracket,
-balance type and origin; bulk CRM reassign and bulk grading; export of the rows
-**currently on screen**, which is what makes the recovery-agency defaulter list
-possible. Rows open in the workspace.
+balance type and origin; bulk CRM reassign, bulk grading and (Admin) the bulk
+follow-up date from [§9.6](#96-reports--the-management-read); export of the
+rows **currently on screen**, which is what makes the recovery-agency defaulter
+list possible. Rows open in the workspace.
 
 ### 9.5 PDC cheques (`PdcChequesView`)
 
@@ -1105,6 +1110,39 @@ export with the full breakdown, and the AI report.
 
 They used to be the landing screen, which meant a CRM opening the app at nine in
 the morning met a wall of aggregates before a single customer name.
+
+**The selection bar** (ticked rows, on this table and on the customer book)
+carries the same tools in the same order: set rank, reassign, and — for an
+Admin only — **Follow-up on \[date\] · Set follow-up**, then Export.
+
+#### Bulk follow-up date — `handleBulkSetFollowUp()` in App.tsx
+
+An overdue follow-up is supposed to be rescheduled by the CRM who owns it.
+When it is not, the account sits in "Overdue" and nobody is prompted to ring
+— on 14 Sep 2026 there were 17 such accounts. This tool ticks those rows and
+puts them on one date, today by default, so the day's worklist picks them up
+without an Admin opening seventeen dialogs to move a date somebody else
+should have moved.
+
+Three rules, all deliberate:
+
+- **Admin only** (`rights.isAdmin`, the prop is not passed otherwise). Moving
+  a colleague's follow-up is a management act, not a CRM tool.
+- **Every account it touches gets a `system` activity entry** written by
+  `repo.addActivities()` (one multi-row insert, not one request per account),
+  under the Admin's own name: *"Follow-up date moved from 09 Sept to 14 Sept
+  in a bulk update. It was 5 days overdue and Garry had not rescheduled it."*
+  An account with no date reads *"No follow-up had been planned by …"*; one
+  closed as collected reads *"reopened"*. The reschedule is on the record
+  beside the owner's name instead of silently in a column, which is the
+  "record of follow-ups not updated by the CRM" the business asked for.
+- **`lastFollowUpOn` is not touched.** An Admin moving a date is not a
+  follow-up, and stamping it would hide the very gap this exists to show.
+
+An account already on the chosen date is skipped and not written about; a
+past date is refused (`min` on the input, and again in the handler). The
+view confirms before anything moves. The date and the notes are the two
+tests in the round-trip script; nothing else changes on the row.
 
 ### 9.7 Alerts & reminders (`AlertsView`)
 

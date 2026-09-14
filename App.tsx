@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -22,7 +22,7 @@ import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
-import { formatCompact, formatDateShort, formatINR, relativeDays } from './components/ui/format';
+import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
@@ -873,6 +873,107 @@ const App = () => {
             text: `Successfully reassigned ${customerIds.length} customer(s) to ${targetName}.`
         });
         setTimeout(() => setSyncMessage(null), 4000);
+    };
+
+    /**
+     * Puts one follow-up date on a whole selection — an Admin's tool for the
+     * overdue list.
+     *
+     * A follow-up that has gone past its date is supposed to be rescheduled by
+     * the CRM who owns it. When it is not, the account sits in "Overdue" and
+     * nobody is prompted to ring. Ticking those rows and setting today brings
+     * them back into the day's worklist in one go, instead of opening each
+     * account to move a date the owner should have moved.
+     *
+     * Two things are deliberate. Each account gets a system entry in its
+     * activity — who moved the date, from what, and that the owner had left it
+     * — so the reschedule is on the record beside the owner's name rather than
+     * silently in a column. And `lastFollowUpOn` is left alone: an Admin
+     * moving a date is not a follow-up, and pretending it was would hide the
+     * very gap this exists to show.
+     */
+    const handleBulkSetFollowUp = async (customerIds: string[], isoDate: string) => {
+        if (!currentUser || currentUser.role !== UserRole.Admin) return;
+        const nextDate = dateFromLocalIso(isoDate);
+        if (!nextDate) {
+            notify('error', 'Pick a follow-up date first.');
+            return;
+        }
+        if (nextDate.getTime() < getToday().getTime()) {
+            notify('error', 'A follow-up date in the past would be overdue the moment it is set.');
+            return;
+        }
+
+        const idSet = new Set(customerIds);
+        const nextLabel = formatDate(nextDate);
+        const changed: Outstanding[] = [];
+        const entries: repo.NewActivity[] = [];
+        let overdueMoved = 0;
+
+        const updated = appData.map(item => {
+            if (!idSet.has(item.id)) return item;
+
+            const prev = item.followUpDate ? new Date(item.followUpDate) : undefined;
+            const hadDate = !!prev && !isNaN(prev.getTime());
+            const prevMidnight = hadDate ? new Date(prev!).setHours(0, 0, 0, 0) : NaN;
+            const wasCompleted = item.status === FollowUpStatus.Completed;
+            // Already on that date: nothing to move, nothing to record.
+            if (hadDate && !wasCompleted && prevMidnight === nextDate.getTime()) return item;
+
+            const owner = findOwner(users, item.crmOwnerId)?.name || (item.crmOwnerId || '').trim();
+            const wasOverdue = getFollowUpCategory(item, getToday()) === 'overdue';
+            let body: string;
+            if (wasCompleted) {
+                // "Payment collected" closes an account with the day it was
+                // collected as its date, so that date is not a follow-up.
+                body = `Follow-up reopened for ${nextLabel} in a bulk update; it had been closed as collected`
+                    + (hadDate ? ` on ${formatDate(prev)}.` : '.');
+            } else if (hadDate) {
+                body = `Follow-up date moved from ${formatDate(prev)} to ${nextLabel} in a bulk update.`;
+                if (wasOverdue) {
+                    overdueMoved++;
+                    const days = Math.max(1, Math.round((getToday().getTime() - prevMidnight) / 86_400_000));
+                    body += owner
+                        ? ` It was ${days} day${days === 1 ? '' : 's'} overdue and ${owner} had not rescheduled it.`
+                        : ` It was ${days} day${days === 1 ? '' : 's'} overdue with no CRM assigned to reschedule it.`;
+                }
+            } else {
+                body = `Follow-up date set to ${nextLabel} in a bulk update.`
+                    + (owner ? ` No follow-up had been planned by ${owner}.` : ' No follow-up had been planned, and no CRM was assigned.');
+            }
+            entries.push({ customerId: item.id, kind: 'system', body });
+
+            // Pending here is a placeholder: processStatuses() reads the date and
+            // writes Today or Upcoming. Setting it explicitly is what reopens an
+            // account marked Completed, which the follow-up form does the same way.
+            const next: Outstanding = { ...item, followUpDate: nextDate, status: FollowUpStatus.Pending };
+            changed.push(next);
+            return next;
+        });
+
+        if (!changed.length) {
+            notify('success', `Every selected account already has its follow-up on ${nextLabel}.`);
+            return;
+        }
+
+        setAppData(processStatuses(updated));
+
+        const unchanged = customerIds.length - changed.length;
+        notify(
+            'success',
+            `Follow-up set to ${nextLabel} on ${changed.length} account${changed.length === 1 ? '' : 's'}`
+            + (unchanged ? ` (${unchanged} already had it)` : '')
+            + `. Each one's activity records the move`
+            + (overdueMoved ? `, and for the ${overdueMoved} that were overdue, that the owner had not rescheduled it.` : '.'),
+        );
+
+        // The date is saved regardless; the record is written best-effort and
+        // any failure is said out loud rather than swallowed.
+        try {
+            await repo.addActivities(entries, currentUser);
+        } catch (e: any) {
+            notify('error', `The dates are saved, but the activity note could not be written: ${e?.message || e}`);
+        }
     };
 
     // Sync Reconciliation Handlers
@@ -1802,6 +1903,7 @@ const App = () => {
             onReassignCrm={handleReassignCrm}
             onBulkReassignCrm={handleBulkReassignCrm}
             onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+            onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
             pdcCheques={pdcCheques}
             onSyncSheet={rights.canSyncSheets ? () => handleGoogleSync() : undefined}
             isSyncing={isSyncing}
@@ -2090,6 +2192,7 @@ const App = () => {
                         onWhatsApp={handleSendWhatsApp}
                         onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
                         onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
+                        onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
                         pdcCheques={pdcCheques}
                         onOpenPdcForCustomer={handleOpenPdcForCustomer}
                     />
@@ -2368,6 +2471,7 @@ const App = () => {
                                 onWhatsApp={handleSendWhatsApp}
                                 onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
                                 onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
+                                onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
                                 pdcCheques={pdcCheques}
                                 onOpenPdcForCustomer={handleOpenPdcForCustomer}
                             />
