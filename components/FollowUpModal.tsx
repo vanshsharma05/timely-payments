@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
+import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner, overdueAgeing } from '../types';
 import * as repo from '../services/repository';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
@@ -214,12 +214,7 @@ const FollowUpModal = ({
      * it was on the summary above but had to be retyped into the amount box.
      * Held in credit it is not a receivable, so it is not offered.
      */
-    const over90Due = useMemo(() => {
-        if (customer.over90Type === 'Cr') return 0;
-        const a3 = customer.ageing?.['91-135'] || 0;
-        const a4 = customer.ageing?.['>135'] || 0;
-        return Math.round(customer.over90 !== undefined ? customer.over90 : a3 + a4);
-    }, [customer]);
+    const over90Due = useMemo(() => Math.round(overdueAgeing(customer).over90), [customer]);
 
     /**
      * Mirrors a new activity entry into the customer's flat notes list.

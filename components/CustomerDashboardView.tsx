@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -42,7 +42,15 @@ interface CustomerDashboardViewProps {
     globalSearch?: string;
 }
 
-export type AgeingCategoryFilter = 'all' | 'dueOver45' | 'over90' | 'over135' | '1-45' | '46-90' | '91-135';
+/**
+ * The ageing chips. Three of them nest — past 45 includes past 90 includes
+ * past 135 — and `current` is the other side of the first line: dues, but
+ * nothing older than 45 days. It replaced "1-45d", which meant "has any money
+ * in the 1–45 bucket" and so listed 311 accounts, 181 of which also had money
+ * past 90 days — beside ">45d" it read as the customers who are up to date,
+ * and it was not. The bucket values are kept for the links that use them.
+ */
+export type AgeingCategoryFilter = 'all' | 'current' | 'dueOver45' | 'over90' | 'over135' | '1-45' | '46-90' | '91-135';
 
 export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     data,
@@ -324,18 +332,15 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 }
             }
 
-            // Ageing Bracket
+            // Ageing — on what is actually overdue, never on a credit that
+            // happens to be old. See overdueAgeing().
             if (ageingFilter !== 'all') {
-                const a1 = item.ageing?.['1-45'] || 0;
-                const a2 = item.ageing?.['46-90'] || 0;
-                const a3 = item.ageing?.['91-135'] || 0;
-                const a4 = item.ageing?.['>135'] || 0;
-                const over90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-                const due45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + over90);
+                const { a1, a2, a3, over45, over90, over135 } = overdueAgeing(item);
 
+                if (ageingFilter === 'current' && !(a1 > 0 && over45 <= 0)) return false;
                 if (ageingFilter === 'over90' && over90 <= 0) return false;
-                if (ageingFilter === 'over135' && a4 <= 0) return false;
-                if (ageingFilter === 'dueOver45' && due45 <= 0) return false;
+                if (ageingFilter === 'over135' && over135 <= 0) return false;
+                if (ageingFilter === 'dueOver45' && over45 <= 0) return false;
                 if (ageingFilter === '91-135' && a3 <= 0) return false;
                 if (ageingFilter === '46-90' && a2 <= 0) return false;
                 if (ageingFilter === '1-45' && a1 <= 0) return false;
@@ -429,15 +434,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             }
             totalSum += isCr ? -itemTotal : itemTotal;
 
-            const a3 = item.ageing?.['91-135'] || 0;
-            const a4 = item.ageing?.['>135'] || 0;
-            const a2 = item.ageing?.['46-90'] || 0;
-            const itemOver90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-            const itemDue45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + itemOver90);
-
-            due45Sum += itemDue45;
-            over90Sum += itemOver90;
-            over135Sum += a4;
+            const overdue = overdueAgeing(item);
+            due45Sum += overdue.over45;
+            over90Sum += overdue.over90;
+            over135Sum += overdue.over135;
             forecastSum += (item.forecastAmount || 0);
             if (item.isNewCustomer) newCount++;
 
@@ -896,17 +896,19 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             All Ageing
                         </button>
                         <button
-                            onClick={() => setAgeingFilter(ageingFilter === 'over90' ? 'all' : 'over90')}
+                            onClick={() => setAgeingFilter(ageingFilter === 'current' ? 'all' : 'current')}
+                            title="Owes something, and none of it is older than 45 days"
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
-                                ageingFilter === 'over90'
-                                    ? 'bg-red-600 text-white'
-                                    : 'bg-red-50 dark:bg-red-950/40 text-dang border border-red-200 dark:border-red-800'
+                                ageingFilter === 'current'
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-pos border border-emerald-200 dark:border-emerald-800'
                             }`}
                         >
-                            &gt;90d
+                            Current (&le;45d)
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'dueOver45' ? 'all' : 'dueOver45')}
+                            title="Something owed is more than 45 days old"
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
                                 ageingFilter === 'dueOver45'
                                     ? 'bg-amber-600 text-white'
@@ -916,14 +918,26 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             &gt;45d
                         </button>
                         <button
-                            onClick={() => setAgeingFilter(ageingFilter === '1-45' ? 'all' : '1-45')}
+                            onClick={() => setAgeingFilter(ageingFilter === 'over90' ? 'all' : 'over90')}
+                            title="Something owed is more than 90 days old"
                             className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
-                                ageingFilter === '1-45'
-                                    ? 'bg-emerald-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                ageingFilter === 'over90'
+                                    ? 'bg-orange-600 text-white'
+                                    : 'bg-orange-50 dark:bg-orange-950/40 text-age-3-ink border border-orange-200 dark:border-orange-800'
                             }`}
                         >
-                            1-45d
+                            &gt;90d
+                        </button>
+                        <button
+                            onClick={() => setAgeingFilter(ageingFilter === 'over135' ? 'all' : 'over135')}
+                            title="Something owed is more than 135 days old"
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-all ${
+                                ageingFilter === 'over135'
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-red-50 dark:bg-red-950/40 text-dang border border-red-200 dark:border-red-800'
+                            }`}
+                        >
+                            &gt;135d
                         </button>
                     </div>
 
@@ -1217,12 +1231,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     const activePdcs = pdcCheques.filter(p => p.customerId === item.id && (p.status === 'Pending' || p.status === 'DueToday'));
                                     const totalPdc = activePdcs.reduce((sum, p) => sum + p.amount, 0);
 
-                                    const a1 = item.ageing?.['1-45'] || 0;
-                                    const a2 = item.ageing?.['46-90'] || 0;
-                                    const a3 = item.ageing?.['91-135'] || 0;
-                                    const a4 = item.ageing?.['>135'] || 0;
-                                    const over90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-                                    const due45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + over90);
+                                    // Receivable ageing: a credit account's bar is empty, and its
+                                    // balance carries the CR badge that says why.
+                                    const { a1, a2, a3, a4, over45: due45 } = overdueAgeing(item);
 
                                     const isChecked = selectedCustomerIds.includes(item.id);
                                     const rank = getCustomerPaymentRank(item);
@@ -1531,9 +1542,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {orderedData.slice(0, visibleCount).map(item => {
 
-                        const a3 = item.ageing?.['91-135'] || 0;
-                        const a4 = item.ageing?.['>135'] || 0;
-                        const over90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
+                        const { over90 } = overdueAgeing(item);
                         const rank = getCustomerPaymentRank(item);
 
                         return (

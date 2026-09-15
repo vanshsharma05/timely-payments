@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, BalanceType, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -14,7 +14,8 @@ import {
     fetchCustomerMasterSheetData,
     mergeCustomerMasterIntoAppData,
     summariseUnlisted,
-    countNewNames
+    countNewNames,
+    netRollUp
 } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -364,8 +365,8 @@ const App = () => {
                 const a2Parsed = parseAmountAndType(row[6]);
                 const a3Parsed = parseAmountAndType(row[7]);
                 const a4Parsed = parseAmountAndType(row[8]);
-                const over90Amount = a3Parsed.amount + a4Parsed.amount;
-                const dueOver45Amount = a2Parsed.amount + over90Amount;
+                const over90Net = netRollUp([a3Parsed, a4Parsed]);
+                const dueOver45Net = netRollUp([a2Parsed, a3Parsed, a4Parsed]);
 
                 const outstanding: Outstanding = {
                     id: row[0] || `row_${index + 1}`,
@@ -386,10 +387,10 @@ const App = () => {
                         '91-135': a3Parsed.type,
                         '>135': a4Parsed.type,
                     },
-                    over90: over90Amount,
-                    over90Type: (a3Parsed.type === 'Cr' && a4Parsed.type === 'Cr' ? 'Cr' : 'Dr') as BalanceType,
-                    dueOver45: dueOver45Amount,
-                    dueOver45Type: 'Dr' as BalanceType,
+                    over90: over90Net.amount,
+                    over90Type: over90Net.type,
+                    dueOver45: dueOver45Net.amount,
+                    dueOver45Type: dueOver45Net.type,
                     // Trimming to ensure names match even with trailing spaces
                     crmOwnerId: row[9] ? String(row[9]).trim() : '',
                     assignedCollectorId: row[10] ? String(row[10]).trim() : undefined,

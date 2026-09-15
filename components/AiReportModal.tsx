@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Markdown from 'react-markdown';
-import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus } from '../types';
+import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus, overdueAgeing } from '../types';
 import { authHeaders } from '../services/repository';
 import { SparklesIcon, DownloadIcon, CheckCircleIcon, UsersIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
@@ -82,8 +82,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
             const a3 = item.ageing?.['91-135'] || 0;
             const a4 = item.ageing?.['>135'] || 0;
             
-            const o90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-            const d45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + o90);
+            const { over45: d45, over90: o90 } = overdueAgeing(item);
 
             dueOver45 += d45;
             over90 += o90;
@@ -123,8 +122,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                 const a2 = acc.ageing?.['46-90'] || 0;
                 const a3 = acc.ageing?.['91-135'] || 0;
                 const a4 = acc.ageing?.['>135'] || 0;
-                const o90 = acc.over90 !== undefined ? acc.over90 : (a3 + a4);
-                const d45 = acc.dueOver45 !== undefined ? acc.dueOver45 : (a2 + o90);
+                const { over45: d45, over90: o90 } = overdueAgeing(acc);
                 const avg = tot > 0 ? Math.round(((a1 * 22.5) + (a2 * 67.5) + (a3 * 112.5) + (a4 * 165)) / tot) : 0;
 
                 const custPdcs = pdcCheques.filter(p => p.customerId === acc.id && p.status !== PdcStatus.Cleared && p.status !== PdcStatus.Bounced);

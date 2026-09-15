@@ -761,6 +761,73 @@ export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
 };
 
 /**
+ * What an account actually has overdue, bucket by bucket.
+ *
+ * Every figure the sheet gives is an absolute amount with its Dr/Cr type in a
+ * sibling column — the total, each ageing bucket, and its own "over 90" and
+ * "due > 45" roll-ups. Read without the type, a credit note that is 135 days
+ * old is "money 135 days overdue", and an account whose entire balance is an
+ * advance we are holding is "past 90 days". Twenty-six of the book's
+ * thirty-four credit accounts sat in the >90d filter for exactly that reason,
+ * and they are what the ">90d" list showed as thirty-one "Good" customers.
+ *
+ * So: an account in credit overall has nothing overdue. Otherwise each bucket
+ * is signed — debit positive, credit negative — and a window nets out, which
+ * is how the sheet's own roll-ups are computed (an account owing ₹2,00,967
+ * from 91–135 days with an ₹84,939 credit older than that has ₹1,16,028
+ * past 90 days, and the sheet says so). The sheet's roll-ups are used where
+ * it supplies them, honouring their type; the buckets are netted otherwise.
+ * Nothing here is ever negative: a window that nets to credit is simply
+ * nothing overdue.
+ */
+export interface OverdueAgeing {
+    /** Debit in each bucket, net of any credit in the same bucket. */
+    a1: number;
+    a2: number;
+    a3: number;
+    a4: number;
+    /** Net receivable older than 45 / 90 / 135 days. */
+    over45: number;
+    over90: number;
+    over135: number;
+}
+
+const NOTHING_OVERDUE: OverdueAgeing = { a1: 0, a2: 0, a3: 0, a4: 0, over45: 0, over90: 0, over135: 0 };
+
+export function overdueAgeing(
+    item: Pick<Outstanding, 'ageing' | 'ageingTypes' | 'total' | 'totalType' | 'over90' | 'over90Type' | 'dueOver45' | 'dueOver45Type'>,
+): OverdueAgeing {
+    if (item.totalType === 'Cr' || (Number(item.total) || 0) <= 0) return NOTHING_OVERDUE;
+
+    const signed = (key: '1-45' | '46-90' | '91-135' | '>135'): number => {
+        const v = Math.abs(Number(item.ageing?.[key]) || 0);
+        return item.ageingTypes?.[key] === 'Cr' ? -v : v;
+    };
+    const s1 = signed('1-45');
+    const s2 = signed('46-90');
+    const s3 = signed('91-135');
+    const s4 = signed('>135');
+
+    const rollUp = (value: number | undefined, type: BalanceType | undefined, fromBuckets: number): number => {
+        if (value === undefined || value === null || isNaN(Number(value))) return Math.max(0, fromBuckets);
+        return type === 'Cr' ? 0 : Math.max(0, Math.abs(Number(value)));
+    };
+    const over135 = Math.max(0, s4);
+    const over90 = rollUp(item.over90, item.over90Type, s3 + s4);
+    const over45 = rollUp(item.dueOver45, item.dueOver45Type, s2 + s3 + s4);
+
+    return {
+        a1: Math.max(0, s1),
+        a2: Math.max(0, s2),
+        a3: Math.max(0, s3),
+        a4: over135,
+        over45,
+        over90,
+        over135,
+    };
+}
+
+/**
  * A customer's payment rank.
  *
  * A rank somebody set by hand always wins — including `Bad`, which is the only
@@ -773,21 +840,13 @@ export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
     if (customer.paymentRank === 'Good' || customer.paymentRank === 'Late' || customer.paymentRank === 'Bad') {
         return customer.paymentRank;
     }
-    // Advance / credit balance owes nothing.
-    if (customer.totalType === 'Cr' || (customer.total || 0) <= 0) {
-        return 'Good';
-    }
-
-    const a2 = customer.ageing?.['46-90'] || 0;
-    const a3 = customer.ageing?.['91-135'] || 0;
-    const a4 = customer.ageing?.['>135'] || 0;
-    const over90 = customer.over90 !== undefined ? customer.over90 : (a3 + a4);
-    const dueOver45 = customer.dueOver45 !== undefined ? customer.dueOver45 : (a2 + over90);
 
     // Anything past its date is Late, however far past. Old money is shown by
     // the ageing buckets, which say how old far better than a grade can; it is
-    // not evidence that a customer has stopped paying.
-    if (over90 > 0 || dueOver45 > 0) return 'Late';
+    // not evidence that a customer has stopped paying. An advance or credit
+    // balance owes nothing, and overdueAgeing() says so.
+    const { over45, over90 } = overdueAgeing(customer);
+    if (over90 > 0 || over45 > 0) return 'Late';
 
     return 'Good';
 }

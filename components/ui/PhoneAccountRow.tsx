@@ -1,5 +1,5 @@
 import React from 'react';
-import { Outstanding, getCustomerPaymentRank, getFollowUpCategory, PAYMENT_RANK_LABELS } from '../../types';
+import { Outstanding, getCustomerPaymentRank, getFollowUpCategory, PAYMENT_RANK_LABELS, overdueAgeing } from '../../types';
 import { AgeingBar, Badge, cx } from './Primitives';
 import { formatCompact, formatDateShort, formatINR, relativeDays } from './format';
 import { WhatsAppIcon } from '../icons/Icons';
@@ -45,11 +45,7 @@ export const PhoneAccountRow = ({
     onToggleSelect,
     extras,
 }: PhoneAccountRowProps) => {
-    const a1 = item.ageing?.['1-45'] || 0;
-    const a2 = item.ageing?.['46-90'] || 0;
-    const a3 = item.ageing?.['91-135'] || 0;
-    const a4 = item.ageing?.['>135'] || 0;
-    const over90 = item.over90 !== undefined ? item.over90 : a3 + a4;
+    const { a1, a2, a3, a4, over90 } = overdueAgeing(item);
     const rank = getCustomerPaymentRank(item);
     const cat = getFollowUpCategory(item, today);
     const due = relativeDays(item.followUpDate);

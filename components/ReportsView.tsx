@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -191,12 +191,9 @@ export const ReportsView = ({
 
         workScopedData.forEach(item => {
             totalAmount += item.total || 0;
-            const a1 = item.ageing?.['1-45'] || 0;
-            const a2 = item.ageing?.['46-90'] || 0;
-            const a3 = item.ageing?.['91-135'] || 0;
-            const a4 = item.ageing?.['>135'] || 0;
-            const itemOver90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-            const itemDue45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + itemOver90);
+            // Receivable ageing only: a credit that happens to be old is not
+            // overdue, and an account in credit has nothing overdue at all.
+            const { a1, a2, a3, a4, over45: itemDue45, over90: itemOver90 } = overdueAgeing(item);
             dueOver45Total += itemDue45;
 
             if (a1 > 0) { ageing1_45Count++; ageing1_45Amount += a1; }
@@ -263,12 +260,7 @@ export const ReportsView = ({
     // Filtered Report Table Data (Applying CRM + Category + Search + Ageing)
     const filteredReportData = useMemo(() => {
         return workScopedData.filter(item => {
-            const a1 = item.ageing?.['1-45'] || 0;
-            const a2 = item.ageing?.['46-90'] || 0;
-            const a3 = item.ageing?.['91-135'] || 0;
-            const a4 = item.ageing?.['>135'] || 0;
-            const itemOver90 = item.over90 !== undefined ? item.over90 : (a3 + a4);
-            const itemDue45 = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + itemOver90);
+            const { a1, a2, a3, a4, over45: itemDue45, over90: itemOver90 } = overdueAgeing(item);
 
             // Category Filter
             if (categoryFilter === 'today' && !isTodayFollowUp(item)) return false;
@@ -366,12 +358,7 @@ export const ReportsView = ({
         // filtered report, exactly as before.
         const source = selected.length ? filteredReportData.filter(r => selected.includes(r.id)) : filteredReportData;
         const rows = source.map(item => {
-            const a1 = item.ageing?.['1-45'] || 0;
-            const a2 = item.ageing?.['46-90'] || 0;
-            const a3 = item.ageing?.['91-135'] || 0;
-            const a4 = item.ageing?.['>135'] || 0;
-            const over90Total = item.over90 !== undefined ? item.over90 : (a3 + a4);
-            const due45Total = item.dueOver45 !== undefined ? item.dueOver45 : (a2 + over90Total);
+            const { a1, a2, a3, a4, over45: due45Total, over90: over90Total } = overdueAgeing(item);
             let categoryName = 'No Follow-up Scheduled';
             if (item.status === FollowUpStatus.Completed) categoryName = 'Completed';
             else if (isTodayFollowUp(item)) categoryName = 'Today Follow-up';
@@ -1076,11 +1063,7 @@ export const ReportsView = ({
                                 </tr>
                             ) : (
                                 filteredReportData.map((item) => {
-                                    const a1 = item.ageing?.['1-45'] || 0;
-                                    const a2 = item.ageing?.['46-90'] || 0;
-                                    const a3 = item.ageing?.['91-135'] || 0;
-                                    const a4 = item.ageing?.['>135'] || 0;
-                                    const over90Total = item.over90 !== undefined ? item.over90 : (a3 + a4);
+                                    const { a1, a2, a3, a4, over90: over90Total } = overdueAgeing(item);
                                     const hasOver90Dues = over90Total > 0;
                                     
                                     // Row status visual border

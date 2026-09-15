@@ -55,6 +55,18 @@ export const crmFromSheet = (value?: string | null): string =>
     isSheetBlank(value) ? '' : ownerKey(value);
 
 // Clean CSV parser for handling quotes and comma delimiters
+/**
+ * A roll-up the sheet did not supply, netted the way the sheet nets its own.
+ *
+ * Adding the absolute amounts made a credit note older than 135 days count as
+ * money 135 days overdue. Debits count up, credits count down, and the sign
+ * of what is left says which way the window faces.
+ */
+export function netRollUp(parts: { amount: number; type: BalanceType }[]): { amount: number; type: BalanceType } {
+    const net = parts.reduce((sum, p) => sum + (p.type === 'Cr' ? -Math.abs(p.amount) : Math.abs(p.amount)), 0);
+    return { amount: Math.abs(net), type: net < 0 ? 'Cr' : 'Dr' };
+}
+
 export function parseCSVMatrix(text: string): string[][] {
     const matrix: string[][] = [[]];
     let row = matrix[0];
@@ -157,11 +169,11 @@ export function parseGoogleSheetCsv(csvText: string): { data: Outstanding[]; rec
 
         const over90Parsed = colMap.over90 < r.length && r[colMap.over90] !== '' && r[colMap.over90] !== undefined
             ? parseAmountAndType(r[colMap.over90])
-            : { amount: a3Parsed.amount + a4Parsed.amount, type: (a3Parsed.type === 'Cr' && a4Parsed.type === 'Cr' ? 'Cr' : 'Dr') as BalanceType };
+            : netRollUp([a3Parsed, a4Parsed]);
 
         const due45Parsed = colMap.dueOver45 < r.length && r[colMap.dueOver45] !== '' && r[colMap.dueOver45] !== undefined
             ? parseAmountAndType(r[colMap.dueOver45])
-            : { amount: a2Parsed.amount + over90Parsed.amount, type: 'Dr' as BalanceType };
+            : netRollUp([a2Parsed, a3Parsed, a4Parsed]);
 
         const crm = crmFromSheet(r[colMap.crm]);
         const explicitContact = (colMap.contactPerson >= 0 && colMap.contactPerson < r.length) ? r[colMap.contactPerson]?.trim() : '';
