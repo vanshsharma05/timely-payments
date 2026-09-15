@@ -228,6 +228,38 @@ export const STOCK_AGE_LABELS: Record<StockAgeBucket, string> = {
 export const hasLevels = (item: Pick<StockItem, 'minLevel' | 'maxLevel'>) => item.minLevel > 0 || item.maxLevel > 0;
 
 /**
+ * Whether the item is on the shelf — the question a call is usually about.
+ *
+ *   out — nothing there (a negative quantity is not "in stock" either)
+ *   low — something there, but under the item's minimum
+ *   in  — there, and not under a minimum
+ *
+ * Every item is exactly one of the three, so the three counts add up to the
+ * sheet, and "low + out" is the share of the range that needs buying.
+ */
+export type Availability = 'in' | 'low' | 'out';
+
+export const AVAILABILITY_LABELS: Record<Availability, string> = {
+    in: 'In stock',
+    low: 'Low stock',
+    out: 'Out of stock',
+};
+
+export function availabilityOf(item: Pick<StockItem, 'quantity' | 'minLevel' | 'maxLevel'>): Availability {
+    if (item.quantity <= 0) return 'out';
+    if (hasLevels(item) && item.quantity < item.minLevel) return 'low';
+    return 'in';
+}
+
+/**
+ * Out of stock where it matters: an item the stores keep against levels, or
+ * one that moves fast, with nothing on the shelf. Dead stock at zero is not
+ * a problem; a fast-moving ink at zero is.
+ */
+export const isCritical = (item: Pick<StockItem, 'quantity' | 'minLevel' | 'maxLevel' | 'status' | 'movement'>): boolean =>
+    item.quantity <= 0 && (item.status === 'FM' || item.movement === 'FAST MOVING');
+
+/**
  * A Google Drive share link as an image the browser can show. The sheet
  * stores `uc?id=…&export=download`, which serves a download, not a picture;
  * the thumbnail endpoint serves the picture, for files shared with a link.

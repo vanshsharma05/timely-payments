@@ -579,12 +579,28 @@ figure.
 ### 7.2 Ageing buckets
 
 Four buckets: `1-45`, `46-90`, `91-135`, `>135`. Two derived roll-ups the sheet
-supplies directly when it has them, computed otherwise:
+supplies directly when it has them, netted from the buckets otherwise
+(`netRollUp()`):
 
 - `over90` = `91-135` + `>135`
 - `dueOver45` = `46-90` + `over90`
 
-Each bucket carries its own `Dr`/`Cr` type in `ageingTypes`.
+Each bucket carries its own `Dr`/`Cr` type in `ageingTypes`, and so do the
+roll-ups (`over90Type`, `dueOver45Type`). **Every amount is stored absolute;
+the type is the sign.**
+
+**`overdueAgeing(item)` is the only way to ask what an account has overdue.**
+Reading a bucket without its type made a credit note older than 135 days into
+"money 135 days overdue", and put 26 of the book's 34 credit accounts — money
+*we* hold — into the >90d filter, where they showed as thirty-one "Good"
+customers with dues past 90 days. The helper returns nothing overdue for an
+account in credit, signs each bucket (debit up, credit down) so a window nets
+the way the sheet nets its own roll-ups (₹2,00,967 owed from 91–135 days with
+an ₹84,939 credit older than that is ₹1,16,028 past 90, and the sheet says
+so), honours the sheet's typed roll-ups where present, and never returns a
+negative. The rank, both filters, the tiles, the row bars, the exports, the
+phone rows and the AI report all read it. After it, the book adds up: current
+89 + past-45 520 + 34 in credit = 643 accounts with dues.
 
 ### 7.3 Follow-up category
 
@@ -1096,6 +1112,14 @@ follow-up date from [§9.6](#96-reports--the-management-read); export of the
 rows **currently on screen**, which is what makes the recovery-agency defaulter
 list possible. Rows open in the workspace.
 
+The ageing chips under "More filters" are **Current (≤45d) · >45d · >90d ·
+>135d** — three nested severities and the complement of the first. They
+replaced "1-45d", which meant "has any money in the 1–45 bucket": 311 accounts,
+181 of them also past 90 days, sitting beside ">45d" as if they were the
+customers who are up to date. The rank chips beside them count within whatever
+ageing chip is pressed, so "Good (6)" under >90d is six accounts somebody
+graded Good by hand despite old money — a judgement, kept visible.
+
 ### 9.5 PDC cheques (`PdcChequesView`)
 
 Tiles: Due today · **Date passed, not banked** · Upcoming · On hold · Cleared ·
@@ -1195,16 +1219,31 @@ item code; rows without a code are skipped. The coded columns decode as:
 | `Amount` | ₹ | quantity × rate, the item's stock value |
 | `Photo` | a Drive share link | shown in the item drawer through Drive's thumbnail endpoint, with **no referrer** — with one, Drive answers with a page the browser refuses to show as an image |
 
-**The page.** Five tiles of the whole sheet, each a filter (value · short of
-minimum · dead stock · fast moving · not received in 90 days); value by brand
-and by how it is held; search, brand and sub-category, status / movement /
-last-received chips, short-only and in-stock-only, sort; a sortable table
-(rows on a phone, per [§12](#phone-layout)) windowed at 60; and a drawer per
-item — photo, chips, stock / value / rate, the quantity against its min and
-max with how much is short and what that costs, and **Open in sheet**, which
-deep-links to the row (`range=A<serial+2>`, since the sheet's S. No runs from
-row 3). The app-bar search applies here too, and the title's subtitle and
-placeholder are the sheet's, not the book's. Export needs `canExportData`.
+**The page.** It answers the question a call is about — is it there, how
+much, is it running low — before anything else. Five tiles of the whole sheet,
+each a filter: total items · in stock · low stock · out of stock · health
+score. `availabilityOf()` puts every item in exactly one of the three
+(nothing there, or a negative quantity → **out**; there but under its minimum →
+**low**; otherwise **in**), so the three counts add up to the sheet and the
+bars under them read as one picture of the shelf. Health is the in-stock
+share, in a word: Healthy from 85%, Fair from 70%, Needs attention below.
+Beside the value by brand sits **Quick insights** — brands, sub-categories,
+total quantity (all units together, as asked for), average per item, low-or-
+out share with what it would cost to reach the minimums, and **critical
+items**: out of stock *where it matters* (`isCritical()` — a stocked item or a
+fast mover at zero; dead stock at zero is not a problem, and the plain
+out-of-stock count is already a tile). Then search, brand and sub-category,
+availability chips, status and movement selects, sort; a sortable table (rows
+on a phone, per [§12](#phone-layout)) windowed at 60; and a drawer per item —
+photo, chips, stock / value / rate, the quantity against its min and max with
+how much is short and what that costs, and **Open in sheet**, which deep-links
+to the row (`range=A<serial+2>`, since the sheet's S. No runs from row 3). The
+app-bar search applies here too, and the title's subtitle and placeholder are
+the sheet's, not the book's. Export needs `canExportData`.
+
+The first version led with value, dead stock, movement and days-since-receipt;
+that is a buyer's view, and it was asked to be the stores' view instead. The
+figures are all still in the drawer and the export.
 
 ### 9.11 Sign-in (`LoginScreen`)
 

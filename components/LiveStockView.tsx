@@ -5,18 +5,21 @@ import {
     StockItem,
     StockStatus,
     StockMovement,
-    StockAgeBucket,
+    Availability,
     STOCK_STATUS_LABELS,
     MOVEMENT_LABELS,
     STOCK_AGE_LABELS,
     STOCK_COLOUR_LABELS,
+    AVAILABILITY_LABELS,
+    availabilityOf,
+    isCritical,
     stockAgeBucket,
     hasLevels,
     drivePhotoUrl,
     LIVE_STOCK_SHEET_URL,
     LIVE_STOCK_REFRESH_MS,
 } from '../services/liveStock';
-import { Badge, Button, Card, EmptyState, SectionHeader, Stat, cx } from './ui/Primitives';
+import { Badge, Button, Card, EmptyState, SectionHeader, cx } from './ui/Primitives';
 import { formatCompact, formatDate, formatINR, groupIndian } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { DownloadIcon, SyncIcon } from './icons/Icons';
@@ -25,9 +28,11 @@ import { DownloadIcon, SyncIcon } from './icons/Icons';
    Live stock — a window onto the stores sheet.
 
    Read-only by design: the stores team keeps the sheet, and this page shows
-   what they keep, a minute behind at most. Everything here is arranged the
-   way the rest of the app is — figures first, then the list those figures
-   open onto, and a row that opens into the whole record.
+   what they keep, a minute behind at most. It answers the question a call is
+   about — is it there, how much, is it running low — before anything else:
+   five tiles on availability, a strip of the figures worth knowing, the value
+   by brand, and the list those open onto, with a row that opens into the
+   whole record.
    ============================================================================ */
 
 interface LiveStockViewProps {
@@ -42,9 +47,9 @@ interface LiveStockViewProps {
     globalSearch?: string;
 }
 
+type AvailabilityFilter = 'ALL' | Availability;
 type StatusFilter = 'ALL' | StockStatus;
 type MovementFilter = 'ALL' | StockMovement;
-type AgeFilter = 'all' | StockAgeBucket;
 type SortKey = 'value' | 'quantity' | 'rate' | 'ageing' | 'name' | 'category';
 
 const STATUS_TONE: Record<StockStatus, 'pos' | 'brand' | 'dang' | 'neutral'> = {
@@ -61,6 +66,18 @@ const MOVEMENT_TONE: Record<StockMovement, 'pos' | 'warn' | 'neutral' | 'age3'> 
     '': 'neutral',
 };
 
+const AVAILABILITY_TONE: Record<Availability, 'pos' | 'warn' | 'dang'> = {
+    in: 'pos',
+    low: 'warn',
+    out: 'dang',
+};
+
+const AVAILABILITY_VAR: Record<Availability, string> = {
+    in: 'var(--pos)',
+    low: 'var(--age-3)',
+    out: 'var(--dang)',
+};
+
 const COLOUR_SWATCH: Record<string, string> = {
     R: '#D93636',
     M: '#C2338F',
@@ -75,6 +92,9 @@ const formatQty = (n: number, unit?: string) => {
     return unit ? `${s} ${unit}` : s;
 };
 
+const pct = (n: number, of: number) => (of > 0 ? (100 * n) / of : 0);
+const pctText = (n: number, of: number) => `${pct(n, of).toFixed(1)}%`;
+
 /** "2 min ago" / "just now" — for the read timestamp. */
 const agoText = (iso?: string): string => {
     if (!iso) return '';
@@ -86,6 +106,60 @@ const agoText = (iso?: string): string => {
     const hrs = Math.round(mins / 60);
     if (hrs < 24) return `${hrs} hr ago`;
     return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
+/**
+ * The share of the range that is on the shelf and not under its minimum —
+ * one figure for how the stores are doing, in three words.
+ */
+const healthWord = (score: number) => (score >= 85 ? 'Healthy' : score >= 70 ? 'Fair' : 'Needs attention');
+const healthVar = (score: number) => (score >= 85 ? 'var(--pos)' : score >= 70 ? 'var(--age-2)' : 'var(--dang)');
+
+/**
+ * A figure with a bar under it. The bar is the figure as a share of the
+ * range, so the five tiles read as one picture: how the shelf is divided.
+ */
+const Tile = ({
+    label,
+    value,
+    sub,
+    share,
+    tone,
+    active,
+    onClick,
+}: {
+    label: string;
+    value: React.ReactNode;
+    sub: React.ReactNode;
+    /** 0–100 */
+    share: number;
+    tone: string;
+    active?: boolean;
+    onClick?: () => void;
+}) => {
+    const Wrapper: any = onClick ? 'button' : 'div';
+    return (
+        <Wrapper
+            type={onClick ? 'button' : undefined}
+            onClick={onClick}
+            aria-pressed={onClick ? active : undefined}
+            className={cx(
+                'relative text-left bg-card rounded-[16px] px-5 py-4 transition-all duration-150',
+                onClick && 'cursor-pointer hover:shadow-e2 active:scale-[.99]',
+                active ? 'shadow-e2 ring-2 ring-accent' : 'shadow-e1',
+            )}
+        >
+            <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: tone }} aria-hidden="true" />
+                <span className="label">{label}</span>
+            </span>
+            <span className="block num text-[30px] font-semibold text-label mt-2.5 leading-none tracking-[-0.03em]">{value}</span>
+            <span className="block h-1.5 rounded-full bg-card-3 mt-3 overflow-hidden" aria-hidden="true">
+                <span className="block h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, share))}%`, background: tone }} />
+            </span>
+            <span className="block text-[13px] text-label-3 mt-2 leading-snug">{sub}</span>
+        </Wrapper>
+    );
 };
 
 /**
@@ -134,7 +208,6 @@ const BarRow = ({
     sub,
     active,
     onClick,
-    tone = 'var(--accent)',
 }: {
     label: string;
     value: number;
@@ -142,7 +215,6 @@ const BarRow = ({
     sub?: string;
     active?: boolean;
     onClick?: () => void;
-    tone?: string;
 }) => (
     <button
         type="button"
@@ -162,9 +234,18 @@ const BarRow = ({
             </span>
         </div>
         <div className="h-1.5 rounded-full bg-card-3 mt-1.5 overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%`, background: tone }} />
+            <div className="h-full rounded-full bg-accent" style={{ width: `${max > 0 ? (value / max) * 100 : 0}%` }} />
         </div>
     </button>
+);
+
+/** One figure in the Quick insights strip. */
+const Insight = ({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: string }) => (
+    <div className="bg-card-2 rounded-[14px] px-4 py-5 text-center flex flex-col justify-center">
+        <p className="label">{label}</p>
+        <p className="num text-[24px] font-semibold mt-2 leading-none tracking-[-0.02em]" style={{ color: tone || 'var(--label)' }}>{value}</p>
+        {sub && <p className="text-[11.5px] text-label-3 mt-2 leading-snug">{sub}</p>}
+    </div>
 );
 
 export const LiveStockView = ({
@@ -184,11 +265,10 @@ export const LiveStockView = ({
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('ALL');
     const [subCategory, setSubCategory] = useState('ALL');
+    const [availability, setAvailability] = useState<AvailabilityFilter>('ALL');
+    const [criticalOnly, setCriticalOnly] = useState(false);
     const [status, setStatus] = useState<StatusFilter>('ALL');
     const [movement, setMovement] = useState<MovementFilter>('ALL');
-    const [age, setAge] = useState<AgeFilter>('all');
-    const [shortOnly, setShortOnly] = useState(false);
-    const [inStockOnly, setInStockOnly] = useState(false);
     const [sortKey, setSortKey] = useState<SortKey>('value');
     const [sortDesc, setSortDesc] = useState(true);
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
@@ -199,7 +279,7 @@ export const LiveStockView = ({
 
     const PAGE = 60;
     const [visible, setVisible] = useState(PAGE);
-    useEffect(() => { setVisible(PAGE); }, [search, globalSearch, category, subCategory, status, movement, age, shortOnly, inStockOnly, sortKey, sortDesc]);
+    useEffect(() => { setVisible(PAGE); }, [search, globalSearch, category, subCategory, availability, criticalOnly, status, movement, sortKey, sortDesc]);
 
     // The item open in the drawer follows the sheet: a re-read replaces it
     // with its current row, and drops it if the row is gone.
@@ -245,11 +325,10 @@ export const LiveStockView = ({
             if (!matchesSearch([i.code, i.description, i.category, i.subCategory, i.unit], search)) return false;
             if (category !== 'ALL' && (i.category || '(none)') !== category) return false;
             if (subCategory !== 'ALL' && (i.subCategory || '(none)') !== subCategory) return false;
+            if (availability !== 'ALL' && availabilityOf(i) !== availability) return false;
+            if (criticalOnly && !isCritical(i)) return false;
             if (status !== 'ALL' && i.status !== status) return false;
             if (movement !== 'ALL' && i.movement !== movement) return false;
-            if (age !== 'all' && stockAgeBucket(i) !== age) return false;
-            if (shortOnly && !i.isShort) return false;
-            if (inStockOnly && i.quantity <= 0) return false;
             return true;
         });
         const dir = sortDesc ? -1 : 1;
@@ -262,40 +341,41 @@ export const LiveStockView = ({
             category: (a, b) => (a.category + a.subCategory + a.code).localeCompare(b.category + b.subCategory + b.code),
         };
         return rows.sort((a, b) => by[sortKey](a, b) * dir || a.code.localeCompare(b.code));
-    }, [items, globalSearch, search, category, subCategory, status, movement, age, shortOnly, inStockOnly, sortKey, sortDesc]);
+    }, [items, globalSearch, search, category, subCategory, availability, criticalOnly, status, movement, sortKey, sortDesc]);
 
     /** The figures on the tiles are of the whole sheet, never of the filter. */
     const summary = useMemo(() => {
         const s = {
             items: items.length,
-            inStock: 0,
             value: 0,
-            short: 0,
-            shortValue: 0,
-            dead: 0,
-            deadValue: 0,
-            fast: 0,
-            fastValue: 0,
-            stale: 0,
-            staleValue: 0,
-            byStatus: { FM: 0, OD: 0, D: 0, '': 0 } as Record<StockStatus, number>,
-            byMovement: { 'FAST MOVING': 0, REVIEW: 0, 'SLOW MOVING': 0, '': 0 } as Record<StockMovement, number>,
+            quantity: 0,
+            inStock: 0,
+            low: 0,
+            out: 0,
+            critical: 0,
+            toMinimum: 0,
+            brands: new Set<string>(),
+            subCategories: new Set<string>(),
             byCategory: new Map<string, { items: number; value: number }>(),
         };
         items.forEach(i => {
             s.value += i.value;
-            if (i.quantity > 0) s.inStock++;
-            if (i.isShort) { s.short++; s.shortValue += Math.max(0, i.minLevel - i.quantity) * i.rate; }
-            if (i.status === 'D') { s.dead++; s.deadValue += i.value; }
-            if (i.movement === 'FAST MOVING') { s.fast++; s.fastValue += i.value; }
-            if (stockAgeBucket(i) === '90+') { s.stale++; s.staleValue += i.value; }
-            s.byStatus[i.status] += i.value;
-            s.byMovement[i.movement] += i.value;
+            s.quantity += i.quantity;
+            const a = availabilityOf(i);
+            if (a === 'in') s.inStock++;
+            else if (a === 'low') s.low++;
+            else s.out++;
+            if (isCritical(i)) s.critical++;
+            if (hasLevels(i) && i.quantity < i.minLevel) s.toMinimum += (i.minLevel - i.quantity) * i.rate;
+            if (i.category) s.brands.add(i.category);
+            if (i.subCategory) s.subCategories.add(i.subCategory);
             const c = s.byCategory.get(i.category || '(none)') || { items: 0, value: 0 };
             c.items++; c.value += i.value; s.byCategory.set(i.category || '(none)', c);
         });
         return s;
     }, [items]);
+
+    const health = pct(summary.inStock, summary.items);
 
     const topCategories = useMemo(
         () => [...summary.byCategory.entries()].sort((a, b) => b[1].value - a[1].value).slice(0, 8),
@@ -304,27 +384,17 @@ export const LiveStockView = ({
 
     const viewValue = useMemo(() => filtered.reduce((a, i) => a + i.value, 0), [filtered]);
 
-    const filtersOn = [category !== 'ALL', subCategory !== 'ALL', status !== 'ALL', movement !== 'ALL', age !== 'all', shortOnly, inStockOnly].filter(Boolean).length;
+    const filtersOn = [category !== 'ALL', subCategory !== 'ALL', availability !== 'ALL', criticalOnly, status !== 'ALL', movement !== 'ALL'].filter(Boolean).length;
     const clearFilters = () => {
-        setSearch(''); setCategory('ALL'); setSubCategory('ALL'); setStatus('ALL'); setMovement('ALL');
-        setAge('all'); setShortOnly(false); setInStockOnly(false);
+        setSearch(''); setCategory('ALL'); setSubCategory('ALL'); setAvailability('ALL'); setCriticalOnly(false); setStatus('ALL'); setMovement('ALL');
     };
 
     /** A tile is a filter: pressing it again clears it. */
-    const tileIs = (want: { status?: StatusFilter; movement?: MovementFilter; age?: AgeFilter; short?: boolean }) =>
-        (want.status === undefined || status === want.status)
-        && (want.movement === undefined || movement === want.movement)
-        && (want.age === undefined || age === want.age)
-        && (want.short === undefined || shortOnly === want.short)
-        && filtersOn === Object.keys(want).length;
-    const applyTile = (want: { status?: StatusFilter; movement?: MovementFilter; age?: AgeFilter; short?: boolean }) => {
-        const already = tileIs(want);
+    const onlyAvailability = (a: Availability) => availability === a && filtersOn === 1;
+    const pickAvailability = (a: Availability) => {
+        const already = onlyAvailability(a);
         clearFilters();
-        if (already) return;
-        if (want.status !== undefined) setStatus(want.status);
-        if (want.movement !== undefined) setMovement(want.movement);
-        if (want.age !== undefined) setAge(want.age);
-        if (want.short !== undefined) setShortOnly(want.short);
+        if (!already) setAvailability(a);
     };
 
     const sortBy = (k: SortKey) => {
@@ -339,6 +409,7 @@ export const LiveStockView = ({
             'Brand / Category': i.category,
             'Sub-category': i.subCategory,
             'Unit': i.unit,
+            'Availability': AVAILABILITY_LABELS[availabilityOf(i)],
             'Quantity': i.quantity,
             'Quantity + PO': i.quantityWithPo,
             'Rate (₹)': i.rate,
@@ -376,13 +447,16 @@ export const LiveStockView = ({
         </th>
     );
 
+    const selectBase = 'h-10 px-3 text-[13px] rounded-xl border border-separator-strong bg-card-2 text-label font-semibold focus:ring-2 focus:ring-accent max-md:h-11';
+    const selectClass = `w-full ${selectBase}`;
+    const chipSelectClass = `${selectBase} h-9 pr-8 max-md:w-full`;
     const nothingYet = items.length === 0;
 
     return (
         <div className="space-y-5 max-md:space-y-4">
-            {/* ---------- freshness ---------- */}
+            {/* ---------- freshness: one line ---------- */}
             <div className={cx(
-                'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[14px] px-4 py-2.5 text-[13px]',
+                'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[14px] px-4 py-2 text-[13px]',
                 error ? 'bg-warn-bg text-warn' : 'bg-card shadow-e1 text-label-2',
             )}>
                 <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
@@ -395,12 +469,12 @@ export const LiveStockView = ({
                         : loading && !fetchedAt
                             ? 'Reading the stock sheet…'
                             : fromCache
-                                ? `Showing the last read (${agoText(fetchedAt)}) while the sheet loads`
+                                ? `Last read ${agoText(fetchedAt)} — reading again`
                                 : `Live from the stock sheet · read ${agoText(fetchedAt)}`}
                 </span>
                 {error && <span className="opacity-90">— {error}{fetchedAt ? ` Showing the read from ${agoText(fetchedAt)}.` : ''}</span>}
                 {!error && !fromCache && (
-                    <span className="text-label-3">Re-reads every {Math.round(LIVE_STOCK_REFRESH_MS / 1000)}s while this page is open.</span>
+                    <span className="text-label-3 max-md:hidden">Re-reads every {Math.round(LIVE_STOCK_REFRESH_MS / 1000)}s while this page is open.</span>
                 )}
                 <span className="ml-auto flex items-center gap-2">
                     <a
@@ -433,51 +507,56 @@ export const LiveStockView = ({
                 </Card>
             ) : (
                 <>
-                    {/* ---------- tiles: the whole sheet, each one a filter ---------- */}
+                    {/* ---------- tiles: how the shelf is divided, each one a filter ---------- */}
                     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:snap-mandatory max-md:-mx-4 max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&>*]:min-w-[180px] max-md:[&>*]:snap-start">
-                        <Stat
-                            label="Stock value"
-                            tone="brand"
+                        <Tile
+                            label="Total items"
+                            tone="var(--accent)"
+                            share={100}
                             active={filtersOn === 0 && !search}
-                            onClick={() => clearFilters()}
-                            value={formatCompact(summary.value)}
-                            sub={<>{summary.items.toLocaleString('en-IN')} items · <span className="num font-semibold text-label-2">{summary.inStock.toLocaleString('en-IN')}</span> in stock</>}
+                            onClick={clearFilters}
+                            value={summary.items.toLocaleString('en-IN')}
+                            sub={filtered.length === summary.items && !search
+                                ? <><span className="num font-semibold text-label-2">{formatCompact(summary.value)}</span> stock value</>
+                                : <><span className="num font-semibold text-label-2">{filtered.length.toLocaleString('en-IN')}</span> in view</>}
                         />
-                        <Stat
-                            label="Short of minimum"
-                            tone="dang"
-                            active={tileIs({ short: true })}
-                            onClick={() => applyTile({ short: true })}
-                            value={summary.short}
-                            sub={<><span className="num font-semibold text-label-2">{formatCompact(summary.shortValue)}</span> to bring back to minimum</>}
+                        <Tile
+                            label="In stock"
+                            tone={AVAILABILITY_VAR.in}
+                            share={pct(summary.inStock, summary.items)}
+                            active={onlyAvailability('in')}
+                            onClick={() => pickAvailability('in')}
+                            value={summary.inStock.toLocaleString('en-IN')}
+                            sub={<><span className="num font-semibold text-label-2">{pctText(summary.inStock, summary.items)}</span> of items</>}
                         />
-                        <Stat
-                            label="Dead stock"
-                            tone="age4"
-                            active={tileIs({ status: 'D' })}
-                            onClick={() => applyTile({ status: 'D' })}
-                            value={summary.dead}
-                            sub={<><span className="num font-semibold text-label-2">{formatCompact(summary.deadValue)}</span> sitting</>}
+                        <Tile
+                            label="Low stock"
+                            tone={AVAILABILITY_VAR.low}
+                            share={pct(summary.low, summary.items)}
+                            active={onlyAvailability('low')}
+                            onClick={() => pickAvailability('low')}
+                            value={summary.low.toLocaleString('en-IN')}
+                            sub={<><span className="num font-semibold text-label-2">{pctText(summary.low, summary.items)}</span> · below minimum</>}
                         />
-                        <Stat
-                            label="Fast moving"
-                            tone="pos"
-                            active={tileIs({ movement: 'FAST MOVING' })}
-                            onClick={() => applyTile({ movement: 'FAST MOVING' })}
-                            value={summary.fast}
-                            sub={<><span className="num font-semibold text-label-2">{formatCompact(summary.fastValue)}</span> in stock</>}
+                        <Tile
+                            label="Out of stock"
+                            tone={AVAILABILITY_VAR.out}
+                            share={pct(summary.out, summary.items)}
+                            active={onlyAvailability('out')}
+                            onClick={() => pickAvailability('out')}
+                            value={summary.out.toLocaleString('en-IN')}
+                            sub={<><span className="num font-semibold text-label-2">{pctText(summary.out, summary.items)}</span> of items</>}
                         />
-                        <Stat
-                            label="Not received in 90 days"
-                            tone="warn"
-                            active={tileIs({ age: '90+' })}
-                            onClick={() => applyTile({ age: '90+' })}
-                            value={summary.stale}
-                            sub={<><span className="num font-semibold text-label-2">{formatCompact(summary.staleValue)}</span> of stock</>}
+                        <Tile
+                            label="Health score"
+                            tone={healthVar(health)}
+                            share={health}
+                            value={`${Math.round(health)}%`}
+                            sub={<><span className="font-semibold" style={{ color: healthVar(health) }}>{healthWord(health)}</span> · in stock, not below minimum</>}
                         />
                     </div>
 
-                    {/* ---------- breakdowns ---------- */}
+                    {/* ---------- brand value + quick insights ---------- */}
                     <div className="grid lg:grid-cols-2 gap-3.5">
                         <Card className="p-6 max-md:p-5">
                             <SectionHeader
@@ -504,64 +583,40 @@ export const LiveStockView = ({
                             </div>
                         </Card>
 
-                        <Card className="p-6 max-md:p-5 flex flex-col gap-6">
-                            <div>
-                                <SectionHeader
-                                    title="How the stock is held"
-                                    subtitle="Stocked items are kept between a minimum and a maximum; on-demand items are bought against orders; dead stock is neither."
+                        <Card className="p-6 max-md:p-5 flex flex-col">
+                            <SectionHeader
+                                title="Quick insights"
+                                subtitle="The range at a glance, from the whole sheet."
+                            />
+                            <div className="mt-5 grid grid-cols-3 max-md:grid-cols-2 gap-2.5 flex-1 auto-rows-fr">
+                                <Insight label="Brands" value={summary.brands.size.toLocaleString('en-IN')} sub="product lines" />
+                                <Insight label="Sub-categories" value={summary.subCategories.size.toLocaleString('en-IN')} sub="across those brands" />
+                                <Insight label="Total quantity" value={groupIndian(Math.round(summary.quantity))} sub="all units together" />
+                                <Insight
+                                    label="Critical items"
+                                    value={summary.critical.toLocaleString('en-IN')}
+                                    sub="out of stock, and stocked or fast-moving"
+                                    tone={summary.critical > 0 ? 'var(--dang)' : undefined}
                                 />
-                                <div className="mt-5 flex h-3 rounded-full overflow-hidden bg-card-3 gap-[2px]" role="img" aria-label="Stock value by status">
-                                    {(['FM', 'OD', 'D'] as const).map(k => (
-                                        <div
-                                            key={k}
-                                            title={`${STOCK_STATUS_LABELS[k]}: ${formatINR(summary.byStatus[k])}`}
-                                            style={{
-                                                width: `${summary.value > 0 ? (summary.byStatus[k] / summary.value) * 100 : 0}%`,
-                                                background: k === 'FM' ? 'var(--pos)' : k === 'OD' ? 'var(--accent)' : 'var(--dang)',
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 mt-3">
-                                    {(['FM', 'OD', 'D'] as const).map(k => (
-                                        <button
-                                            key={k}
-                                            type="button"
-                                            onClick={() => setStatus(status === k ? 'ALL' : k)}
-                                            aria-pressed={status === k}
-                                            className={cx(
-                                                'text-left rounded-[12px] px-3 py-2.5 transition-colors',
-                                                status === k ? 'bg-accent-tint ring-1 ring-accent' : 'bg-card-2 hover:bg-hover',
-                                            )}
-                                        >
-                                            <span className="flex items-center gap-1.5 text-[12px] font-semibold text-label-2">
-                                                <span className="w-2 h-2 rounded-full" style={{ background: k === 'FM' ? 'var(--pos)' : k === 'OD' ? 'var(--accent)' : 'var(--dang)' }} aria-hidden="true" />
-                                                {STOCK_STATUS_LABELS[k]}
-                                            </span>
-                                            <span className="block num text-[16px] font-semibold text-label mt-1">{formatCompact(summary.byStatus[k])}</span>
-                                            <span className="block text-[11.5px] text-label-3">{items.filter(i => i.status === k).length} items</span>
-                                        </button>
-                                    ))}
-                                </div>
+                                <Insight label="Avg per item" value={formatQty(Math.round(summary.quantity / Math.max(1, summary.items) * 10) / 10)} sub="units per item" />
+                                <Insight
+                                    label="Low or out"
+                                    value={pctText(summary.low + summary.out, summary.items)}
+                                    sub={`${(summary.low + summary.out).toLocaleString('en-IN')} items · ${formatCompact(summary.toMinimum)} to reach minimums`}
+                                    tone={summary.low + summary.out > 0 ? 'var(--age-3-ink)' : undefined}
+                                />
                             </div>
-
-                            <div>
-                                <p className="label">Movement</p>
-                                <div className="mt-2.5 space-y-1">
-                                    {(['FAST MOVING', 'REVIEW', 'SLOW MOVING'] as const).map(k => (
-                                        <BarRow
-                                            key={k}
-                                            label={MOVEMENT_LABELS[k]}
-                                            value={summary.byMovement[k]}
-                                            max={Math.max(...(['FAST MOVING', 'REVIEW', 'SLOW MOVING'] as const).map(m => summary.byMovement[m]), 1)}
-                                            sub={`${items.filter(i => i.movement === k).length} items`}
-                                            active={movement === k}
-                                            onClick={() => setMovement(movement === k ? 'ALL' : k)}
-                                            tone={k === 'FAST MOVING' ? 'var(--pos)' : k === 'REVIEW' ? 'var(--warn)' : 'var(--age-3)'}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { const already = criticalOnly && filtersOn === 1; clearFilters(); if (!already) setCriticalOnly(true); }}
+                                aria-pressed={criticalOnly}
+                                className={cx(
+                                    'mt-4 w-full h-10 rounded-xl text-[13px] font-semibold transition-colors',
+                                    criticalOnly ? 'bg-dang text-card' : 'bg-dang-bg text-dang hover:brightness-95',
+                                )}
+                            >
+                                {criticalOnly ? 'Showing the critical items — press to clear' : `Show the ${summary.critical} critical items`}
+                            </button>
                         </Card>
                     </div>
 
@@ -595,23 +650,13 @@ export const LiveStockView = ({
                             </button>
 
                             <div className={cx('lg:col-span-3', !phoneFiltersOpen && 'max-md:hidden')}>
-                                <select
-                                    aria-label="Brand / category"
-                                    value={category}
-                                    onChange={e => setCategory(e.target.value)}
-                                    className="w-full h-10 px-3 text-[13px] rounded-xl border border-separator-strong bg-card-2 text-label font-semibold focus:ring-2 focus:ring-accent max-md:h-11"
-                                >
+                                <select aria-label="Brand / category" value={category} onChange={e => setCategory(e.target.value)} className={selectClass}>
                                     <option value="ALL">All brands ({items.length})</option>
                                     {categories.map(([name, count]) => <option key={name} value={name}>{name} ({count})</option>)}
                                 </select>
                             </div>
                             <div className={cx('lg:col-span-3', !phoneFiltersOpen && 'max-md:hidden')}>
-                                <select
-                                    aria-label="Sub-category"
-                                    value={subCategory}
-                                    onChange={e => setSubCategory(e.target.value)}
-                                    className="w-full h-10 px-3 text-[13px] rounded-xl border border-separator-strong bg-card-2 text-label font-semibold focus:ring-2 focus:ring-accent max-md:h-11"
-                                >
+                                <select aria-label="Sub-category" value={subCategory} onChange={e => setSubCategory(e.target.value)} className={selectClass}>
                                     <option value="ALL">All sub-categories</option>
                                     {subCategories.map(([name, count]) => <option key={name} value={name}>{name} ({count})</option>)}
                                 </select>
@@ -621,7 +666,7 @@ export const LiveStockView = ({
                                     aria-label="Sort by"
                                     value={`${sortKey}:${sortDesc ? 'desc' : 'asc'}`}
                                     onChange={e => { const [k, d] = e.target.value.split(':'); setSortKey(k as SortKey); setSortDesc(d === 'desc'); }}
-                                    className="w-full h-10 px-3 text-[13px] rounded-xl border border-separator-strong bg-card-2 text-label font-semibold focus:ring-2 focus:ring-accent max-md:h-11"
+                                    className={selectClass}
                                 >
                                     <option value="value:desc">Highest value first</option>
                                     <option value="value:asc">Lowest value first</option>
@@ -636,53 +681,31 @@ export const LiveStockView = ({
                             </div>
                         </div>
 
-                        <div className={cx('flex flex-wrap items-center gap-1.5 pt-3 border-t border-separator', !phoneFiltersOpen && 'max-md:hidden')}>
-                            <span className="text-[11.5px] font-bold uppercase tracking-wider text-label-3 mr-1">Status</span>
-                            {(['ALL', 'FM', 'OD', 'D'] as StatusFilter[]).map(k => (
-                                <button
-                                    key={k}
-                                    type="button"
-                                    onClick={() => setStatus(k)}
-                                    aria-pressed={status === k}
-                                    className={cx('h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors', status === k ? 'bg-label text-card' : 'bg-card-2 text-label-2 hover:bg-hover')}
-                                >
-                                    {k === 'ALL' ? 'All' : STOCK_STATUS_LABELS[k]}
-                                </button>
-                            ))}
-                            <span className="text-[11.5px] font-bold uppercase tracking-wider text-label-3 mx-1 ml-3">Movement</span>
-                            {(['ALL', 'FAST MOVING', 'REVIEW', 'SLOW MOVING'] as MovementFilter[]).map(k => (
-                                <button
-                                    key={k}
-                                    type="button"
-                                    onClick={() => setMovement(k)}
-                                    aria-pressed={movement === k}
-                                    className={cx('h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors', movement === k ? 'bg-label text-card' : 'bg-card-2 text-label-2 hover:bg-hover')}
-                                >
-                                    {k === 'ALL' ? 'All' : MOVEMENT_LABELS[k]}
-                                </button>
-                            ))}
-                        </div>
-                        <div className={cx('flex flex-wrap items-center gap-1.5', !phoneFiltersOpen && 'max-md:hidden')}>
-                            <span className="text-[11.5px] font-bold uppercase tracking-wider text-label-3 mr-1">Last received</span>
-                            {(['all', '0-30', '31-60', '61-90', '90+', 'never'] as AgeFilter[]).map(k => (
-                                <button
-                                    key={k}
-                                    type="button"
-                                    onClick={() => setAge(k)}
-                                    aria-pressed={age === k}
-                                    className={cx('h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors', age === k ? 'bg-label text-card' : 'bg-card-2 text-label-2 hover:bg-hover')}
-                                >
-                                    {k === 'all' ? 'Any time' : k === 'never' ? 'No receipt' : k === '90+' ? '90+ days' : `${k} days`}
-                                </button>
-                            ))}
-                            <label className="inline-flex items-center gap-2 h-8 px-3 rounded-full bg-card-2 text-[12.5px] font-semibold text-label-2 cursor-pointer ml-3">
-                                <input type="checkbox" checked={shortOnly} onChange={e => setShortOnly(e.target.checked)} className="w-4 h-4 rounded" />
-                                Short of minimum
-                            </label>
-                            <label className="inline-flex items-center gap-2 h-8 px-3 rounded-full bg-card-2 text-[12.5px] font-semibold text-label-2 cursor-pointer">
-                                <input type="checkbox" checked={inStockOnly} onChange={e => setInStockOnly(e.target.checked)} className="w-4 h-4 rounded" />
-                                In stock only
-                            </label>
+                        <div className={cx('flex flex-wrap items-center gap-2 pt-3 border-t border-separator', !phoneFiltersOpen && 'max-md:hidden')}>
+                            <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1 max-md:flex max-md:w-full" role="group" aria-label="Availability">
+                                {(['ALL', 'in', 'low', 'out'] as AvailabilityFilter[]).map(k => (
+                                    <button
+                                        key={k}
+                                        type="button"
+                                        onClick={() => setAvailability(k)}
+                                        aria-pressed={availability === k}
+                                        className={cx(
+                                            'h-8 px-3 rounded-lg text-[12.5px] font-bold transition-colors whitespace-nowrap max-md:flex-1 max-md:px-1',
+                                            availability === k ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2 hover:bg-hover hover:text-label',
+                                        )}
+                                    >
+                                        {k === 'ALL' ? 'All' : AVAILABILITY_LABELS[k]}
+                                    </button>
+                                ))}
+                            </div>
+                            <select aria-label="Status" value={status} onChange={e => setStatus(e.target.value as StatusFilter)} className={chipSelectClass}>
+                                <option value="ALL">Any status</option>
+                                {(['FM', 'OD', 'D'] as const).map(k => <option key={k} value={k}>{STOCK_STATUS_LABELS[k]} ({k})</option>)}
+                            </select>
+                            <select aria-label="Movement" value={movement} onChange={e => setMovement(e.target.value as MovementFilter)} className={chipSelectClass}>
+                                <option value="ALL">Any movement</option>
+                                {(['FAST MOVING', 'REVIEW', 'SLOW MOVING'] as const).map(k => <option key={k} value={k}>{MOVEMENT_LABELS[k]}</option>)}
+                            </select>
                             {(filtersOn > 0 || search) && (
                                 <button type="button" onClick={clearFilters} className="h-8 px-2 text-[12.5px] font-bold text-dang hover:underline ml-auto">
                                     Reset
@@ -720,41 +743,44 @@ export const LiveStockView = ({
                             />
                         ) : isPhone ? (
                             <div className="divide-y divide-separator">
-                                {filtered.slice(0, visible).map(item => (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        onClick={() => setSelected(item)}
-                                        className="w-full text-left px-4 py-3 active:bg-press"
-                                    >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-[14.5px] font-bold text-label leading-snug break-words flex items-center gap-1.5">
-                                                    <ColourDot code={item.colour} />
-                                                    <span>{item.code}</span>
-                                                </p>
-                                                <p className="text-[12.5px] text-label-3 mt-0.5 truncate">
-                                                    {[item.category, item.subCategory].filter(Boolean).join(' · ')}
-                                                </p>
+                                {filtered.slice(0, visible).map(item => {
+                                    const a = availabilityOf(item);
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => setSelected(item)}
+                                            className="w-full text-left px-4 py-3 active:bg-press"
+                                        >
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-[14.5px] font-bold text-label leading-snug break-words flex items-center gap-1.5">
+                                                        <ColourDot code={item.colour} />
+                                                        <span>{item.code}</span>
+                                                    </p>
+                                                    <p className="text-[12.5px] text-label-3 mt-0.5 truncate">
+                                                        {[item.category, item.subCategory].filter(Boolean).join(' · ')}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right flex-none">
+                                                    <p className={cx('num text-[15px] font-bold leading-tight', a === 'out' ? 'text-dang' : 'text-label')}>
+                                                        {formatQty(item.quantity, item.unit)}
+                                                    </p>
+                                                    <p className="num text-[12px] text-label-3 mt-0.5">{formatCompact(item.value)}</p>
+                                                </div>
                                             </div>
-                                            <div className="text-right flex-none">
-                                                <p className={cx('num text-[15px] font-bold leading-tight', item.quantity <= 0 ? 'text-label-3' : 'text-label')}>
-                                                    {formatQty(item.quantity, item.unit)}
-                                                </p>
-                                                <p className="num text-[12px] text-label-3 mt-0.5">{formatCompact(item.value)}</p>
+                                            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                                                {a !== 'in' && <Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>}
+                                                {isCritical(item) && <Badge tone="dang">Critical</Badge>}
+                                                {item.movement && <Badge tone={MOVEMENT_TONE[item.movement]}>{MOVEMENT_LABELS[item.movement]}</Badge>}
+                                                <span className="text-[11.5px] text-label-3 ml-auto num">
+                                                    {item.lastReceived ? `Recd ${formatDate(item.lastReceived)}` : 'No receipt'}
+                                                </span>
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                            {item.status && <Badge tone={STATUS_TONE[item.status]}>{STOCK_STATUS_LABELS[item.status]}</Badge>}
-                                            {item.isShort && <Badge tone="dang">Short</Badge>}
-                                            {item.movement && <Badge tone={MOVEMENT_TONE[item.movement]}>{MOVEMENT_LABELS[item.movement]}</Badge>}
-                                            <span className="text-[11.5px] text-label-3 ml-auto num">
-                                                {item.lastReceived ? `Recd ${formatDate(item.lastReceived)}` : 'No receipt'}
-                                            </span>
-                                        </div>
-                                        <LevelBar item={item} className="mt-2.5" />
-                                    </button>
-                                ))}
+                                            <LevelBar item={item} className="mt-2.5" />
+                                        </button>
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -772,62 +798,66 @@ export const LiveStockView = ({
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-separator">
-                                        {filtered.slice(0, visible).map(item => (
-                                            <tr
-                                                key={item.id}
-                                                onClick={() => setSelected(item)}
-                                                className={cx('cursor-pointer transition-colors hover:bg-hover', selected?.id === item.id && 'bg-accent-tint')}
-                                            >
-                                                <td className="px-3 py-2.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <ColourDot code={item.colour} />
-                                                        <span className="font-bold text-label">{item.code}</span>
-                                                        {item.isShort && <Badge tone="dang">Short</Badge>}
-                                                    </div>
-                                                    <p className="text-[12px] text-label-3 mt-0.5">
-                                                        {[item.category, item.subCategory].filter(Boolean).join(' · ')}
-                                                        {item.taxPct !== undefined ? ` · GST ${item.taxPct}%` : ''}
-                                                    </p>
-                                                </td>
-                                                <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                                    <span className={cx('num font-semibold', item.quantity <= 0 ? 'text-label-3' : 'text-label')}>{formatQty(item.quantity)}</span>
-                                                    <span className="text-[11.5px] text-label-3"> {item.unit}</span>
-                                                    {item.quantityWithPo !== item.quantity && (
-                                                        <span className="block text-[11.5px] text-label-3 num" title="Including purchase orders">+PO {formatQty(item.quantityWithPo)}</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2.5 align-middle">
-                                                    {hasLevels(item) ? (
-                                                        <>
-                                                            <LevelBar item={item} />
-                                                            <p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(item.minLevel)} · max {formatQty(item.maxLevel)}</p>
-                                                        </>
-                                                    ) : (
-                                                        <span className="text-[11.5px] text-label-4">no levels</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2.5 text-right whitespace-nowrap num text-label-2">{item.rate ? formatINR(item.rate) : '—'}</td>
-                                                <td className="px-3 py-2.5 text-right whitespace-nowrap num font-semibold text-label" title={formatINR(item.value)}>{formatCompact(item.value)}</td>
-                                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                                    {item.movement ? <Badge tone={MOVEMENT_TONE[item.movement]}>{MOVEMENT_LABELS[item.movement]}</Badge> : <span className="text-label-4">—</span>}
-                                                </td>
-                                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                                    {item.lastReceived ? (
-                                                        <>
-                                                            <span className="text-label-2 num">{formatDate(item.lastReceived)}</span>
-                                                            {item.ageingDays !== undefined && (
-                                                                <span className={cx('block text-[11.5px] num', item.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>
-                                                                    {item.ageingDays} days ago
-                                                                </span>
-                                                            )}
-                                                        </>
-                                                    ) : <span className="text-label-4">—</span>}
-                                                </td>
-                                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                                    {item.status ? <Badge tone={STATUS_TONE[item.status]}>{STOCK_STATUS_LABELS[item.status]}</Badge> : <span className="text-label-4">—</span>}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {filtered.slice(0, visible).map(item => {
+                                            const a = availabilityOf(item);
+                                            return (
+                                                <tr
+                                                    key={item.id}
+                                                    onClick={() => setSelected(item)}
+                                                    className={cx('cursor-pointer transition-colors hover:bg-hover', selected?.id === item.id && 'bg-accent-tint')}
+                                                >
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <ColourDot code={item.colour} />
+                                                            <span className="font-bold text-label">{item.code}</span>
+                                                            {a !== 'in' && <Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>}
+                                                            {isCritical(item) && <Badge tone="dang">Critical</Badge>}
+                                                        </div>
+                                                        <p className="text-[12px] text-label-3 mt-0.5">
+                                                            {[item.category, item.subCategory].filter(Boolean).join(' · ')}
+                                                            {item.taxPct !== undefined ? ` · GST ${item.taxPct}%` : ''}
+                                                        </p>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                                        <span className={cx('num font-semibold', a === 'out' ? 'text-dang' : 'text-label')}>{formatQty(item.quantity)}</span>
+                                                        <span className="text-[11.5px] text-label-3"> {item.unit}</span>
+                                                        {item.quantityWithPo !== item.quantity && (
+                                                            <span className="block text-[11.5px] text-label-3 num" title="Including purchase orders">+PO {formatQty(item.quantityWithPo)}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 align-middle">
+                                                        {hasLevels(item) ? (
+                                                            <>
+                                                                <LevelBar item={item} />
+                                                                <p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(item.minLevel)} · max {formatQty(item.maxLevel)}</p>
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-[11.5px] text-label-4">no levels</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right whitespace-nowrap num text-label-2">{item.rate ? formatINR(item.rate) : '—'}</td>
+                                                    <td className="px-3 py-2.5 text-right whitespace-nowrap num font-semibold text-label" title={formatINR(item.value)}>{formatCompact(item.value)}</td>
+                                                    <td className="px-3 py-2.5 whitespace-nowrap">
+                                                        {item.movement ? <Badge tone={MOVEMENT_TONE[item.movement]}>{MOVEMENT_LABELS[item.movement]}</Badge> : <span className="text-label-4">—</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 whitespace-nowrap">
+                                                        {item.lastReceived ? (
+                                                            <>
+                                                                <span className="text-label-2 num">{formatDate(item.lastReceived)}</span>
+                                                                {item.ageingDays !== undefined && (
+                                                                    <span className={cx('block text-[11.5px] num', item.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>
+                                                                        {item.ageingDays} days ago
+                                                                    </span>
+                                                                )}
+                                                            </>
+                                                        ) : <span className="text-label-4">—</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 whitespace-nowrap">
+                                                        {item.status ? <Badge tone={STATUS_TONE[item.status]}>{STOCK_STATUS_LABELS[item.status]}</Badge> : <span className="text-label-4">—</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -847,7 +877,9 @@ export const LiveStockView = ({
             )}
 
             {/* ---------- item drawer ---------- */}
-            {selected && (
+            {selected && (() => {
+                const a = availabilityOf(selected);
+                return (
                 <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={selected.code}>
                     <button type="button" aria-label="Close" onClick={() => setSelected(null)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
                     <div className="absolute inset-y-0 right-0 w-full md:w-[460px] bg-card shadow-e3 flex flex-col animate-in slide-in-from-right-4 fade-in duration-150">
@@ -890,8 +922,10 @@ export const LiveStockView = ({
                             )}
 
                             <div className="flex items-center gap-1.5 flex-wrap">
+                                <Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>
+                                {isCritical(selected) && <Badge tone="dang">Critical</Badge>}
+                                {selected.isShort && <Badge tone="warn">Short of minimum{selected.shortSince ? ` since ${formatDate(selected.shortSince)}` : ''}</Badge>}
                                 {selected.status && <Badge tone={STATUS_TONE[selected.status]}>{STOCK_STATUS_LABELS[selected.status]}</Badge>}
-                                {selected.isShort && <Badge tone="dang">Short of minimum{selected.shortSince ? ` since ${formatDate(selected.shortSince)}` : ''}</Badge>}
                                 {selected.movement && <Badge tone={MOVEMENT_TONE[selected.movement]}>{MOVEMENT_LABELS[selected.movement]}</Badge>}
                                 {selected.colour && <Badge tone="neutral">{STOCK_COLOUR_LABELS[selected.colour]}</Badge>}
                             </div>
@@ -899,7 +933,7 @@ export const LiveStockView = ({
                             <div className="grid grid-cols-3 gap-2">
                                 <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
                                     <p className="label">In stock</p>
-                                    <p className={cx('num text-[20px] font-semibold mt-1 leading-none', selected.quantity <= 0 ? 'text-label-3' : 'text-label')}>{formatQty(selected.quantity)}</p>
+                                    <p className={cx('num text-[20px] font-semibold mt-1 leading-none', a === 'out' ? 'text-dang' : 'text-label')}>{formatQty(selected.quantity)}</p>
                                     <p className="text-[11.5px] text-label-3 mt-1">{selected.unit || 'units'}{selected.quantityWithPo !== selected.quantity ? ` · +PO ${formatQty(selected.quantityWithPo)}` : ''}</p>
                                 </div>
                                 <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
@@ -977,7 +1011,8 @@ export const LiveStockView = ({
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
         </div>
     );
 };
