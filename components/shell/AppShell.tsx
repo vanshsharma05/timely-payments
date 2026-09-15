@@ -209,6 +209,8 @@ export interface AppShellProps {
   searchTerm: string;
   onSearch: (v: string) => void;
   searchPlaceholder?: string;
+  /** The placeholder a phone has room for; falls back to "Search customers". */
+  searchPlaceholderShort?: string;
 
   onSync?: () => void;
   isSyncing?: boolean;
@@ -243,6 +245,7 @@ export const AppShell = ({
   searchTerm,
   onSearch,
   searchPlaceholder = 'Search customers, contacts, notes',
+  searchPlaceholderShort = 'Search customers',
   onSync,
   isSyncing,
   readOnly,
@@ -344,7 +347,7 @@ export const AppShell = ({
                 onChange={e => onSearch(e.target.value)}
                 // The full placeholder is cut to "Search customers, co" in the
                 // width a phone leaves for it; say less rather than half.
-                placeholder={isPhone ? 'Search customers' : searchPlaceholder}
+                placeholder={isPhone ? searchPlaceholderShort : searchPlaceholder}
                 aria-label="Search"
                 className="w-full h-11 pl-12 pr-12 rounded-full bg-card-3 border border-transparent text-[14px] text-label placeholder:text-label-3 focus:bg-card focus:border-accent focus:shadow-e2 outline-none transition-all"
               />
@@ -671,9 +674,10 @@ export const AppShell = ({
                   )}
                 </span>
                 <span className={cx('text-[11px] leading-none truncate max-w-full', active ? 'font-bold' : 'font-medium')}>
-                  {/* "My performance" does not fit a fifth of a phone; the tab
-                      bar is already yours, so the "My" says nothing there. */}
-                  {item.label.replace(/^My /, '')}
+                  {/* "My performance" does not fit a sixth of a phone; the tab
+                      bar is already yours, so the "My" says nothing there, and
+                      a cheque tab under a cheque icon does not need "PDC". */}
+                  {item.label.replace(/^My /, '').replace(/^PDC cheques$/, 'Cheques')}
                 </span>
               </button>
             );

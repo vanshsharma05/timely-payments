@@ -968,6 +968,7 @@ Switching on the role name is what once left Manager and Viewer staring at an
 | `customers` | Customers / My customers | – |
 | `pdc` | PDC cheques | cheques due today, amber |
 | `reports` | Reports / My performance | – |
+| `stock` | Live stock | – |
 
 ### Setup tabs
 
@@ -1163,7 +1164,49 @@ Format help, expected headers, template download, the two sheet URLs, individual
 and combined sync, and a **factory reset** that clears cheques, templates and
 profile and re-imports the sheet — but never touches logins.
 
-### 9.10 Sign-in (`LoginScreen`)
+### 9.10 Live stock (`LiveStockView`) — a window onto the stores sheet
+
+The fifth work tab, for every role. It shows the **Live stock** page of the
+stores spreadsheet — 1,415 items, ₹2.50 Cr at the time of writing — and
+nothing of it is stored here: stock is the stores team's record, kept in the
+sheet, and the app reads it. `services/liveStock.ts` holds the sheet URL, the
+parser and the hook; nothing was added to the database or the API.
+
+**How it stays live.** `useLiveStock(enabled)` reads the page through the
+existing `/api/fetch-sheet` proxy (the `gviz` CSV, about a second) when the
+tab opens, then every 60 s while the tab is open **and visible**, and again
+the moment the window regains focus. A phone in a pocket pulls nothing. A
+failed read keeps the last good figures on screen with the failure said out
+loud; the last CSV is also kept in `localStorage`, so the page opens on
+figures marked "last read" and replaces them within a second.
+
+**Reading the sheet.** Columns are found by header, not position
+(`Prod_Category`, `Item_Code`, `Actual_Quantity`…), so the stores team can
+add or move one. The sheet's second row is their own legend and carries no
+item code; rows without a code are skipped. The coded columns decode as:
+
+| Column | Values | Read as |
+|---|---|---|
+| `Stock_Status` | `FM` / `OD` / `D` | **Stocked** — every FM row carries min/max levels and no other row does; **On demand** — no levels, bought against orders; **Dead stock** — no levels, no movement, nothing received in months |
+| `Short Stk Status` + `Short Stock Date` | `S` + date | below its minimum since that date — exactly the rows where quantity < min |
+| `Items_Movements` | FAST / SLOW / REVIEW | as written |
+| `Ageing` | days | days since `Last Recv. Dt`, as the sheet computes it |
+| `Color` | R / M / Y / G | a product attribute (the ink colour), shown as a dot — **not** a health flag |
+| `Amount` | ₹ | quantity × rate, the item's stock value |
+| `Photo` | a Drive share link | shown in the item drawer through Drive's thumbnail endpoint, with **no referrer** — with one, Drive answers with a page the browser refuses to show as an image |
+
+**The page.** Five tiles of the whole sheet, each a filter (value · short of
+minimum · dead stock · fast moving · not received in 90 days); value by brand
+and by how it is held; search, brand and sub-category, status / movement /
+last-received chips, short-only and in-stock-only, sort; a sortable table
+(rows on a phone, per [§12](#phone-layout)) windowed at 60; and a drawer per
+item — photo, chips, stock / value / rate, the quantity against its min and
+max with how much is short and what that costs, and **Open in sheet**, which
+deep-links to the row (`range=A<serial+2>`, since the sheet's S. No runs from
+row 3). The app-bar search applies here too, and the title's subtitle and
+placeholder are the sheet's, not the book's. Export needs `canExportData`.
+
+### 9.11 Sign-in (`LoginScreen`)
 
 Four screens, one journey: `email → password → in`, `email → reset link sent`,
 and `recovery link → choose a new password`.
@@ -1596,6 +1639,8 @@ services/
   googleSheetService.ts       795. CSV parsing, merge rules, getOutstandingForUser.
   useSupabaseSync.ts          137. The two change-detecting sync hooks.
   messageTemplate.ts          139. Template rendering.
+  liveStock.ts                300. The stores sheet: URL, header-driven parser,
+                            the coded columns decoded, useLiveStock() polling.
 
 api/
   _lib/supabase.ts          serviceClient / userClient / currentProfile / bearerToken
@@ -1621,6 +1666,8 @@ components/
                             on a phone.
   ui/PhoneAccountRow.tsx      150. One account as a phone row — used by the
                             customer book and the reports below md.
+  LiveStockView.tsx           780. The Live stock tab: tiles, breakdowns,
+                            filters, table / phone rows, item drawer, export.
 
   work/Workspace.tsx          Master-detail: the queue and the account together.
   work/Worklist.tsx           The six queues, their counts and their rows.

@@ -44,6 +44,15 @@ export const ChartIcon = ({ className }: IconProps) => (
   </svg>
 );
 
+/** Live stock: a carton, seen from the corner. */
+export const StockIcon = ({ className }: IconProps) => (
+  <svg {...base(className)}>
+    <path d="M12 3 3.5 7.5v9L12 21l8.5-4.5v-9z" />
+    <path d="M3.5 7.5 12 12l8.5-4.5M12 12v9" />
+    <path d="M7.5 5.4 16.5 9.9" />
+  </svg>
+);
+
 export const TeamIcon = ({ className }: IconProps) => (
   <svg {...base(className)}>
     <circle cx="9" cy="8" r="3.2" />

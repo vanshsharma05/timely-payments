@@ -21,7 +21,9 @@ import { CustomerEditModal } from './components/CustomerEditModal';
 import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
-import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
+import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
+import LiveStockView from './components/LiveStockView';
+import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
@@ -48,7 +50,7 @@ import WhatsAppReminderModal from './components/WhatsAppReminderModal';
  * and you were on the dashboard again. In the address bar it survives a
  * refresh, and a link to a particular screen is a link somebody can send.
  */
-const TAB_KEYS = ['overview', 'customers', 'pdc', 'reports', 'users', 'alerts', 'templates', 'source'];
+const TAB_KEYS = ['overview', 'customers', 'pdc', 'reports', 'stock', 'users', 'alerts', 'templates', 'source'];
 
 const tabFromLocation = (): string => {
     if (typeof window === 'undefined') return 'overview';
@@ -1268,6 +1270,13 @@ const App = () => {
     const navKey = rights.seesWholeBook ? adminTab : userTab;
     const fitsOneScreen = useFitsOneScreen();
 
+    /**
+     * The stores sheet, read live while the Live stock tab is open. Nothing of
+     * it is stored here: stock is the stores team's record, kept in the sheet,
+     * and this is a window onto it — see services/liveStock.ts.
+     */
+    const liveStock = useLiveStock(isAuthenticated && navKey === 'stock');
+
     useEffect(() => {
         if (!isAuthenticated || typeof window === 'undefined') return;
         if (tabFromLocation() === navKey) return;
@@ -1913,6 +1922,19 @@ const App = () => {
     );
 
     // Unified User Dashboard for CRM and Collector
+    const renderLiveStock = () => (
+        <LiveStockView
+            items={liveStock.items}
+            fetchedAt={liveStock.fetchedAt}
+            loading={liveStock.loading}
+            error={liveStock.error}
+            fromCache={liveStock.fromCache}
+            onRefresh={liveStock.refresh}
+            currentUser={currentUser}
+            globalSearch={searchTerm}
+        />
+    );
+
     const renderUserDashboard = () => {
         // Use lifted state
         const activeTab = userTab;
@@ -2199,6 +2221,8 @@ const App = () => {
                 )}
 
                 {activeTab === 'customers' && renderCustomerListView()}
+
+                {activeTab === 'stock' && renderLiveStock()}
             </>
         );
     };
@@ -2308,7 +2332,9 @@ const App = () => {
                     </Card>
                 )}
 
-                {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && (
+                {activeTab === 'stock' && renderLiveStock()}
+
+                {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && activeTab !== 'stock' && (
                     // On a phone the reports bring their own cards, so the wrapper
                     // steps out of the way; the setup pages keep it, a little tighter.
                     <div className={`bg-card rounded-lg shadow-md p-6 ${activeTab === 'reports' ? 'max-md:p-0 max-md:bg-transparent max-md:shadow-none' : 'max-md:p-4'}`}>
@@ -2836,6 +2862,25 @@ const App = () => {
                                             </div>
                                         )}
                                         
+                                        {/* The third sheet. Not imported and not synced: the Live
+                                            stock tab reads it straight, every minute it is open. */}
+                                        <div className="mt-8 pt-6 border-t border-separator">
+                                            <h4 className="text-sm font-semibold text-label-2 mb-1">Live stock sheet</h4>
+                                            <p className="text-xs text-label-3 mb-3">
+                                                The <strong className="text-label-2">Live stock</strong> tab reads the stores sheet directly and re-reads it
+                                                every minute while somebody has it open. Nothing from it is imported or stored here — the
+                                                stores team keeps the sheet, and the app shows it.
+                                            </p>
+                                            <a
+                                                href={LIVE_STOCK_SHEET_URL}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center px-4 py-2 bg-card-3 hover:bg-hover text-label rounded-lg border border-separator-strong font-bold text-xs transition-colors"
+                                            >
+                                                Open the Live stock sheet ↗
+                                            </a>
+                                        </div>
+
                                         <div className="mt-8 pt-6 border-t border-separator">
                                             <h4 className="text-sm font-semibold text-label-2 mb-3">Troubleshooting & Fresh Start</h4>
                                             <div className="flex flex-wrap items-center gap-3">
@@ -2918,6 +2963,9 @@ const App = () => {
         { key: 'customers', label: wholeBook ? 'Customers' : 'My customers', icon: <BookIcon /> },
         { key: 'pdc', label: 'PDC cheques', icon: <ChequeNavIcon />, badge: todayPdcMetrics.todayCount, badgeTone: 'warn' },
         { key: 'reports', label: wholeBook ? 'Reports' : 'My performance', icon: <ChartIcon /> },
+        // Everyone: a CRM on a call needs to know what is on the shelf as much
+        // as a manager does. Read-only for all, so no right gates it.
+        { key: 'stock', label: 'Live stock', icon: <StockIcon /> },
     ];
 
     // Setup is per role: only an Admin manages logins, and only Admin and
@@ -2948,6 +2996,7 @@ const App = () => {
         customers: wholeBook ? 'Customer book' : 'My customers',
         pdc: 'Post-dated cheques',
         reports: wholeBook ? 'Reports' : 'My performance',
+        stock: 'Live stock',
         users: 'Team & access',
         alerts: 'Alerts & reminders',
         templates: 'Message templates',
@@ -3033,6 +3082,24 @@ const App = () => {
             onChangePassword={() => setIsPasswordModalOpen(true)}
             title={PAGE_TITLE[safeKey] || 'Timely Payment'}
             subtitle={
+                // The stock page is about the stores sheet, not the book: its
+                // own figures, and none of the book's dates under them.
+                safeKey === 'stock' ? (
+                    liveStock.items.length ? (
+                        <span className="inline-flex items-center gap-2 flex-wrap">
+                            <span>{liveStock.items.length.toLocaleString('en-IN')} items</span>
+                            <span className="text-label-3">&middot;</span>
+                            <span className="num font-semibold text-label-2">{formatCompact(liveStock.items.reduce((a, i) => a + i.value, 0))}</span>
+                            <span>in stock</span>
+                            <span className="text-label-3">&middot;</span>
+                            <span className={liveStock.error ? 'text-warn font-semibold' : 'text-pos font-semibold'}>
+                                {liveStock.error ? 'sheet unreachable' : liveStock.fromCache ? 'last read' : 'live from the stores sheet'}
+                            </span>
+                        </span>
+                    ) : (
+                        <span className="text-label-3">Reading the stores sheet…</span>
+                    )
+                ) :
                 // Counting an empty book while it is still loading states a
                 // figure that is not merely unknown but wrong.
                 showSkeleton ? (
@@ -3048,11 +3115,13 @@ const App = () => {
             }
             searchTerm={searchTerm}
             onSearch={setSearchTerm}
+            searchPlaceholder={safeKey === 'stock' ? 'Search stock by item, brand, category' : undefined}
+            searchPlaceholderShort={safeKey === 'stock' ? 'Search stock' : undefined}
             onSync={rights.canSyncSheets ? () => handleGoogleSync() : undefined}
             isSyncing={isSyncing}
             readOnly={rights.isViewer}
-            dataAsOf={sheetUpdatedTillDate}
-            lastSyncTime={lastSyncTime}
+            dataAsOf={safeKey === 'stock' ? undefined : sheetUpdatedTillDate}
+            lastSyncTime={safeKey === 'stock' ? undefined : lastSyncTime}
             banner={shellBanner}
         >
             {showSkeleton ? (
