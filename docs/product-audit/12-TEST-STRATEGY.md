@@ -1,6 +1,15 @@
 # 12 — TEST STRATEGY
 
-Status: Phase 0 inventory; the strategy is written in Phase 13.
+Status: unit layer started 2026-09-17 (fourth session); the full strategy is written in Phase 13.
+
+## Unit / regression layer (new)
+
+- **Runner**: Vitest 3.2.7 (`vitest.config.ts`, node environment; a file that renders components declares `// @vitest-environment jsdom`). Dev dependencies added: `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/dom`. No production dependency changed.
+- **Commands**: `npm run test:run` (once) · `npm test` (watch). Needs nothing but `npm install` — no Supabase, no sheet, no sign-in (`supabaseClient` sees no `VITE_*` env and never creates a client).
+- **Files**: `tests/fixtures.ts` (synthetic accounts and users — `mixedAccount()` carries a collector, a Cr bucket among Dr ones, sheet-netted roll-ups, a settlement stamp, a declared rank, a forecast and a follow-up) · `tests/money.test.ts` (23 characterisation tests pinning M1–M8: `parseAmountAndType`, `netRollUp`, `overdueAgeing`, rank/bad debt, `hasOutstanding`, settlement, `mergeWithExistingFollowUps`, `processStatuses`, `chequeState`, the row mappers) · `tests/customerEditModal.dom.test.tsx` (13 C1 regression cases against the real dialog: no-change Save as CRM and Admin, the four corruption modes, collected-stays-collected, contact-only edits ×3, urgent, rank, note, changed date, an Admin's intentional money edit).
+- **Result**: 36/36 pass at the C1 fix; 11 of the 13 dialog cases failed on the code before it.
+- **Known gaps**: `useCollectionSync` (a hook with timers — testable with `renderHook` + fake timers in the R1 batch); `updateCustomers` (needs a fake Supabase client); the digest's scoping (server module, testable with fixture rows); Excel/master import mapping.
+
 
 What exists in the repo
 - No unit/integration test runner (no vitest/jest/playwright in `package.json`).

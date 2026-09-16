@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 85 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 89 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -41,7 +41,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `components/CrmPerformanceTable.tsx` | 180 | Per-CRM workload/score table (+ phone cards). | No | – | – | – | – | – | – | – | – | | | | |
 | `components/CustomerActivityPanel.tsx` | 462 | The shared activity thread on an account (notes, promises, system entries). | Partial | – | ok | – | ok | – | – | – | none | Entry kinds, promise resolution (skimmed) | | | |
 | `components/CustomerDashboardView.tsx` | 1729 | Customer book: filters (one counting rule), tiles, table/phone rows, bulk actions, export. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/CustomerEditModal.tsx` | 706 | Create/edit a customer (owner required, rank, contacts). | Partial | ok | issue | ok | ok | – | issue | – | none | C1: handleSave rebuilds the row — drops collector/PAN/settledAt, flattens ageing types, recomputes roll-ups (11 §1.4); disabled money inputs still written | | | |
+| `components/CustomerEditModal.tsx` | 306 | Create/edit a customer (owner required, rank, contacts). | Full | ok | ok | ok | ok | – | issue | – | **13 regression cases** | C1 (fixed 2026-09-17); T29 UTC date seed; money inputs' pre-existing recomputation pinned (Q10) | spread the existing record; write owner/date/money only when changed | done | tsc, build, 36/36 tests, interception probe |
 | `components/FollowUpModal.tsx` | 1124 | Record a follow-up: outcome, next date, expected amount (>90d preset), rank, owner/collector. | Partial | – | ok | – | ok | – | issue | – | none | Save and activity-mirror paths read (11 §1.2); U7 stamps lastFollowUpOn on any Save; D3 notes mirror | | | |
 | `components/LiveStockView.tsx` | 1418 | Live stock tab: folded overview, filters, list, compare mode/bar/panel, item drawer, export. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/LoginScreen.tsx` | 535 | Sign-in screen. | Partial | – | ok | ok | ok | – | – | – | none | Sign-in, reset, recovery event; readable errors | | | |
@@ -94,8 +94,13 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `vite.config.ts` | 22 | React + Tailwind plugins, manual vendor chunks. | No | – | – | – | – | – | – | – | – | | | | |
 | `scripts/tests/write-payload-probe.cjs` | 88 | Read-only probe: captures customer save payloads with every mutating request aborted. | Full | ok | ok | ok | ok | n/a | n/a | n/a | n/a | New this session: aborts every mutating request; evidence for 11 Part 1 | | | |
 
+| `vitest.config.ts` | 19 | Vitest config: node env, `tests/**`, React plugin. | Full | ok | n/a | n/a | n/a | n/a | n/a | n/a | n/a | | | | |
+| `tests/fixtures.ts` | 96 | Synthetic accounts/users for the unit tests (mixed Dr/Cr, collector, roll-ups, settlement). | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | n/a | | | | |
+| `tests/money.test.ts` | 190 | Characterisation of the money rules M1–M8, merge, statuses, cheque state, row mappers. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 23 tests | | | | |
+| `tests/customerEditModal.dom.test.tsx` | 203 | C1 regression against the real dialog (jsdom). | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 13 tests | | | | |
+
 ## Coverage
 
-- Reviewed at audit depth (Full): **8 / 85**; Partial (read for a workflow, not line by line): **21 / 85** — after the validation session of 2026-09-17 (85 = 84 + the new probe script).
+- Reviewed at audit depth (Full): **13 / 89**; Partial (read for a workflow, not line by line): **20 / 89** — after the C1 session of 2026-09-17 (89 = 85 + `vitest.config.ts` + three test files; `CustomerEditModal.tsx` moved Partial → Full).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

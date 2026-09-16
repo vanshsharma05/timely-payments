@@ -97,14 +97,20 @@ Self sign-up is disabled: accounts exist only because an Admin created them.
 ```bash
 npm run typecheck     # tsc, no emit
 npm run build         # typecheck + vite build + bundle the server
+npm run test:run      # unit and regression tests (vitest), no sign-in, no network
+npm run test          # the same, watching for changes
 npm run smoke         # signs in and screenshots the main screens
 npm run audit         # accessibility and contrast sweep
 node scripts/interact.cjs   # clicks things and checks they did something
 ```
 
+The unit tests live in `tests/` and run against synthetic data only: the money
+rules in `types.ts` and the sheet import, the row mappers, and the customer
+edit dialog rendered with jsdom. They need nothing but `npm install`.
+
 The browser-driven scripts need a real account: they read `ADMIN_EMAIL` and
 `ADMIN_PASSWORD` from `.deploy.local`, or `TIMELY_EMAIL` / `TIMELY_PASSWORD`
-from the environment.
+from the environment. See `scripts/tests/README.md` for which of them write.
 
 ## Deploying
 

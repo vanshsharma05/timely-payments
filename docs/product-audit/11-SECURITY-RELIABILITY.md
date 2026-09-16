@@ -1,6 +1,6 @@
 # 11 — SECURITY & RELIABILITY
 
-Status: Phase 1 findings **validated with evidence on 2026-09-17** (third session). Phases 11–12 (fixes) not started. Nothing below has been changed in code.
+Status: Phase 1 findings **validated with evidence on 2026-09-17** (third session). **C1 fixed** in the fourth session (see §1.4); R1, SEC3 and the rest are still open. Phases 11–12 (the remaining fixes) not started.
 
 Evidence used: code paths cited by file:line; two read-only queries of the production database (counts only); one browser probe (`scripts/tests/write-payload-probe.cjs`) that signs in as Admin and **aborts every mutating request at the network layer** before it leaves the browser, so the captured PATCH bodies are what the app *would* send — the two rows involved were re-read afterwards and are unchanged (`updated_at` 2026-09-14).
 
@@ -36,7 +36,7 @@ Handler line numbers are `App.tsx` unless noted. "Columns written" is always the
 | Follow-up "Save Follow-up & Contacts" | `FollowUpModal.handleSave` → `handleUpdateOutstanding` :620 | `updateCustomers` (PATCH all) | follow_up_date, status, forecast_*, is_urgent, contacts, additional_contacts, last_follow_up_on, optionally collector/owner/rank/category | `{...customer}` = the live row from this tab's `appData` (`liveSelectedCustomer` :610) | **Yes** | CRM saves next date at 10:00; Manager's tab (loaded 09:00) reassigns owner at 11:00 → Manager's PATCH restores the 09:00 date | P1 | CONFIRMED (probe #4) |
 | Log activity (note / no answer / promise / payment…) | `CustomerActivityPanel` → `repo.addActivity` (INSERT `customer_activity`) **and** `FollowUpModal.handleActivityLogged` → `handleUpdateOutstanding` | INSERT (safe) + `updateCustomers` (PATCH all) | notes[] += line, last_follow_up_on | snapshot | **Yes** (the mirror line write carries the whole row) | as above; two people logging notes on one account: second write drops the first's `notes[]` line (the activity row itself survives) | P1 | CONFIRMED (code) |
 | Promise save | same as activity | same | same | same | Yes | same | P1 | CONFIRMED |
-| Edit customer "Save" | `CustomerEditModal.handleSave` → `handleSaveCustomer` :242 | `updateCustomers` | contacts, master fields, rank, category, owner, follow-up date | **rebuilt from form state**, not spread — see Part 1.4 | **Yes, and worse**: fields the form does not carry are written as null/recomputed | any concurrent change; plus self-inflicted loss even with one user | **P1** | CONFIRMED (probe #1, #3) |
+| Edit customer "Save" | `CustomerEditModal.handleSubmit` → `handleSaveCustomer` :242 | `updateCustomers` | contacts, master fields, rank, category, urgency, note; owner/date/money only when changed | `{...customerToEdit}` **since the C1 fix** (was rebuilt from form state — Part 1.4) | Yes (R1, whole row) — the self-inflicted corruption is gone | any concurrent change | P1 (R1) | CONFIRMED (probe #1, #3 before; no PATCH on a no-change Save after) |
 | Owner assignment (row dropdown) | `handleReassignCrm` :838 | `updateCustomers` | crm_owner_id | snapshot | Yes | CRM records a follow-up while the Manager reassigns | P1 | CONFIRMED |
 | Bulk reassign / bulk rank | `handleBulkReassignCrm` :867, `handleBulkSetRank` :853 | `updateCustomers` × N | crm_owner_id / payment_rank | snapshot (N rows) | Yes, N rows at once | Manager grades 200 accounts from a morning tab; every follow-up any CRM saved that day on those 200 reverts | **P1** | CONFIRMED |
 | Bulk follow-up date (Admin) | `handleBulkSetFollowUp` :899 | `updateCustomers` × N + `addActivities` | follow_up_date, status | snapshot | Yes | as bulk above | P1 | CONFIRMED |
@@ -62,6 +62,12 @@ All customer writes by all writer roles (Admin, Manager, CRM, Collector). Exposu
 Blast radius today (read-only counts, 2026-09-17): **137** accounts carry a collector that one edit-dialog Save would drop; **13** owing accounts have a Cr bucket whose type would flatten; **6** owing accounts' `over90` differs from the absolute sum and would change; **69** `settled_at` stamps would clear; 0 PANs (column unused). Any Manager, CRM or Collector with `canEditCustomer` triggers it by editing a phone number.
 
 Classification: **C1 — data corruption on save, P1, CONFIRMED** (independent of concurrency). Not a business decision; a defect.
+
+**RESOLVED 2026-09-17 (fourth session).** `CustomerEditModal.handleSubmit` now builds an edited record as `{ ...customerToEdit, ...details }` — the existing record is the authority for everything the form does not own — and touches the owner, the follow-up date/status and the money block **only when the corresponding field was actually changed** from the value the form opened with (a `useRef` snapshot taken when the form is seeded; money additionally requires `canEditFinancials`). A new customer is still built from the form as before. Regression: `tests/customerEditModal.dom.test.tsx` renders the real dialog with a synthetic account carrying a collector, a Cr bucket, netted roll-ups and a settlement stamp; 11 of its 13 cases **failed on the old code** with exactly the captured corruption (collector → undefined, `>135` Cr → Dr, over90 116,028 → 285,906, dueOver45 → 374,650, pan → undefined, settledAt → undefined, Completed → Overdue) and all 13 pass now. Probe re-run (all writes aborted): a no-change Save of the two production accounts now produces **no PATCH at all** (nothing changed, so the sync hook has nothing to write); the follow-up dialog's urgency toggle still sends the whole row (that is R1, below) but with the collector intact.
+
+Two further modes the same reconstruction caused, fixed by the same change: a **collected (Completed) account was reopened** by any edit-dialog Save (status re-derived from the date field), and the **owner's stored spelling was rewritten** to the roster's canonical code on every Save (the app resolves both spellings, so this was harmless but was still an unrelated write). Not changed: the pre-existing recomputation an Admin gets when they *intentionally* edit a money figure (pinned by a test; Q10 still open), and the dialog's UTC-based date field (`toISOString().split('T')[0]`), which reads a day early in IST around midnight — recorded as T29.
+
+**C1 and R1 are different defects.** C1 was the *dialog* producing a wrong record; it is fixed. R1 is the *persistence layer* writing whole rows from a stale snapshot; it is **still open** — a correct record is still sent as a 36-column PATCH that can overwrite another tab's unrelated changes.
 
 ---
 
@@ -151,8 +157,8 @@ Options (technical, any of which can be combined with any answer to Q8): keep as
 | SEC4 | Auth trigger takes `role` from sign-up metadata | **DEFENSE-IN-DEPTH WEAKNESS** (latent) | Blocked today by `disable_signup = true` on the project (read via management API 2026-09-16), a dashboard switch outside the repo. Hardening the trigger (ignore metadata role unless created by the service role; default CRM) removes the dependency. |
 | SEC5 | Customer data to Gemini | **PRIVACY / POLICY DECISION** | See Part 5. Technically sound (server-side key, session required). |
 | SEC3 | Reset | **ACTUAL DATA-LOSS RISK (technical) + BUSINESS PERMISSION DECISION** | Part 3. |
-| C1 | Edit dialog rebuilds the row | **ACTUAL DEFECT** (data corruption) | Part 1.4. |
-| R1 | Whole-row last-writer-wins | **ACTUAL DEFECT** (lost updates) | Parts 1–2. |
+| C1 | Edit dialog rebuilds the row | **ACTUAL DEFECT** (data corruption) — **RESOLVED 2026-09-17**, regression tests in place | Part 1.4. |
+| R1 | Whole-row last-writer-wins | **ACTUAL DEFECT** (lost updates) — **OPEN**; next batch (Options A+B) | Parts 1–2. |
 
 ## Part 5 — Exactly what is sent to Gemini (SEC5 / Q9)
 

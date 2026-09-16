@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
@@ -62,6 +62,15 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     const [initialNote, setInitialNote] = useState('');
     const [isUrgent, setIsUrgent] = useState(false);
 
+    /**
+     * The form as it was when it opened, for the fields whose Save has a
+     * side effect beyond the value itself: the owner (a resolved spelling
+     * must not be written back as a change), the follow-up date (its status
+     * is derived only when the date is actually moved) and the money block
+     * (recomputed only when somebody with the right typed a new figure).
+     */
+    const opened = useRef({ crmOwnerId: '', followUpDate: '', total: 0, totalType: 'Dr' as BalanceType, a1_45: 0, a46_90: 0, a91_135: 0, aOver135: 0 });
+
     // Additional contacts
     const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
     const [newContactName, setNewContactName] = useState('');
@@ -86,14 +95,25 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setCategory(customerToEdit.category || '');
             // An owner saved under an older spelling still has to select its own
             // option, or opening the form would quietly reset it to blank.
-            setCrmOwnerId(findOwner(crmUsers, customerToEdit.crmOwnerId)?.id || customerToEdit.crmOwnerId || '');
-            setTotal(customerToEdit.total || 0);
-            setTotalType(customerToEdit.totalType || 'Dr');
-            setA1_45(customerToEdit.ageing?.['1-45'] || 0);
-            setA46_90(customerToEdit.ageing?.['46-90'] || 0);
-            setA91_135(customerToEdit.ageing?.['91-135'] || 0);
-            setAOver135(customerToEdit.ageing?.['>135'] || 0);
-            setFollowUpDate(customerToEdit.followUpDate ? new Date(customerToEdit.followUpDate).toISOString().split('T')[0] : '');
+            const owner = findOwner(crmUsers, customerToEdit.crmOwnerId)?.id || customerToEdit.crmOwnerId || '';
+            const followUp = customerToEdit.followUpDate ? new Date(customerToEdit.followUpDate).toISOString().split('T')[0] : '';
+            const money = {
+                total: customerToEdit.total || 0,
+                totalType: customerToEdit.totalType || 'Dr',
+                a1_45: customerToEdit.ageing?.['1-45'] || 0,
+                a46_90: customerToEdit.ageing?.['46-90'] || 0,
+                a91_135: customerToEdit.ageing?.['91-135'] || 0,
+                aOver135: customerToEdit.ageing?.['>135'] || 0,
+            };
+            opened.current = { crmOwnerId: owner, followUpDate: followUp, ...money };
+            setCrmOwnerId(owner);
+            setTotal(money.total);
+            setTotalType(money.totalType);
+            setA1_45(money.a1_45);
+            setA46_90(money.a46_90);
+            setA91_135(money.a91_135);
+            setAOver135(money.aOver135);
+            setFollowUpDate(followUp);
             setIsUrgent(Boolean(customerToEdit.isUrgent));
             setAdditionalContacts(customerToEdit.additionalContacts || []);
             setInitialNote('');
@@ -174,10 +194,6 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             return;
         }
 
-        const calculatedOver90 = a91_135 + aOver135;
-        const calculatedDueOver45 = a46_90 + calculatedOver90;
-        const finalTotal = total > 0 ? total : (a1_45 + calculatedDueOver45);
-
         const existingNotes = customerToEdit?.notes || [];
         const updatedNotes = [...existingNotes];
         if (initialNote.trim()) {
@@ -186,25 +202,37 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             updatedNotes.unshift(`[${dateStr} - ${author}] ${initialNote.trim()}`);
         }
 
-        const targetDate = followUpDate ? new Date(followUpDate) : undefined;
-        let newStatus = customerToEdit?.status || FollowUpStatus.Pending;
-        if (targetDate) {
+        /** Status from a follow-up date, the way this dialog has always derived it. */
+        const statusFor = (date: Date | undefined, fallback: FollowUpStatus): FollowUpStatus => {
+            if (!date) return fallback;
             const today = new Date();
-            today.setHours(0,0,0,0);
-            const targetMidnight = new Date(targetDate);
-            targetMidnight.setHours(0,0,0,0);
+            today.setHours(0, 0, 0, 0);
+            const targetMidnight = new Date(date);
+            targetMidnight.setHours(0, 0, 0, 0);
+            if (targetMidnight.getTime() === today.getTime()) return FollowUpStatus.Today;
+            if (targetMidnight < today) return FollowUpStatus.Overdue;
+            return FollowUpStatus.Upcoming;
+        };
 
-            if (targetMidnight.getTime() === today.getTime()) {
-                newStatus = FollowUpStatus.Today;
-            } else if (targetMidnight < today) {
-                newStatus = FollowUpStatus.Overdue;
-            } else {
-                newStatus = FollowUpStatus.Upcoming;
-            }
-        }
+        /** The money block as this form computes it — for a new customer, or an intentional edit by someone with the right. */
+        const moneyFromForm = () => {
+            const calculatedOver90 = a91_135 + aOver135;
+            const calculatedDueOver45 = a46_90 + calculatedOver90;
+            return {
+                total: total > 0 ? total : (a1_45 + calculatedDueOver45),
+                totalType,
+                ageing: { '1-45': a1_45, '46-90': a46_90, '91-135': a91_135, '>135': aOver135 },
+                ageingTypes: { '1-45': totalType, '46-90': totalType, '91-135': totalType, '>135': totalType },
+                over90: calculatedOver90,
+                over90Type: totalType,
+                dueOver45: calculatedDueOver45,
+                dueOver45Type: totalType,
+            };
+        };
 
-        const savedRecord: Outstanding = {
-            id: customerToEdit?.id || `cust_${Date.now()}_${encodeURIComponent(company.slice(0, 15).replace(/\s+/g, '_'))}`,
+        // What this dialog owns: the customer's details and directory, its
+        // classification, urgency, and the note typed here.
+        const details = {
             company: company.trim(),
             contactPerson: contactPerson.trim() || 'Accounts Dept',
             contactNumber: contactNumber.trim(),
@@ -218,37 +246,60 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             paymentTermsDays: paymentTermsDays,
             paymentRank: (paymentRank === 'Good' || paymentRank === 'Late' || paymentRank === 'Bad') ? paymentRank : undefined,
             category: normaliseCategory(category) || undefined,
-            crmOwnerId: crmOwnerId.trim(),
-            total: finalTotal,
-            totalType: totalType,
-            ageing: {
-                '1-45': a1_45,
-                '46-90': a46_90,
-                '91-135': a91_135,
-                '>135': aOver135,
-            },
-            ageingTypes: {
-                '1-45': totalType,
-                '46-90': totalType,
-                '91-135': totalType,
-                '>135': totalType,
-            },
-            over90: calculatedOver90,
-            over90Type: totalType,
-            dueOver45: calculatedDueOver45,
-            dueOver45Type: totalType,
             additionalContacts: additionalContacts,
-            followUpDate: targetDate,
-            forecastAmount: customerToEdit?.forecastAmount,
-            forecastDate: customerToEdit?.forecastDate,
-            status: newStatus,
             notes: updatedNotes,
             isUrgent: isUrgent,
-            isNewCustomer: isNew ? true : customerToEdit?.isNewCustomer,
-            addedAt: isNew ? new Date().toISOString() : customerToEdit?.addedAt,
-            creationDate: customerToEdit?.creationDate || new Date(),
-            lastFollowUpOn: initialNote.trim() ? new Date() : customerToEdit?.lastFollowUpOn,
         };
+
+        let savedRecord: Outstanding;
+        if (!customerToEdit) {
+            const targetDate = followUpDate ? new Date(followUpDate) : undefined;
+            savedRecord = {
+                id: `cust_${Date.now()}_${encodeURIComponent(company.slice(0, 15).replace(/\s+/g, '_'))}`,
+                ...details,
+                crmOwnerId: crmOwnerId.trim(),
+                ...moneyFromForm(),
+                followUpDate: targetDate,
+                status: statusFor(targetDate, FollowUpStatus.Pending),
+                isNewCustomer: true,
+                addedAt: new Date().toISOString(),
+                creationDate: new Date(),
+                lastFollowUpOn: initialNote.trim() ? new Date() : undefined,
+            };
+        } else {
+            /**
+             * An existing account keeps everything this form does not own —
+             * its collector, its settlement stamp, its PAN, its forecast, and
+             * above all the money the sheet gave it, Dr/Cr types and netted
+             * roll-ups included. This dialog used to rebuild the whole record
+             * from its fields, so a Save that changed nothing dropped the
+             * collector, turned a credit bucket into a debit and replaced the
+             * sheet's ₹1,16,028 past 90 days with a ₹2,85,906 sum of absolute
+             * values — on every account anyone edited a phone number on.
+             */
+            const before = opened.current;
+            const ownerChanged = crmOwnerId.trim() !== before.crmOwnerId;
+            const followUpChanged = followUpDate !== before.followUpDate;
+            const moneyChanged = canEditFinancials && (
+                total !== before.total || totalType !== before.totalType ||
+                a1_45 !== before.a1_45 || a46_90 !== before.a46_90 || a91_135 !== before.a91_135 || aOver135 !== before.aOver135
+            );
+
+            savedRecord = {
+                ...customerToEdit,
+                ...details,
+                lastFollowUpOn: initialNote.trim() ? new Date() : customerToEdit.lastFollowUpOn,
+            };
+            // A resolved spelling of the same owner is not a change; only a
+            // different choice writes the owner.
+            if (ownerChanged) savedRecord.crmOwnerId = crmOwnerId.trim();
+            if (followUpChanged) {
+                const targetDate = followUpDate ? new Date(followUpDate) : undefined;
+                savedRecord.followUpDate = targetDate;
+                savedRecord.status = statusFor(targetDate, customerToEdit.status || FollowUpStatus.Pending);
+            }
+            if (moneyChanged) Object.assign(savedRecord, moneyFromForm());
+        }
 
         onSave(savedRecord);
     };
