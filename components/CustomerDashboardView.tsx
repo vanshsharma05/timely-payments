@@ -158,11 +158,15 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         setVisibleCount(PAGE);
     }, [searchTerm, globalSearch, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter, viewMode]);
 
-    // Hiding filters must never hide the fact that they are ON.
+    // Hiding filters must never hide the fact that they are ON. Every filter
+    // counts — it used to leave out the CRM and the status, so "1 filter on"
+    // could sit above a list narrowed by three.
     const activeFilterCount = [
         rankFilter !== 'ALL',
         categoryFilter !== 'ALL',
+        selectedCrm !== 'ALL',
         ageingFilter !== 'all',
+        statusFilter !== 'ALL',
         balanceTypeFilter !== 'ALL',
         originFilter !== 'ALL',
     ].filter(Boolean).length;
@@ -282,11 +286,34 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * and separately, so the screen can say "one settled customer matches" and
      * offer to show it.
      */
-    const { filteredData, hiddenBySettlement, rankCounts } = useMemo(() => {
+    /**
+     * The list, and what every filter control says beside each of its options.
+     *
+     * One rule for all of them: an option's count is how many rows it would
+     * show, given every *other* filter and the tab in view. Counting after a
+     * control's own filter meant choosing "Late pay" left Good and Bad reading
+     * (0), which looks like the app losing the customers rather than a filter
+     * working; counting the whole book meant "All CRMs (4,027)" sat above a
+     * ledger of 520. So each row is tested against every filter once, and it
+     * counts towards a control's options when it fails no filter but that
+     * control's own.
+     */
+    const { filteredData, hiddenBySettlement, counts } = useMemo(() => {
+        type Dim = 'rank' | 'category' | 'crm' | 'ageing' | 'status' | 'balance' | 'origin';
         const kept: Outstanding[] = [];
         let hidden = 0;
-        const rankCounts: Record<'ALL' | PaymentRank, number> = { ALL: 0, Good: 0, Late: 0, Bad: 0 };
-        const passesEverythingElse = (item: Outstanding): boolean => {
+        const counts = {
+            rank: { ALL: 0, Good: 0, Late: 0, Bad: 0 } as Record<'ALL' | PaymentRank, number>,
+            ageing: { all: 0, current: 0, dueOver45: 0, over90: 0, over135: 0 },
+            category: new Map<string, number>(), categoryAll: 0, uncategorised: 0,
+            crm: new Map<string, number>(), crmAll: 0, unassigned: 0,
+            status: new Map<string, number>(), statusAll: 0,
+            balance: { ALL: 0, Dr: 0, Cr: 0 } as Record<'ALL' | 'Dr' | 'Cr', number>,
+            origin: { ALL: 0, NEW: 0, SHEET: 0 } as Record<'ALL' | 'NEW' | 'SHEET', number>,
+        };
+        const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1);
+
+        const matchesText = (item: Outstanding): boolean => {
             if (!matchesQuery(item, globalSearch)) return false;
             // Search match across company, contact, mobile, email, GSTIN, City, State, additional contacts
             if (searchTerm.trim()) {
@@ -308,80 +335,91 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     return false;
                 }
             }
-
-            // Category (Builder / Dealer / Retailer / trade)
-            if (categoryFilter !== 'ALL') {
-                const itemCategory = (item.category || '').trim();
-                if (categoryFilter === 'UNCATEGORISED') {
-                    if (itemCategory) return false;
-                } else if (itemCategory !== categoryFilter) {
-                    return false;
-                }
-            }
-
-
-            // CRM Filter. Resolved through the roster, so an account saved
-            // under a display name still lands in its owner's portfolio.
-            if (selectedCrm !== 'ALL') {
-                const ownerRaw = (item.crmOwnerId || '').trim();
-                if (selectedCrm === 'UNASSIGNED') {
-                    if (ownerRaw !== '') return false;
-                } else {
-                    const canonical = findOwner(users, ownerRaw)?.id || ownerRaw;
-                    if (ownerKey(canonical) !== ownerKey(selectedCrm)) return false;
-                }
-            }
-
-            // Ageing — on what is actually overdue, never on a credit that
-            // happens to be old. See overdueAgeing().
-            if (ageingFilter !== 'all') {
-                const { a1, a2, a3, over45, over90, over135 } = overdueAgeing(item);
-
-                if (ageingFilter === 'current' && !(a1 > 0 && over45 <= 0)) return false;
-                if (ageingFilter === 'over90' && over90 <= 0) return false;
-                if (ageingFilter === 'over135' && over135 <= 0) return false;
-                if (ageingFilter === 'dueOver45' && over45 <= 0) return false;
-                if (ageingFilter === '91-135' && a3 <= 0) return false;
-                if (ageingFilter === '46-90' && a2 <= 0) return false;
-                if (ageingFilter === '1-45' && a1 <= 0) return false;
-            }
-
-            // Balance Type Filter
-            if (balanceTypeFilter !== 'ALL') {
-                const itemType = item.totalType || 'Dr';
-                if (itemType !== balanceTypeFilter) return false;
-            }
-
-            // Status Filter
-            if (statusFilter !== 'ALL') {
-                if (item.status !== statusFilter) return false;
-            }
-
-            // Origin Filter
-            if (originFilter === 'NEW' && !item.isNewCustomer) return false;
-            if (originFilter === 'SHEET' && item.isNewCustomer) return false;
-
             return true;
         };
 
         userAllowedData.forEach(item => {
-            if (!passesEverythingElse(item)) return;
+            if (!matchesText(item)) return;
+
+            // What the row is, on each axis.
             const rank = getCustomerPaymentRank(item);
+            const itemCategory = (item.category || '').trim();
+            // CRM resolved through the roster, so an account saved under a
+            // display name still lands in its owner's portfolio.
+            const ownerRaw = (item.crmOwnerId || '').trim();
+            const ownerK = ownerRaw ? ownerKey(findOwner(users, ownerRaw)?.id || ownerRaw) : '';
+            // Ageing — on what is actually overdue, never on a credit that
+            // happens to be old. See overdueAgeing().
+            const { a1, a2, a3, over45, over90, over135 } = overdueAgeing(item);
+            const isCurrent = a1 > 0 && over45 <= 0;
+            const balance = item.totalType || 'Dr';
+            const origin = item.isNewCustomer ? 'NEW' : 'SHEET';
+
+            // Which filters the row fails.
+            const fails = new Set<Dim>();
+            if (rankFilter !== 'ALL' && rank !== rankFilter) fails.add('rank');
+            if (categoryFilter !== 'ALL' && (categoryFilter === 'UNCATEGORISED' ? itemCategory !== '' : itemCategory !== categoryFilter)) fails.add('category');
+            if (selectedCrm !== 'ALL' && (selectedCrm === 'UNASSIGNED' ? ownerRaw !== '' : ownerK !== ownerKey(selectedCrm))) fails.add('crm');
+            if (ageingFilter !== 'all') {
+                if (ageingFilter === 'current' && !isCurrent) fails.add('ageing');
+                if (ageingFilter === 'over90' && over90 <= 0) fails.add('ageing');
+                if (ageingFilter === 'over135' && over135 <= 0) fails.add('ageing');
+                if (ageingFilter === 'dueOver45' && over45 <= 0) fails.add('ageing');
+                if (ageingFilter === '91-135' && a3 <= 0) fails.add('ageing');
+                if (ageingFilter === '46-90' && a2 <= 0) fails.add('ageing');
+                if (ageingFilter === '1-45' && a1 <= 0) fails.add('ageing');
+            }
+            if (statusFilter !== 'ALL' && item.status !== statusFilter) fails.add('status');
+            if (balanceTypeFilter !== 'ALL' && balance !== balanceTypeFilter) fails.add('balance');
+            if (originFilter === 'NEW' && !item.isNewCustomer) fails.add('origin');
+            if (originFilter === 'SHEET' && item.isNewCustomer) fails.add('origin');
+
             const inThisTab = matchesSettlement(item, settlementFilter);
+            if (fails.size === 0) {
+                if (inThisTab) kept.push(item);
+                else hidden++;
+            }
+            if (!inThisTab) return;
 
-            // Counted before the rank filter is applied, and only for the tab
-            // in view: a rank button has to say how many rows it would show, not
-            // how many survived the button already pressed. Counting after meant
-            // choosing "Late pay" left Good and Bad reading (0), which looks
-            // like the app losing the customers rather than a filter working.
-            if (inThisTab) { rankCounts.ALL++; rankCounts[rank]++; }
-
-            if (rankFilter !== 'ALL' && rank !== rankFilter) return;
-            if (inThisTab) kept.push(item);
-            else hidden++;
+            // The row counts towards a control when it fails nothing but that
+            // control's own filter.
+            const countsFor = (d: Dim) => fails.size === 0 || (fails.size === 1 && fails.has(d));
+            if (countsFor('rank')) { counts.rank.ALL++; counts.rank[rank]++; }
+            if (countsFor('ageing')) {
+                counts.ageing.all++;
+                if (isCurrent) counts.ageing.current++;
+                if (over45 > 0) counts.ageing.dueOver45++;
+                if (over90 > 0) counts.ageing.over90++;
+                if (over135 > 0) counts.ageing.over135++;
+            }
+            if (countsFor('category')) { counts.categoryAll++; if (itemCategory) bump(counts.category, itemCategory); else counts.uncategorised++; }
+            if (countsFor('crm')) { counts.crmAll++; if (ownerK) bump(counts.crm, ownerK); else counts.unassigned++; }
+            if (countsFor('status')) { counts.statusAll++; bump(counts.status, item.status); }
+            if (countsFor('balance')) { counts.balance.ALL++; counts.balance[balance === 'Cr' ? 'Cr' : 'Dr']++; }
+            if (countsFor('origin')) { counts.origin.ALL++; counts.origin[origin]++; }
         });
-        return { filteredData: kept, hiddenBySettlement: hidden, rankCounts };
+        return { filteredData: kept, hiddenBySettlement: hidden, counts };
     }, [userAllowedData, users, globalSearch, searchTerm, rankFilter, selectedCrm, settlementFilter, categoryFilter, ageingFilter, statusFilter, balanceTypeFilter, originFilter]);
+    const rankCounts = counts.rank;
+
+    /**
+     * The overdue column follows the ageing chip. With ">90d" pressed the
+     * question is how much of each account is past 90 days, so that is the
+     * figure shown and the order of the list — largest first — rather than
+     * "Due >45 days" in alphabetical order under every chip, which is what
+     * made the three chips look like they were not doing anything.
+     */
+    const focusColumn = useMemo(() => {
+        switch (ageingFilter) {
+            case 'current': return { label: 'Within 45 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.a1 };
+            case 'over90': return { label: 'Due >90 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.over90 };
+            case 'over135': return { label: 'Due >135 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.over135 };
+            case '1-45': return { label: '1–45 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.a1 };
+            case '46-90': return { label: '46–90 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.a2 };
+            case '91-135': return { label: '91–135 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.a3 };
+            default: return { label: 'Due >45 days', pick: (o: ReturnType<typeof overdueAgeing>) => o.over45 };
+        }
+    }, [ageingFilter]);
 
     /** True while somebody is looking for a particular customer. */
     const isSearching = Boolean(globalSearch.trim() || searchTerm.trim());
@@ -396,6 +434,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * at the bottom.
      */
     const orderedData = useMemo(() => {
+        if (settlementFilter !== 'settled' && ageingFilter !== 'all') {
+            return [...filteredData].sort((a, b) => focusColumn.pick(overdueAgeing(b)) - focusColumn.pick(overdueAgeing(a)) || a.company.localeCompare(b.company));
+        }
         if (settlementFilter !== 'settled') return filteredData;
         return [...filteredData].sort((a, b) => {
             const at = a.settledAt || '';
@@ -405,7 +446,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             if (bt) return 1;
             return a.company.localeCompare(b.company);
         });
-    }, [filteredData, settlementFilter]);
+    }, [filteredData, settlementFilter, ageingFilter, focusColumn]);
 
     // Metrics summary for filtered dataset
     const metrics = useMemo(() => {
@@ -740,9 +781,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
                         {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
-                        {(rankFilter !== 'ALL' || selectedCrm !== 'ALL' || statusFilter !== 'ALL' || categoryFilter !== 'ALL' || activeFilterCount > 0) && (
+                        {activeFilterCount > 0 && (
                             <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
-                                {[rankFilter !== 'ALL', selectedCrm !== 'ALL', statusFilter !== 'ALL', categoryFilter !== 'ALL', ageingFilter !== 'all', balanceTypeFilter !== 'ALL', originFilter !== 'ALL'].filter(Boolean).length}
+                                {activeFilterCount}
                             </span>
                         )}
                     </button>
@@ -774,12 +815,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setCategoryFilter(e.target.value)}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent max-md:h-11 max-md:text-[14px]"
                         >
-                            <option value="ALL">All categories ({userAllowedData.length})</option>
-                            {categoriesInData.list.map(([name, count]) => (
-                                <option key={name} value={name}>{name} ({count})</option>
+                            <option value="ALL">All categories ({counts.categoryAll})</option>
+                            {categoriesInData.list.map(([name]) => (
+                                <option key={name} value={name}>{name} ({counts.category.get(name) || 0})</option>
                             ))}
                             {categoriesInData.uncategorised > 0 && (
-                                <option value="UNCATEGORISED">Not set ({categoriesInData.uncategorised})</option>
+                                <option value="UNCATEGORISED">Not set ({counts.uncategorised})</option>
                             )}
                         </select>
                     </div>
@@ -795,11 +836,11 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             disabled={!canViewAllCrms && currentUser?.role === UserRole.CRM}
                             className="w-full py-1.5 px-2.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-bold focus:ring-2 focus:ring-accent disabled:opacity-60 max-md:h-11 max-md:text-[14px]"
                         >
-                            <option value="ALL">All CRMs ({data.length} Accounts)</option>
+                            <option value="ALL">All CRMs ({counts.crmAll})</option>
                             {allCrmsInDataset.map(crm => (
-                                <option key={crm} value={crm}>{crm} Portfolio</option>
+                                <option key={crm} value={crm}>{crm} ({counts.crm.get(ownerKey(crm)) || 0})</option>
                             ))}
-                            <option value="UNASSIGNED">Unassigned Accounts ({unassigned.length})</option>
+                            <option value="UNASSIGNED">Unassigned ({counts.unassigned})</option>
                         </select>
                     </div>
 
@@ -813,12 +854,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setStatusFilter(e.target.value)}
                             className="w-full py-1.5 px-2 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white font-medium focus:ring-2 focus:ring-accent max-md:h-11 max-md:text-[14px]"
                         >
-                            <option value="ALL">All Statuses</option>
-                            <option value={FollowUpStatus.Today}>Due Today</option>
-                            <option value={FollowUpStatus.Overdue}>Overdue</option>
-                            <option value={FollowUpStatus.Upcoming}>Upcoming</option>
-                            <option value={FollowUpStatus.Pending}>Pending</option>
-                            <option value={FollowUpStatus.Completed}>Completed</option>
+                            <option value="ALL">All statuses ({counts.statusAll})</option>
+                            <option value={FollowUpStatus.Today}>Due today ({counts.status.get(FollowUpStatus.Today) || 0})</option>
+                            <option value={FollowUpStatus.Overdue}>Overdue ({counts.status.get(FollowUpStatus.Overdue) || 0})</option>
+                            <option value={FollowUpStatus.Upcoming}>Upcoming ({counts.status.get(FollowUpStatus.Upcoming) || 0})</option>
+                            <option value={FollowUpStatus.Pending}>Pending ({counts.status.get(FollowUpStatus.Pending) || 0})</option>
+                            <option value={FollowUpStatus.Completed}>Completed ({counts.status.get(FollowUpStatus.Completed) || 0})</option>
                         </select>
                     </div>
                 </div>
@@ -893,7 +934,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
                             }`}
                         >
-                            All Ageing
+                            All Ageing ({counts.ageing.all})
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'current' ? 'all' : 'current')}
@@ -904,7 +945,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-emerald-50 dark:bg-emerald-950/40 text-pos border border-emerald-200 dark:border-emerald-800'
                             }`}
                         >
-                            Current (&le;45d)
+                            Current &le;45d ({counts.ageing.current})
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'dueOver45' ? 'all' : 'dueOver45')}
@@ -915,7 +956,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                             }`}
                         >
-                            &gt;45d
+                            &gt;45d ({counts.ageing.dueOver45})
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'over90' ? 'all' : 'over90')}
@@ -926,7 +967,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-orange-50 dark:bg-orange-950/40 text-age-3-ink border border-orange-200 dark:border-orange-800'
                             }`}
                         >
-                            &gt;90d
+                            &gt;90d ({counts.ageing.over90})
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'over135' ? 'all' : 'over135')}
@@ -937,21 +978,21 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-red-50 dark:bg-red-950/40 text-dang border border-red-200 dark:border-red-800'
                             }`}
                         >
-                            &gt;135d
+                            &gt;135d ({counts.ageing.over135})
                         </button>
                     </div>
 
                     {/* Balance Type & Origin Toggles */}
                     <div className="flex items-center gap-1.5">
                         <select
-                            aria-label="Filter by payment rank"
+                            aria-label="Filter by balance type"
                             value={balanceTypeFilter}
                             onChange={e => setBalanceTypeFilter(e.target.value as any)}
                             className="text-[12.5px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-200"
                         >
-                            <option value="ALL">All Balances (Dr/Cr)</option>
-                            <option value="Dr">Dr (Due)</option>
-                            <option value="Cr">Cr (Advance)</option>
+                            <option value="ALL">All balances ({counts.balance.ALL})</option>
+                            <option value="Dr">Dr — owes us ({counts.balance.Dr})</option>
+                            <option value="Cr">Cr — in credit ({counts.balance.Cr})</option>
                         </select>
 
                         <select
@@ -960,16 +1001,18 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             onChange={e => setOriginFilter(e.target.value as any)}
                             className="text-[12.5px] px-2 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-semibold text-gray-800 dark:text-gray-200"
                         >
-                            <option value="ALL">All Sources</option>
-                            <option value="NEW">Created ({metrics.newCount})</option>
-                            <option value="SHEET">Sheet Synced</option>
+                            <option value="ALL">All sources ({counts.origin.ALL})</option>
+                            <option value="NEW">Created here ({counts.origin.NEW})</option>
+                            <option value="SHEET">From the sheet ({counts.origin.SHEET})</option>
                         </select>
 
-                        {(searchTerm || rankFilter !== 'ALL' || selectedCrm !== 'ALL' || ageingFilter !== 'all' || statusFilter !== 'ALL' || balanceTypeFilter !== 'ALL' || originFilter !== 'ALL') && (
+                        {(searchTerm || activeFilterCount > 0) && (
                             <button
                                 onClick={() => {
+                                    setSearchDraft('');
                                     setSearchTerm('');
                                     setRankFilter('ALL');
+                                    setCategoryFilter('ALL');
                                     setSelectedCrm('ALL');
                                     setAgeingFilter('all');
                                     setStatusFilter('ALL');
@@ -1190,6 +1233,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             </span>
                             {/* What the bar colours mean, said once instead of per row. */}
                             <AgeingLegend className="gap-3" />
+                            {ageingFilter !== 'all' && settlementFilter !== 'settled' && (
+                                <span className="text-[12px] text-label-3 font-medium">· {focusColumn.label.toLowerCase()}, largest first</span>
+                            )}
                         </div>
 
                     </div>
@@ -1220,7 +1266,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     <th className="px-3.5 py-2.5 min-w-[210px]">Customer & Contact Details</th>
                                     <th className="px-3 py-2.5 text-right w-24">Balance</th>
                                     <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
-                                    <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">Due &gt;45 Days</th>
+                                    <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">{focusColumn.label}</th>
                                     <th className="px-2.5 py-2.5 text-center w-36">Follow-up / Status</th>
                                     <th className="px-2.5 py-2.5 text-left w-32">CRM Owner</th>
                                     <th className="px-3 py-2.5 text-right w-44 z-20 bg-slate-100 dark:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">Actions</th>
@@ -1233,7 +1279,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
                                     // Receivable ageing: a credit account's bar is empty, and its
                                     // balance carries the CR badge that says why.
-                                    const { a1, a2, a3, a4, over45: due45 } = overdueAgeing(item);
+                                    const overdue = overdueAgeing(item);
+                                    const { a1, a2, a3, a4 } = overdue;
+                                    const focus = focusColumn.pick(overdue);
 
                                     const isChecked = selectedCustomerIds.includes(item.id);
                                     const rank = getCustomerPaymentRank(item);
@@ -1401,13 +1449,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 </div>
                                             </td>
 
-                                            {/* Due >45 */}
+                                            {/* The chip's column: Due >45 days unless a chip says otherwise */}
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10">
                                                 <span
-                                                    className={`num text-[12.5px] ${due45 > 0 ? 'text-dang font-extrabold' : 'text-label-3'}`}
-                                                    title={formatCompact(due45)}
+                                                    className={`num text-[12.5px] ${focus > 0 ? (ageingFilter === 'current' || ageingFilter === '1-45' ? 'text-label font-extrabold' : 'text-dang font-extrabold') : 'text-label-3'}`}
+                                                    title={formatCompact(focus)}
                                                 >
-                                                    {formatINR(due45)}
+                                                    {formatINR(focus)}
                                                 </span>
                                             </td>
 

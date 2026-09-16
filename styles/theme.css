@@ -339,7 +339,11 @@
   *, *::before, *::after { border-color: var(--separator); }
 }
 
-html { color-scheme: light dark; }
+/* Native controls (tick boxes, selects, date pickers) follow the theme the
+   app is showing, not the operating system's — "light dark" let the OS pick,
+   and drew dark tick boxes on a light page whenever the two disagreed. */
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
 
 body {
   background-color: var(--bg);

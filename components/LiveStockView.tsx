@@ -36,10 +36,12 @@ import { ChevronDown } from './shell/NavIcons';
    knowing — is not an everyday need, so it sits folded above the list and
    opens with one click, for everyone, closed again on the next visit.
 
-   Several products at once: every row has a tick box, the ticks survive a
-   change of search or filter (that is the point — find one, tick it, find
-   the next), and "Compare" lays the ticked items side by side, one column
-   each, the same facts in the same rows.
+   Several products at once: "Compare" in the list's header puts a tick box
+   on every row — the everyday list carries none — and the ticks survive a
+   change of search or filter (that is the point: find one, tick it, find
+   the next). A bar at the foot of the screen keeps the picks in view
+   wherever the list has scrolled to, and "Compare" lays them side by side,
+   one column each, the same facts in the same rows.
    ============================================================================ */
 
 interface LiveStockViewProps {
@@ -110,13 +112,14 @@ const formatQty = (n: number, unit?: string) => {
 const COMPARE_MAX = 8;
 /** The ticks outlive a tab change — the search for the next item often goes through the book. */
 const COMPARE_KEY = 'timely_stock_compare';
-const readCompareIds = (): string[] => {
+const readCompare = (): { on: boolean; ids: string[] } => {
     try {
-        const v = JSON.parse(sessionStorage.getItem(COMPARE_KEY) || '[]');
-        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, COMPARE_MAX) : [];
-    } catch { return []; }
+        const v = JSON.parse(sessionStorage.getItem(COMPARE_KEY) || '{}');
+        const ids = Array.isArray(v?.ids) ? v.ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, COMPARE_MAX) : [];
+        return { on: Boolean(v?.on) || ids.length > 0, ids };
+    } catch { return { on: false, ids: [] }; }
 };
-const writeCompareIds = (ids: string[]) => { try { sessionStorage.setItem(COMPARE_KEY, JSON.stringify(ids)); } catch { /* private window */ } };
+const writeCompare = (on: boolean, ids: string[]) => { try { sessionStorage.setItem(COMPARE_KEY, JSON.stringify({ on, ids })); } catch { /* private window */ } };
 
 /** "1 day ago" / "127 days ago" — for the receipt ageing. */
 const daysAgo = (n: number) => `${n} day${n === 1 ? '' : 's'} ago`;
@@ -284,7 +287,8 @@ const CompareTick = ({ item, checked, disabled, onToggle, className }: { item: S
             disabled={disabled}
             onChange={onToggle}
             aria-label={`${checked ? 'Take out of the comparison:' : 'Compare'} ${item.code}`}
-            className="w-[18px] h-[18px] rounded text-accent focus:ring-accent disabled:opacity-40 max-md:w-5 max-md:h-5"
+            className="w-[18px] h-[18px] rounded focus:ring-accent disabled:opacity-40 max-md:w-5 max-md:h-5"
+            style={{ accentColor: 'var(--accent)' }}
         />
     </label>
 );
@@ -341,9 +345,10 @@ export const LiveStockView = ({
     /* ------------------------------ compare ------------------------------ */
     // Ticked item ids, in the order they were ticked. Kept as ids so that a
     // re-read of the sheet replaces each with its current row.
-    const [compareIds, setCompareIds] = useState<string[]>(readCompareIds);
+    const [compareMode, setCompareMode] = useState<boolean>(() => readCompare().on);
+    const [compareIds, setCompareIds] = useState<string[]>(() => readCompare().ids);
     const [compareOpen, setCompareOpen] = useState(false);
-    useEffect(() => { writeCompareIds(compareIds); }, [compareIds]);
+    useEffect(() => { writeCompare(compareMode, compareIds); }, [compareMode, compareIds]);
     const compared = useMemo(
         () => compareIds.map(id => items.find(i => i.id === id)).filter((i): i is StockItem => Boolean(i)),
         [compareIds, items],
@@ -352,6 +357,8 @@ export const LiveStockView = ({
     const isCompared = (id: string) => compareIds.includes(id);
     const toggleCompare = (id: string) => setCompareIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : ids.length >= COMPARE_MAX ? ids : [...ids, id]));
     const clearCompare = () => { setCompareIds([]); setCompareOpen(false); };
+    // "Done" puts the list back the way it was: no boxes, no picks.
+    const leaveCompare = () => { setCompareIds([]); setCompareOpen(false); setCompareMode(false); };
     // Nothing to lay side by side once the ticks are gone.
     useEffect(() => { if (compared.length === 0) setCompareOpen(false); }, [compared.length]);
     useEffect(() => {
@@ -542,8 +549,8 @@ export const LiveStockView = ({
     const nothingYet = items.length === 0;
 
     return (
-        // Room at the foot for the compare tray, so the last row is never under it.
-        <div className={cx('space-y-5 max-md:space-y-4', compared.length > 0 && 'pb-16')}>
+        // Room at the foot for the compare bar, so the last row is never under it.
+        <div className={cx('space-y-5 max-md:space-y-4', compareMode && 'pb-20')}>
             {/* ---------- freshness: one line ---------- */}
             <div className={cx(
                 'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[14px] px-4 py-2 text-[13px]',
@@ -889,16 +896,33 @@ export const LiveStockView = ({
                                 )}
                                 <span className="text-label-3 font-medium"> in view</span>
                             </span>
-                            {canExport && filtered.length > 0 && (
+                            <span className="flex items-center gap-2">
+                                {/* Several at once: this puts a tick box on every row. */}
                                 <button
                                     type="button"
-                                    onClick={() => exportExcel()}
-                                    className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover"
+                                    onClick={() => (compareMode ? leaveCompare() : setCompareMode(true))}
+                                    aria-pressed={compareMode}
+                                    className={cx(
+                                        'h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold border transition-colors',
+                                        compareMode
+                                            ? 'bg-accent text-on-accent border-accent'
+                                            : 'bg-card border-separator-strong text-label-2 hover:bg-hover',
+                                    )}
                                 >
-                                    <DownloadIcon className="w-3.5 h-3.5" />
-                                    Export {filtered.length === items.length ? 'all' : 'these'}
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5" /><rect x="14" y="4" width="7" height="16" rx="1.5" /></svg>
+                                    {compareMode ? 'Done' : 'Compare'}
                                 </button>
-                            )}
+                                {canExport && filtered.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => exportExcel()}
+                                        className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover"
+                                    >
+                                        <DownloadIcon className="w-3.5 h-3.5" />
+                                        Export {filtered.length === items.length ? 'all' : 'these'}
+                                    </button>
+                                )}
+                            </span>
                         </div>
 
                         {filtered.length === 0 ? (
@@ -914,11 +938,11 @@ export const LiveStockView = ({
                                     const ticked = isCompared(item.id);
                                     return (
                                         <div key={item.id} className={cx('flex items-stretch', ticked && 'bg-accent-tint')}>
-                                        <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} className="pl-3 pr-1" />
+                                        {compareMode && <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} className="pl-3 pr-1" />}
                                         <button
                                             type="button"
-                                            onClick={() => setSelected(item)}
-                                            className="flex-1 min-w-0 text-left pl-2 pr-4 py-3 active:bg-press"
+                                            onClick={() => (compareMode ? toggleCompare(item.id) : setSelected(item))}
+                                            className={cx('flex-1 min-w-0 text-left pr-4 py-3 active:bg-press', compareMode ? 'pl-2' : 'pl-4')}
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0 flex-1">
@@ -956,9 +980,11 @@ export const LiveStockView = ({
                                 <table className="w-full text-left border-collapse text-[13px] min-w-[960px]">
                                     <thead className="bg-card-2 text-[11.5px] text-label-3 border-b border-separator">
                                         <tr>
-                                            <th className="pl-3 pr-1 py-2.5 w-[34px]">
-                                                <span className="sr-only">Compare</span>
-                                            </th>
+                                            {compareMode && (
+                                                <th className="pl-3 pr-1 py-2.5 w-[34px]">
+                                                    <span className="sr-only">Compare</span>
+                                                </th>
+                                            )}
                                             <SortHead k="name" className="min-w-[280px]">Item</SortHead>
                                             <SortHead k="quantity" className="text-right">Stock</SortHead>
                                             <th className="px-3 py-2.5 uppercase tracking-wider font-bold w-[150px]">Level</th>
@@ -976,12 +1002,15 @@ export const LiveStockView = ({
                                             return (
                                                 <tr
                                                     key={item.id}
-                                                    onClick={() => setSelected(item)}
+                                                    // While comparing, the whole row is the tick box.
+                                                    onClick={() => (compareMode ? (ticked || !compareFull) && toggleCompare(item.id) : setSelected(item))}
                                                     className={cx('cursor-pointer transition-colors hover:bg-hover', (selected?.id === item.id || ticked) && 'bg-accent-tint')}
                                                 >
-                                                    <td className="pl-3 pr-1 py-2.5 align-middle">
-                                                        <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} />
-                                                    </td>
+                                                    {compareMode && (
+                                                        <td className="pl-3 pr-1 py-2.5 align-middle">
+                                                            <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} />
+                                                        </td>
+                                                    )}
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex items-center gap-2">
                                                             <ColourDot code={item.colour} />
@@ -1052,38 +1081,52 @@ export const LiveStockView = ({
                 </>
             )}
 
-            {/* ---------- compare tray: the ticks, wherever the search has gone ---------- */}
-            {compared.length > 0 && !compareOpen && (
+            {/* ---------- compare bar: the picks, wherever the list has scrolled to ---------- */}
+            {compareMode && !compareOpen && (
                 <div
                     role="region"
                     aria-label="Items to compare"
-                    className="fixed z-40 left-1/2 -translate-x-1/2 bottom-5 max-md:bottom-[calc(92px+env(safe-area-inset-bottom))] w-[min(920px,calc(100vw-32px))] rounded-[18px] bg-label text-card shadow-e3 px-3 py-2 flex items-center gap-2 animate-reveal"
+                    className="fixed z-40 left-1/2 -translate-x-1/2 bottom-5 max-md:bottom-[calc(92px+env(safe-area-inset-bottom))] w-[min(960px,calc(100vw-32px))] rounded-[16px] bg-card/95 backdrop-blur-xl border border-separator shadow-e3 px-3 py-2 flex items-center gap-2.5 animate-reveal"
                 >
-                    <span className="num text-[13px] font-bold flex-none pl-1.5">{compared.length} of {COMPARE_MAX}</span>
-                    <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
-                        {compared.map(i => (
-                            <span key={i.id} className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-card/15 text-[12px] font-semibold whitespace-nowrap">
-                                {i.code}
-                                <button
-                                    type="button"
-                                    onClick={() => toggleCompare(i.id)}
-                                    aria-label={`Take ${i.code} out of the comparison`}
-                                    className="w-5 h-5 grid place-items-center rounded-full hover:bg-card/25 text-[15px] leading-none"
-                                >
-                                    &times;
-                                </button>
-                            </span>
-                        ))}
-                    </div>
-                    <button type="button" onClick={clearCompare} className="h-8 px-2.5 rounded-full text-[12.5px] font-semibold text-card/80 hover:bg-card/15 flex-none">
-                        Clear
-                    </button>
+                    {compared.length === 0 ? (
+                        <p className="flex-1 min-w-0 text-[13px] text-label-2 px-1.5 leading-snug">
+                            <span className="font-semibold text-label">Tick the items you want side by side</span>
+                            <span className="max-md:hidden"> — up to {COMPARE_MAX}. Search for the next one; the ticks stay.</span>
+                        </p>
+                    ) : (
+                        <>
+                            <span className="num text-[13px] font-bold text-label flex-none pl-1.5">{compared.length} of {COMPARE_MAX}</span>
+                            <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                                {compared.map(i => (
+                                    <span key={i.id} className="inline-flex items-center gap-0.5 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[12px] font-semibold whitespace-nowrap">
+                                        {i.code}
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleCompare(i.id)}
+                                            aria-label={`Take ${i.code} out of the comparison`}
+                                            className="w-5 h-5 grid place-items-center rounded-full hover:bg-accent-tint-2 text-[15px] leading-none"
+                                        >
+                                            &times;
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                    {compared.length > 0 && (
+                        <Button size="sm" variant="ghost" onClick={clearCompare} className="flex-none max-md:hidden">Clear</Button>
+                    )}
+                    <Button size="sm" variant="primary" onClick={() => setCompareOpen(true)} disabled={compared.length === 0} className="flex-none">
+                        Compare{compared.length > 1 ? ` ${compared.length}` : ''}
+                    </Button>
                     <button
                         type="button"
-                        onClick={() => setCompareOpen(true)}
-                        className="h-8 px-3.5 rounded-full text-[12.5px] font-bold bg-brand-yellow text-brand-yellow-ink hover:bg-brand-yellow-deep flex-none"
+                        onClick={leaveCompare}
+                        aria-label="Done comparing"
+                        title="Done — back to the plain list"
+                        className="w-8 h-8 grid place-items-center rounded-full text-label-3 hover:bg-hover text-xl leading-none flex-none"
                     >
-                        Compare{compared.length > 1 ? ` ${compared.length}` : ''}
+                        &times;
                     </button>
                 </div>
             )}
@@ -1093,32 +1136,27 @@ export const LiveStockView = ({
                 <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={`Comparing ${compared.length} items`}>
                     <button type="button" aria-label="Close" onClick={() => setCompareOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
                     <div className="absolute inset-x-0 bottom-0 top-0 md:inset-6 md:max-w-[1180px] md:mx-auto bg-card md:rounded-[20px] shadow-e3 flex flex-col animate-reveal">
-                        <div className="px-5 py-4 border-b border-separator flex items-center justify-between gap-3 flex-none">
+                        <div className="px-5 py-4 border-b border-separator flex items-start justify-between gap-3 flex-none">
                             <div className="min-w-0">
-                                <h2 className="text-[18px] font-extrabold text-label leading-tight">Side by side</h2>
-                                <p className="text-[12.5px] text-label-3 mt-0.5">
-                                    {compared.length} item{compared.length === 1 ? '' : 's'} · live from the stock sheet{fetchedAt ? ` · read ${agoText(fetchedAt)}` : ''}
+                                <p className="text-[12px] font-semibold uppercase tracking-wider text-label-3">Side by side</p>
+                                <h2 className="text-[18px] font-extrabold text-label leading-snug mt-0.5">
+                                    {compared.length} item{compared.length === 1 ? '' : 's'}
+                                </h2>
+                                <p className="text-[13px] text-label-2 mt-1">
+                                    Live from the stock sheet{fetchedAt ? ` · read ${agoText(fetchedAt)}` : ''}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2 flex-none">
                                 {canExport && (
-                                    <button
-                                        type="button"
-                                        onClick={() => exportExcel(compared)}
-                                        className="h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover max-md:hidden"
-                                    >
-                                        <DownloadIcon className="w-3.5 h-3.5" />
+                                    <Button size="sm" variant="quiet" icon={<DownloadIcon className="w-3.5 h-3.5" />} onClick={() => exportExcel(compared)} className="max-md:hidden">
                                         Export these
-                                    </button>
+                                    </Button>
                                 )}
-                                <button type="button" onClick={clearCompare} className="h-9 px-3 rounded-full text-[12.5px] font-semibold text-dang hover:bg-dang-bg">
-                                    Clear all
-                                </button>
                                 <button
                                     type="button"
                                     onClick={() => setCompareOpen(false)}
                                     aria-label="Close"
-                                    className="w-10 h-10 grid place-items-center rounded-full text-label-3 hover:bg-hover text-2xl leading-none"
+                                    className="w-10 h-10 grid place-items-center rounded-full text-label-3 hover:bg-hover text-2xl leading-none flex-none"
                                 >
                                     &times;
                                 </button>
@@ -1129,15 +1167,15 @@ export const LiveStockView = ({
                             <table className="border-collapse text-[13px] min-w-full">
                                 <thead>
                                     <tr className="align-top">
-                                        <th className="sticky left-0 top-0 z-20 bg-card w-[140px] min-w-[120px] max-md:min-w-[104px] px-4 py-3 text-left" />
+                                        <th className="sticky left-0 top-0 z-20 bg-card w-[136px] min-w-[112px] max-md:min-w-[96px] px-4 py-3 text-left border-b border-separator" />
                                         {compared.map(i => (
-                                            <th key={i.id} className="sticky top-0 z-10 bg-card min-w-[210px] max-md:min-w-[180px] px-3 py-3 text-left font-normal border-l border-separator">
+                                            <th key={i.id} className="sticky top-0 z-10 bg-card min-w-[220px] max-md:min-w-[184px] px-4 py-3 text-left font-normal border-b border-l border-separator">
                                                 <div className="flex items-start gap-2">
                                                     <div className="min-w-0 flex-1">
                                                         <p className="text-[12px] font-semibold uppercase tracking-wider text-label-3 truncate">
                                                             {[i.category, i.subCategory].filter(Boolean).join(' · ') || 'Item'}
                                                         </p>
-                                                        <button type="button" onClick={() => { setCompareOpen(false); setSelected(i); }} className="text-[14px] font-extrabold text-label hover:text-accent text-left leading-snug break-words flex items-center gap-1.5 mt-0.5">
+                                                        <button type="button" onClick={() => { setCompareOpen(false); setSelected(i); }} className="text-[14.5px] font-extrabold text-label hover:text-accent text-left leading-snug break-words flex items-center gap-1.5 mt-0.5" title="Open this item">
                                                             <ColourDot code={i.colour} />
                                                             <span>{i.code}</span>
                                                         </button>
@@ -1158,7 +1196,8 @@ export const LiveStockView = ({
                                                         type="button"
                                                         onClick={() => toggleCompare(i.id)}
                                                         aria-label={`Take ${i.code} out of the comparison`}
-                                                        className="w-7 h-7 grid place-items-center rounded-full text-label-3 hover:bg-hover text-lg leading-none flex-none -mr-1"
+                                                        title="Take out of the comparison"
+                                                        className="w-7 h-7 grid place-items-center rounded-full text-label-3 hover:bg-hover text-lg leading-none flex-none -mr-1.5"
                                                     >
                                                         &times;
                                                     </button>
@@ -1173,15 +1212,17 @@ export const LiveStockView = ({
                                         // here would be a new one every render and remount its row.
                                         const Row = (label: string, cell: (i: StockItem) => React.ReactNode) => (
                                             <tr key={label} className="align-top">
-                                                <th scope="row" className="sticky left-0 z-10 bg-card-2 px-4 py-2.5 text-left text-[11.5px] uppercase tracking-wider font-bold text-label-3 whitespace-nowrap">{label}</th>
-                                                {compared.map(i => <td key={i.id} className="px-3 py-2.5 border-l border-separator">{cell(i)}</td>)}
+                                                <th scope="row" className="sticky left-0 z-10 bg-card px-4 py-3 text-left align-top whitespace-nowrap"><span className="label">{label}</span></th>
+                                                {compared.map(i => <td key={i.id} className="px-4 py-3 border-l border-separator">{cell(i)}</td>)}
                                             </tr>
                                         );
-                                        const most = Math.max(...compared.map(i => i.quantity));
+                                        // The largest stock is marked only when the units agree: 7,514 MTR is not more than 200 KGS.
+                                        const sameUnit = compared.every(i => i.unit === compared[0].unit);
+                                        const most = sameUnit && compared.length > 1 ? Math.max(...compared.map(i => i.quantity)) : NaN;
                                         return (
                                             <>
                                                 {Row('Availability', i => { const a = availabilityOf(i); return <div className="flex items-center gap-1.5 flex-wrap"><Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>{isCritical(i) && <Badge tone="dang">Critical</Badge>}</div>; })}
-                                                {Row('In stock', i => { const a = availabilityOf(i); return <><span className={cx('num text-[17px] font-semibold', a === 'out' ? 'text-dang' : i.quantity === most && compared.length > 1 ? 'text-pos' : 'text-label')}>{formatQty(i.quantity)}</span><span className="text-[11.5px] text-label-3"> {i.unit}</span>{i.quantityWithPo !== i.quantity && <span className="block text-[11.5px] text-label-3 num">+PO {formatQty(i.quantityWithPo)}</span>}</>; })}
+                                                {Row('In stock', i => { const a = availabilityOf(i); return <><span className={cx('num text-[18px] font-semibold', a === 'out' ? 'text-dang' : i.quantity === most ? 'text-pos' : 'text-label')}>{formatQty(i.quantity)}</span><span className="text-[11.5px] text-label-3"> {i.unit}</span>{i.quantityWithPo !== i.quantity && <span className="block text-[11.5px] text-label-3 num">+PO {formatQty(i.quantityWithPo)}</span>}</>; })}
                                                 {Row('Levels', i => hasLevels(i) ? <><LevelBar item={i} /><p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(i.minLevel)} · max {formatQty(i.maxLevel)}</p></> : <span className="text-[11.5px] text-label-4">no levels{i.status === 'OD' ? ' · on demand' : ''}</span>)}
                                                 {Row('Short by', i => hasLevels(i) && i.quantity < i.minLevel ? <span className="num font-semibold text-dang">{formatQty(i.minLevel - i.quantity, i.unit)}{showPrices && i.rate ? <span className="block text-[11.5px] font-normal text-label-3">{formatINR((i.minLevel - i.quantity) * i.rate)} to bring back</span> : null}</span> : <span className="text-label-4">—</span>)}
                                                 {showPrices && Row('Rate', i => i.rate ? <span className="num text-label">{formatINR(i.rate)}<span className="text-[11.5px] text-label-3"> / {i.unit || 'unit'}</span></span> : <span className="text-label-4">—</span>)}
@@ -1203,19 +1244,17 @@ export const LiveStockView = ({
                         </div>
 
                         <div className="px-5 py-3 border-t border-separator flex items-center justify-between gap-3 flex-none pb-[calc(12px+env(safe-area-inset-bottom))]">
-                            <span className="text-[12px] text-label-3">
+                            <span className="text-[12.5px] text-label-3">
                                 {compared.length < COMPARE_MAX ? `Close this and tick more — up to ${COMPARE_MAX}.` : `${COMPARE_MAX} is the most that fits side by side.`}
                             </span>
-                            {canExport && (
-                                <button
-                                    type="button"
-                                    onClick={() => exportExcel(compared)}
-                                    className="h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover md:hidden"
-                                >
-                                    <DownloadIcon className="w-3.5 h-3.5" />
-                                    Export these
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                                {canExport && (
+                                    <Button size="sm" variant="quiet" icon={<DownloadIcon className="w-3.5 h-3.5" />} onClick={() => exportExcel(compared)} className="md:hidden">
+                                        Export these
+                                    </Button>
+                                )}
+                                <Button size="sm" variant="ghost" onClick={clearCompare} className="text-dang hover:bg-dang-bg hover:text-dang">Clear all</Button>
+                            </div>
                         </div>
                     </div>
                 </div>

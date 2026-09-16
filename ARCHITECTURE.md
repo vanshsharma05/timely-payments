@@ -1141,13 +1141,31 @@ follow-up date from [§9.6](#96-reports--the-management-read); export of the
 rows **currently on screen**, which is what makes the recovery-agency defaulter
 list possible. Rows open in the workspace.
 
-The ageing chips under "More filters" are **Current (≤45d) · >45d · >90d ·
+The ageing chips under "More filters" are **Current ≤45d · >45d · >90d ·
 >135d** — three nested severities and the complement of the first. They
 replaced "1-45d", which meant "has any money in the 1–45 bucket": 311 accounts,
 181 of them also past 90 days, sitting beside ">45d" as if they were the
-customers who are up to date. The rank chips beside them count within whatever
-ageing chip is pressed, so "Good (6)" under >90d is six accounts somebody
+customers who are up to date. "Good (6)" under >90d is six accounts somebody
 graded Good by hand despite old money — a judgement, kept visible.
+
+**Every filter control counts the same way.** An option's count is how many
+rows it would show given every *other* filter and the tab in view: the rank
+chips, the ageing chips, and the rank / category / CRM / status / balance /
+source dropdowns all read from one pass over the book (`counts` in the
+filter memo), so with ">90d" pressed every "All" says 459 and every family
+of options adds up to it. It used to be three different rules — the rank
+chips counted within the view, the CRM and category dropdowns counted the
+whole book ("All CRMs (4,027)" above a ledger of 520), and the ageing chips
+carried no counts at all.
+
+**The overdue column follows the chip.** "Due >45 days" becomes "Due >90
+days" or "Due >135 days" (and "Within 45 days" for Current) with the matching
+figure on every row, and the list is ordered by that column, largest first,
+with the order named in the ledger's header. Under every chip it used to show
+"Due >45 days" in alphabetical order, so the same customer led all three
+lists and the chips looked as though they did nothing. Reset clears every
+filter, including the category and the search box; "n filters on" counts all
+seven.
 
 ### 9.5 PDC cheques (`PdcChequesView`)
 
@@ -1278,20 +1296,24 @@ to the row (`range=A<serial+2>`, since the sheet's S. No runs from row 3). The
 app-bar search applies here too, and the title's subtitle and placeholder are
 the sheet's, not the book's. Export needs `canExportData`.
 
-**Several products at once.** Every row leads with a tick box (a checkbox
-column on the table, a tick beside the phone row), and the ticks are kept as
-item ids in `sessionStorage` — so they survive a change of search or filter,
-which is the whole point: find one, tick it, find the next. A tray at the
-foot of the screen (above the phone tab bar) names the ticked items with a ×
-each, and **Compare** opens a panel with one column per item and the same
-facts in the same rows — availability, stock (the largest in green), levels,
-short by, rate and value (priced roles only), status, movement, last
-received, average sales, transactions, MOQ, GST, colour, sheet row — first
-column and header row sticky, so a phone scrolls sideways through them. Up to
-`COMPARE_MAX` (8); past that the unticked boxes are disabled and say so. An
-item's name in the panel opens its drawer; "Export these" exports the
-compared items rather than the view. A row press still opens the drawer; the
-tick box stops the click from reaching the row.
+**Several products at once.** The everyday list carries no tick boxes.
+**Compare** in the list's header (beside Export) puts one on every row and
+turns itself into **Done**; while comparing, pressing a row ticks it rather
+than opening it. The ticks — and the mode — are kept in `sessionStorage`, so
+they survive a change of search or filter and a reload, which is the whole
+point: find one, tick it, find the next. A bar at the foot of the screen
+(above the phone tab bar; a white card in the app's own style, not a
+snackbar) keeps the picks in view wherever the list has scrolled to: the
+ticked items as chips with a × each, Clear, **Compare n**, and × for Done.
+Compare opens a panel with one column per item and the same facts in the
+same rows — availability, stock (the largest in green, only when the units
+agree), levels, short by, rate and value (priced roles only), status,
+movement, last received, average sales, transactions, MOQ, GST, colour,
+sheet row — first column and header row sticky, so a phone scrolls sideways
+through them. Up to `COMPARE_MAX` (8); past that the unticked boxes are
+disabled and say so. An item's name in the panel opens its drawer; "Export
+these" exports the compared items rather than the view. Done clears the
+picks and puts the plain list back.
 
 **Rate and value show only to Admin and Manager** (`showPrices` — the role,
 and the read having carried prices). For everyone else the page has no rupee
@@ -1451,6 +1473,11 @@ So `text-blue-600` in an old component paints Shori navy, and `#24518F` in dark
 mode where white text still clears contrast on it.
 
 ### Notable rules
+
+- **Native controls follow the app's theme.** `html { color-scheme: light }`
+  and `html[data-theme="dark"] { color-scheme: dark }` — it was `light dark`,
+  which let the operating system choose, and drew dark tick boxes and selects
+  on a light page whenever the OS and the app disagreed.
 
 - The universal `border-color` reset lives **inside `@layer base`**. Unlayered
   CSS outranks everything Tailwind emits, so an unlayered universal
