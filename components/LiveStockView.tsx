@@ -35,6 +35,11 @@ import { ChevronDown } from './shell/NavIcons';
    tiles on availability, the stock by brand, a strip of the figures worth
    knowing — is not an everyday need, so it sits folded above the list and
    opens with one click, for everyone, closed again on the next visit.
+
+   Several products at once: every row has a tick box, the ticks survive a
+   change of search or filter (that is the point — find one, tick it, find
+   the next), and "Compare" lays the ticked items side by side, one column
+   each, the same facts in the same rows.
    ============================================================================ */
 
 interface LiveStockViewProps {
@@ -100,6 +105,21 @@ const formatQty = (n: number, unit?: string) => {
     const s = whole ? groupIndian(n) : (Math.round(n * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     return unit ? `${s} ${unit}` : s;
 };
+
+/** Side by side stops being side by side past this many columns. */
+const COMPARE_MAX = 8;
+/** The ticks outlive a tab change — the search for the next item often goes through the book. */
+const COMPARE_KEY = 'timely_stock_compare';
+const readCompareIds = (): string[] => {
+    try {
+        const v = JSON.parse(sessionStorage.getItem(COMPARE_KEY) || '[]');
+        return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(0, COMPARE_MAX) : [];
+    } catch { return []; }
+};
+const writeCompareIds = (ids: string[]) => { try { sessionStorage.setItem(COMPARE_KEY, JSON.stringify(ids)); } catch { /* private window */ } };
+
+/** "1 day ago" / "127 days ago" — for the receipt ageing. */
+const daysAgo = (n: number) => `${n} day${n === 1 ? '' : 's'} ago`;
 
 const pct = (n: number, of: number) => (of > 0 ? (100 * n) / of : 0);
 const pctText = (n: number, of: number) => `${pct(n, of).toFixed(1)}%`;
@@ -251,6 +271,24 @@ const BarRow = ({
     </button>
 );
 
+/** The tick box on a row: toggles the item in the comparison, never opens the row. */
+const CompareTick = ({ item, checked, disabled, onToggle, className }: { item: StockItem; checked: boolean; disabled: boolean; onToggle: () => void; className?: string }) => (
+    <label
+        className={cx('flex items-center justify-center flex-none', disabled ? 'cursor-not-allowed' : 'cursor-pointer', className)}
+        onClick={e => e.stopPropagation()}
+        title={disabled ? `Up to ${COMPARE_MAX} items side by side` : checked ? 'Take out of the comparison' : 'Tick to compare'}
+    >
+        <input
+            type="checkbox"
+            checked={checked}
+            disabled={disabled}
+            onChange={onToggle}
+            aria-label={`${checked ? 'Take out of the comparison:' : 'Compare'} ${item.code}`}
+            className="w-[18px] h-[18px] rounded text-accent focus:ring-accent disabled:opacity-40 max-md:w-5 max-md:h-5"
+        />
+    </label>
+);
+
 /** One figure in the Quick insights strip. */
 const Insight = ({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: string }) => (
     <div className="bg-card-2 rounded-[14px] px-4 py-5 text-center flex flex-col justify-center">
@@ -299,6 +337,29 @@ export const LiveStockView = ({
     // the way when it is not.
     const [overviewOpen, setOverviewOpen] = useState(false);
     const [selected, setSelected] = useState<StockItem | null>(null);
+
+    /* ------------------------------ compare ------------------------------ */
+    // Ticked item ids, in the order they were ticked. Kept as ids so that a
+    // re-read of the sheet replaces each with its current row.
+    const [compareIds, setCompareIds] = useState<string[]>(readCompareIds);
+    const [compareOpen, setCompareOpen] = useState(false);
+    useEffect(() => { writeCompareIds(compareIds); }, [compareIds]);
+    const compared = useMemo(
+        () => compareIds.map(id => items.find(i => i.id === id)).filter((i): i is StockItem => Boolean(i)),
+        [compareIds, items],
+    );
+    const compareFull = compareIds.length >= COMPARE_MAX;
+    const isCompared = (id: string) => compareIds.includes(id);
+    const toggleCompare = (id: string) => setCompareIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : ids.length >= COMPARE_MAX ? ids : [...ids, id]));
+    const clearCompare = () => { setCompareIds([]); setCompareOpen(false); };
+    // Nothing to lay side by side once the ticks are gone.
+    useEffect(() => { if (compared.length === 0) setCompareOpen(false); }, [compared.length]);
+    useEffect(() => {
+        if (!compareOpen) return;
+        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCompareOpen(false);
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [compareOpen]);
 
     // A sub-category belongs to a category; changing the category clears it.
     useEffect(() => { setSubCategory('ALL'); }, [category]);
@@ -431,8 +492,8 @@ export const LiveStockView = ({
         else { setSortKey(k); setSortDesc(k !== 'name' && k !== 'category'); }
     };
 
-    const exportExcel = () => {
-        const rows = filtered.map(i => ({
+    const exportExcel = (source: StockItem[] = filtered) => {
+        const rows = source.map(i => ({
             'Item Code': i.code,
             'Description': i.description,
             'Brand / Category': i.category,
@@ -481,7 +542,8 @@ export const LiveStockView = ({
     const nothingYet = items.length === 0;
 
     return (
-        <div className="space-y-5 max-md:space-y-4">
+        // Room at the foot for the compare tray, so the last row is never under it.
+        <div className={cx('space-y-5 max-md:space-y-4', compared.length > 0 && 'pb-16')}>
             {/* ---------- freshness: one line ---------- */}
             <div className={cx(
                 'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[14px] px-4 py-2 text-[13px]',
@@ -830,7 +892,7 @@ export const LiveStockView = ({
                             {canExport && filtered.length > 0 && (
                                 <button
                                     type="button"
-                                    onClick={exportExcel}
+                                    onClick={() => exportExcel()}
                                     className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover"
                                 >
                                     <DownloadIcon className="w-3.5 h-3.5" />
@@ -849,12 +911,14 @@ export const LiveStockView = ({
                             <div className="divide-y divide-separator">
                                 {filtered.slice(0, visible).map(item => {
                                     const a = availabilityOf(item);
+                                    const ticked = isCompared(item.id);
                                     return (
+                                        <div key={item.id} className={cx('flex items-stretch', ticked && 'bg-accent-tint')}>
+                                        <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} className="pl-3 pr-1" />
                                         <button
-                                            key={item.id}
                                             type="button"
                                             onClick={() => setSelected(item)}
-                                            className="w-full text-left px-4 py-3 active:bg-press"
+                                            className="flex-1 min-w-0 text-left pl-2 pr-4 py-3 active:bg-press"
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0 flex-1">
@@ -883,6 +947,7 @@ export const LiveStockView = ({
                                             </div>
                                             <LevelBar item={item} className="mt-2.5" />
                                         </button>
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -891,6 +956,9 @@ export const LiveStockView = ({
                                 <table className="w-full text-left border-collapse text-[13px] min-w-[960px]">
                                     <thead className="bg-card-2 text-[11.5px] text-label-3 border-b border-separator">
                                         <tr>
+                                            <th className="pl-3 pr-1 py-2.5 w-[34px]">
+                                                <span className="sr-only">Compare</span>
+                                            </th>
                                             <SortHead k="name" className="min-w-[280px]">Item</SortHead>
                                             <SortHead k="quantity" className="text-right">Stock</SortHead>
                                             <th className="px-3 py-2.5 uppercase tracking-wider font-bold w-[150px]">Level</th>
@@ -904,12 +972,16 @@ export const LiveStockView = ({
                                     <tbody className="divide-y divide-separator">
                                         {filtered.slice(0, visible).map(item => {
                                             const a = availabilityOf(item);
+                                            const ticked = isCompared(item.id);
                                             return (
                                                 <tr
                                                     key={item.id}
                                                     onClick={() => setSelected(item)}
-                                                    className={cx('cursor-pointer transition-colors hover:bg-hover', selected?.id === item.id && 'bg-accent-tint')}
+                                                    className={cx('cursor-pointer transition-colors hover:bg-hover', (selected?.id === item.id || ticked) && 'bg-accent-tint')}
                                                 >
+                                                    <td className="pl-3 pr-1 py-2.5 align-middle">
+                                                        <CompareTick item={item} checked={ticked} disabled={!ticked && compareFull} onToggle={() => toggleCompare(item.id)} />
+                                                    </td>
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex items-center gap-2">
                                                             <ColourDot code={item.colour} />
@@ -950,7 +1022,7 @@ export const LiveStockView = ({
                                                                 <span className="text-label-2 num">{formatDate(item.lastReceived)}</span>
                                                                 {item.ageingDays !== undefined && (
                                                                     <span className={cx('block text-[11.5px] num', item.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>
-                                                                        {item.ageingDays} days ago
+                                                                        {daysAgo(item.ageingDays)}
                                                                     </span>
                                                                 )}
                                                             </>
@@ -978,6 +1050,175 @@ export const LiveStockView = ({
                         )}
                     </Card>
                 </>
+            )}
+
+            {/* ---------- compare tray: the ticks, wherever the search has gone ---------- */}
+            {compared.length > 0 && !compareOpen && (
+                <div
+                    role="region"
+                    aria-label="Items to compare"
+                    className="fixed z-40 left-1/2 -translate-x-1/2 bottom-5 max-md:bottom-[calc(92px+env(safe-area-inset-bottom))] w-[min(920px,calc(100vw-32px))] rounded-[18px] bg-label text-card shadow-e3 px-3 py-2 flex items-center gap-2 animate-reveal"
+                >
+                    <span className="num text-[13px] font-bold flex-none pl-1.5">{compared.length} of {COMPARE_MAX}</span>
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                        {compared.map(i => (
+                            <span key={i.id} className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-card/15 text-[12px] font-semibold whitespace-nowrap">
+                                {i.code}
+                                <button
+                                    type="button"
+                                    onClick={() => toggleCompare(i.id)}
+                                    aria-label={`Take ${i.code} out of the comparison`}
+                                    className="w-5 h-5 grid place-items-center rounded-full hover:bg-card/25 text-[15px] leading-none"
+                                >
+                                    &times;
+                                </button>
+                            </span>
+                        ))}
+                    </div>
+                    <button type="button" onClick={clearCompare} className="h-8 px-2.5 rounded-full text-[12.5px] font-semibold text-card/80 hover:bg-card/15 flex-none">
+                        Clear
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setCompareOpen(true)}
+                        className="h-8 px-3.5 rounded-full text-[12.5px] font-bold bg-brand-yellow text-brand-yellow-ink hover:bg-brand-yellow-deep flex-none"
+                    >
+                        Compare{compared.length > 1 ? ` ${compared.length}` : ''}
+                    </button>
+                </div>
+            )}
+
+            {/* ---------- compare panel: one column per item, the same facts in the same rows ---------- */}
+            {compareOpen && compared.length > 0 && (
+                <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={`Comparing ${compared.length} items`}>
+                    <button type="button" aria-label="Close" onClick={() => setCompareOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
+                    <div className="absolute inset-x-0 bottom-0 top-0 md:inset-6 md:max-w-[1180px] md:mx-auto bg-card md:rounded-[20px] shadow-e3 flex flex-col animate-reveal">
+                        <div className="px-5 py-4 border-b border-separator flex items-center justify-between gap-3 flex-none">
+                            <div className="min-w-0">
+                                <h2 className="text-[18px] font-extrabold text-label leading-tight">Side by side</h2>
+                                <p className="text-[12.5px] text-label-3 mt-0.5">
+                                    {compared.length} item{compared.length === 1 ? '' : 's'} · live from the stock sheet{fetchedAt ? ` · read ${agoText(fetchedAt)}` : ''}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 flex-none">
+                                {canExport && (
+                                    <button
+                                        type="button"
+                                        onClick={() => exportExcel(compared)}
+                                        className="h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover max-md:hidden"
+                                    >
+                                        <DownloadIcon className="w-3.5 h-3.5" />
+                                        Export these
+                                    </button>
+                                )}
+                                <button type="button" onClick={clearCompare} className="h-9 px-3 rounded-full text-[12.5px] font-semibold text-dang hover:bg-dang-bg">
+                                    Clear all
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCompareOpen(false)}
+                                    aria-label="Close"
+                                    className="w-10 h-10 grid place-items-center rounded-full text-label-3 hover:bg-hover text-2xl leading-none"
+                                >
+                                    &times;
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto">
+                            <table className="border-collapse text-[13px] min-w-full">
+                                <thead>
+                                    <tr className="align-top">
+                                        <th className="sticky left-0 top-0 z-20 bg-card w-[140px] min-w-[120px] max-md:min-w-[104px] px-4 py-3 text-left" />
+                                        {compared.map(i => (
+                                            <th key={i.id} className="sticky top-0 z-10 bg-card min-w-[210px] max-md:min-w-[180px] px-3 py-3 text-left font-normal border-l border-separator">
+                                                <div className="flex items-start gap-2">
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-[12px] font-semibold uppercase tracking-wider text-label-3 truncate">
+                                                            {[i.category, i.subCategory].filter(Boolean).join(' · ') || 'Item'}
+                                                        </p>
+                                                        <button type="button" onClick={() => { setCompareOpen(false); setSelected(i); }} className="text-[14px] font-extrabold text-label hover:text-accent text-left leading-snug break-words flex items-center gap-1.5 mt-0.5">
+                                                            <ColourDot code={i.colour} />
+                                                            <span>{i.code}</span>
+                                                        </button>
+                                                        {i.description !== i.code && <p className="text-[12px] text-label-2 mt-0.5 line-clamp-2">{i.description}</p>}
+                                                        {/* Below the name, so the names line up across columns whether or not there is a picture. */}
+                                                        {i.photoUrl && (
+                                                            <img
+                                                                key={i.id}
+                                                                src={drivePhotoUrl(i.photoUrl)}
+                                                                alt=""
+                                                                className="w-full h-20 object-contain rounded-[10px] bg-card-2 mt-2"
+                                                                referrerPolicy="no-referrer"
+                                                                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleCompare(i.id)}
+                                                        aria-label={`Take ${i.code} out of the comparison`}
+                                                        className="w-7 h-7 grid place-items-center rounded-full text-label-3 hover:bg-hover text-lg leading-none flex-none -mr-1"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                </div>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-separator">
+                                    {(() => {
+                                        // A plain function, not a component: a component declared
+                                        // here would be a new one every render and remount its row.
+                                        const Row = (label: string, cell: (i: StockItem) => React.ReactNode) => (
+                                            <tr key={label} className="align-top">
+                                                <th scope="row" className="sticky left-0 z-10 bg-card-2 px-4 py-2.5 text-left text-[11.5px] uppercase tracking-wider font-bold text-label-3 whitespace-nowrap">{label}</th>
+                                                {compared.map(i => <td key={i.id} className="px-3 py-2.5 border-l border-separator">{cell(i)}</td>)}
+                                            </tr>
+                                        );
+                                        const most = Math.max(...compared.map(i => i.quantity));
+                                        return (
+                                            <>
+                                                {Row('Availability', i => { const a = availabilityOf(i); return <div className="flex items-center gap-1.5 flex-wrap"><Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>{isCritical(i) && <Badge tone="dang">Critical</Badge>}</div>; })}
+                                                {Row('In stock', i => { const a = availabilityOf(i); return <><span className={cx('num text-[17px] font-semibold', a === 'out' ? 'text-dang' : i.quantity === most && compared.length > 1 ? 'text-pos' : 'text-label')}>{formatQty(i.quantity)}</span><span className="text-[11.5px] text-label-3"> {i.unit}</span>{i.quantityWithPo !== i.quantity && <span className="block text-[11.5px] text-label-3 num">+PO {formatQty(i.quantityWithPo)}</span>}</>; })}
+                                                {Row('Levels', i => hasLevels(i) ? <><LevelBar item={i} /><p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(i.minLevel)} · max {formatQty(i.maxLevel)}</p></> : <span className="text-[11.5px] text-label-4">no levels{i.status === 'OD' ? ' · on demand' : ''}</span>)}
+                                                {Row('Short by', i => hasLevels(i) && i.quantity < i.minLevel ? <span className="num font-semibold text-dang">{formatQty(i.minLevel - i.quantity, i.unit)}{showPrices && i.rate ? <span className="block text-[11.5px] font-normal text-label-3">{formatINR((i.minLevel - i.quantity) * i.rate)} to bring back</span> : null}</span> : <span className="text-label-4">—</span>)}
+                                                {showPrices && Row('Rate', i => i.rate ? <span className="num text-label">{formatINR(i.rate)}<span className="text-[11.5px] text-label-3"> / {i.unit || 'unit'}</span></span> : <span className="text-label-4">—</span>)}
+                                                {showPrices && Row('Value', i => <span className="num font-semibold text-label" title={formatINR(i.value)}>{formatCompact(i.value)}</span>)}
+                                                {Row('Status', i => i.status ? <Badge tone={STATUS_TONE[i.status]}>{STOCK_STATUS_LABELS[i.status]}</Badge> : <span className="text-label-4">—</span>)}
+                                                {Row('Movement', i => i.movement ? <Badge tone={MOVEMENT_TONE[i.movement]}>{MOVEMENT_LABELS[i.movement]}</Badge> : <span className="text-label-4">—</span>)}
+                                                {Row('Last received', i => i.lastReceived ? <><span className="num text-label">{formatDate(i.lastReceived)}</span>{i.ageingDays !== undefined && <span className={cx('block text-[11.5px] num', i.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>{daysAgo(i.ageingDays)} · {STOCK_AGE_LABELS[stockAgeBucket(i)]}</span>}</> : <span className="text-label-4">No receipt on record</span>)}
+                                                {Row('Avg sales qty', i => i.avgSales !== undefined ? <span className="num text-label">{formatQty(i.avgSales, i.unit)}</span> : <span className="text-label-4">—</span>)}
+                                                {Row('Transactions', i => <span className="num text-label">{i.transactions.toLocaleString('en-IN')}</span>)}
+                                                {Row('MOQ', i => i.moq !== undefined ? <span className="num text-label">{formatQty(i.moq, i.unit)}</span> : <span className="text-label-4">—</span>)}
+                                                {Row('GST', i => i.taxPct !== undefined ? <span className="num text-label">{i.taxPct}%</span> : <span className="text-label-4">—</span>)}
+                                                {Row('Colour', i => i.colour ? <span className="inline-flex items-center gap-1.5 text-label"><ColourDot code={i.colour} />{STOCK_COLOUR_LABELS[i.colour]}</span> : <span className="text-label-4">—</span>)}
+                                                {Row('Sheet row', i => <span className="num text-label-2">#{i.serial}</span>)}
+                                            </>
+                                        );
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="px-5 py-3 border-t border-separator flex items-center justify-between gap-3 flex-none pb-[calc(12px+env(safe-area-inset-bottom))]">
+                            <span className="text-[12px] text-label-3">
+                                {compared.length < COMPARE_MAX ? `Close this and tick more — up to ${COMPARE_MAX}.` : `${COMPARE_MAX} is the most that fits side by side.`}
+                            </span>
+                            {canExport && (
+                                <button
+                                    type="button"
+                                    onClick={() => exportExcel(compared)}
+                                    className="h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover md:hidden"
+                                >
+                                    <DownloadIcon className="w-3.5 h-3.5" />
+                                    Export these
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* ---------- item drawer ---------- */}
@@ -1087,7 +1328,7 @@ export const LiveStockView = ({
                                 <div>
                                     <dt className="label">Last received</dt>
                                     <dd className="text-label mt-0.5 num">{selected.lastReceived ? formatDate(selected.lastReceived) : 'No receipt on record'}</dd>
-                                    {selected.ageingDays !== undefined && <dd className={cx('text-[12px] num', selected.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>{selected.ageingDays} days ago · {STOCK_AGE_LABELS[stockAgeBucket(selected)]}</dd>}
+                                    {selected.ageingDays !== undefined && <dd className={cx('text-[12px] num', selected.ageingDays > 90 ? 'text-warn font-semibold' : 'text-label-3')}>{daysAgo(selected.ageingDays)} · {STOCK_AGE_LABELS[stockAgeBucket(selected)]}</dd>}
                                 </div>
                                 <div>
                                     <dt className="label">Transactions</dt>

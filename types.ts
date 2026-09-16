@@ -851,4 +851,17 @@ export function getCustomerPaymentRank(customer: Outstanding): PaymentRank {
     return 'Good';
 }
 
+/**
+ * A declared defaulter is not routine work.
+ *
+ * The worklists, the counts on their cards, the badge on Today, the CRM
+ * table and the morning email all leave these accounts out, and one list —
+ * the recovery list — carries them. Left in, they sat in "Overdue" for ever
+ * and the people working the day's follow-ups scrolled past them every
+ * morning; chasing a defaulter is a decision, not a daily reflex. Nothing is
+ * hidden: the customer book still shows every account, and the recovery list
+ * is one press away wherever the worklist is.
+ */
+export const isBadDebt = (item: Outstanding): boolean => getCustomerPaymentRank(item) === 'Bad';
+
 

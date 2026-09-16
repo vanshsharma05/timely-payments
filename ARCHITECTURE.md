@@ -657,6 +657,25 @@ with the bulk rank tool, which is what that tool is for.
 How old the money is has not gone anywhere: the four ageing buckets say it
 precisely, on every row, in every report and in the exports.
 
+**A defaulter is not routine work** (`isBadDebt()`). The boss's rule: a
+bad-debt account must not sit in the follow-up list, because the people
+working the day's follow-ups scrolled past the same defaulters every morning
+and the list they were meant to work suffered for it. So a `Bad` account is
+left out of Due today / Overdue / No follow-up / Scheduled everywhere those
+are counted or listed — the worklist cards and the list under them on Today,
+the badge on the Today tab, the attention banner, the four follow-up chips
+on Reports, the per-CRM table (where it is noted as "+n bad debt" and does
+not move the timely score) and the morning email — and carried on **one list
+of its own, the recovery list**: a red strip under the worklist cards on
+Today ("Bad debt · 57 accounts · ₹1.75 Cr · kept out of the worklist above")
+that opens it, and a `Bad debt (n)` chip beside the follow-up chips on
+Reports. Nothing is hidden: the customer book still lists every account, a
+search finds a defaulter like anyone else, "All" on Reports is still all, and
+the money stays in every total and every ageing figure — only the *work*
+moved. The attention banner counts the way the cards do (accounts that owe,
+by date, no defaulters); it used to read the stored status and say "8
+overdue" above a card that said 2.
+
 ### 7.5 When a cheque is due
 
 **"Due today" is not a status. It is what the calendar says.**
@@ -1259,6 +1278,21 @@ to the row (`range=A<serial+2>`, since the sheet's S. No runs from row 3). The
 app-bar search applies here too, and the title's subtitle and placeholder are
 the sheet's, not the book's. Export needs `canExportData`.
 
+**Several products at once.** Every row leads with a tick box (a checkbox
+column on the table, a tick beside the phone row), and the ticks are kept as
+item ids in `sessionStorage` — so they survive a change of search or filter,
+which is the whole point: find one, tick it, find the next. A tray at the
+foot of the screen (above the phone tab bar) names the ticked items with a ×
+each, and **Compare** opens a panel with one column per item and the same
+facts in the same rows — availability, stock (the largest in green), levels,
+short by, rate and value (priced roles only), status, movement, last
+received, average sales, transactions, MOQ, GST, colour, sheet row — first
+column and header row sticky, so a phone scrolls sideways through them. Up to
+`COMPARE_MAX` (8); past that the unticked boxes are disabled and say so. An
+item's name in the panel opens its drawer; "Export these" exports the
+compared items rather than the view. A row press still opens the drawer; the
+tick box stops the click from reaching the row.
+
 **Rate and value show only to Admin and Manager** (`showPrices` — the role,
 and the read having carried prices). For everyone else the page has no rupee
 on it: the value tiles and columns are gone, the brand card ranks by item
@@ -1360,6 +1394,12 @@ as "0 due today, 0 overdue".
 
 Rows carry a `BAD DEBT` / `LATE PAY` tag from `payment_rank`, and `URGENT` from
 `is_urgent`.
+
+**Declared defaulters are not in the email** (§7.4): `open` leaves out
+`payment_rank = 'Bad'`, so they appear in none of the sections and in no
+CRM's row. The intro says how many there are and what they owe ("57 of them
+(₹1.75 Cr) are bad debt, on the recovery list in the app and not below"),
+and the plain-text version carries the same line.
 
 `bookCount` filters to accounts with dues — otherwise the email told people they
 were carrying thousands of accounts.
@@ -1730,11 +1770,14 @@ components/
   ui/usePhone.ts               25. useIsPhone(): the (max-width: 767px) line,
                             for a component that renders a different tree
                             on a phone.
+  ui/BadDebtStrip.tsx         50. The recovery list, one press from the
+                            worklist it is kept out of (§7.4).
   ui/PhoneAccountRow.tsx      150. One account as a phone row — used by the
                             customer book and the reports below md.
-  LiveStockView.tsx           1140. The Live stock tab: a folded overview
+  LiveStockView.tsx           1380. The Live stock tab: a folded overview
                             (tiles, breakdowns), filters, table / phone
-                            rows, item drawer, export.
+                            rows with tick boxes, the compare tray and
+                            panel, item drawer, export.
 
   work/Workspace.tsx          Master-detail: the queue and the account together.
   work/Worklist.tsx           The six queues, their counts and their rows.

@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -27,6 +27,7 @@ import LiveStockView from './components/LiveStockView';
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
+import { BadDebtStrip } from './components/ui/BadDebtStrip';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
@@ -1159,6 +1160,12 @@ const App = () => {
              */
             if (!hasOutstanding(item) && itemCategory !== 'completed' && !searching) return false;
 
+            // A defaulter is on the recovery list and nowhere else in the
+            // worklist — unless somebody is searching, and a search must find
+            // anyone. See isBadDebt().
+            if (categoryFilter === 'bad_debt') return isBadDebt(item);
+            if (isBadDebt(item) && !searching) return false;
+
             if (priorityFilter) {
                 return (item.isUrgent && item.status !== FollowUpStatus.Completed) || item.status === FollowUpStatus.Overdue;
             }
@@ -1333,11 +1340,20 @@ const App = () => {
         let overdueAmount = 0;
         let futureCount = 0;
         let futureAmount = 0;
+        let badDebtCount = 0;
+        let badDebtAmount = 0;
 
         appData.forEach(item => {
             // Customers who owe nothing are not work. Left in, the whole
             // Customer Master lands in "No follow-up" and swamps the box.
             if (!hasOutstanding(item)) return;
+
+            // Defaulters are counted on their own card, not in the worklist.
+            if (isBadDebt(item)) {
+                badDebtCount++;
+                badDebtAmount += item.total || 0;
+                return;
+            }
 
             const cat = getFollowUpCategory(item, today);
             if (cat === 'completed') return;
@@ -1361,7 +1377,8 @@ const App = () => {
             todayCount, todayAmount,
             noFollowUpCount, noFollowUpAmount,
             overdueCount, overdueAmount,
-            futureCount, futureAmount
+            futureCount, futureAmount,
+            badDebtCount, badDebtAmount,
         };
     }, [appData]);
 
@@ -1378,12 +1395,20 @@ const App = () => {
         let futureAmount = 0;
         let totalCount = 0;
         let totalAmount = 0;
+        let badDebtCount = 0;
+        let badDebtAmount = 0;
 
         outstandingData.forEach(item => {
             if (!hasOutstanding(item)) return;
 
             totalCount++;
             totalAmount += item.total || 0;
+            // Defaulters stay in the book's total, out of the worklist.
+            if (isBadDebt(item)) {
+                badDebtCount++;
+                badDebtAmount += item.total || 0;
+                return;
+            }
             const cat = getFollowUpCategory(item, today);
             if (cat === 'completed') return;
 
@@ -1407,7 +1432,8 @@ const App = () => {
             overdueCount, overdueAmount,
             noFollowUpCount, noFollowUpAmount,
             futureCount, futureAmount,
-            totalCount, totalAmount
+            totalCount, totalAmount,
+            badDebtCount, badDebtAmount,
         };
     }, [outstandingData]);
 
@@ -1463,8 +1489,14 @@ const App = () => {
     }, [outstandingData]);
     
     const notificationSummary = useMemo(() => {
-        const urgentCount = outstandingData.filter(item => item.isUrgent && item.status !== FollowUpStatus.Completed).length;
-        const overdueCount = outstandingData.filter(item => item.status === FollowUpStatus.Overdue).length;
+        // The banner announces the worklist, so it counts the way the cards
+        // do: accounts that owe something, by the date rather than the stored
+        // status, and never a defaulter. It used to read the stored status,
+        // and said "8 overdue" above a card that said 2.
+        const today = getToday();
+        const work = outstandingData.filter(item => hasOutstanding(item) && !isBadDebt(item));
+        const urgentCount = work.filter(item => item.isUrgent && item.status !== FollowUpStatus.Completed).length;
+        const overdueCount = work.filter(item => getFollowUpCategory(item, today) === 'overdue').length;
         return { urgentCount, overdueCount };
     }, [outstandingData]);
 
@@ -1490,14 +1522,14 @@ const App = () => {
         type Stat = {
             crmId: string; crmName: string; totalAssigned: number; followUpDone: number;
             todayFollowUp: number; overdue: number; unattended: number; timelyCount: number;
-            noDues: number;
+            noDues: number; badDebt: number;
         };
         const statsMap = new Map<string, Stat>();
 
         const blank = (crmId: string, crmName: string): Stat => ({
             crmId, crmName,
             totalAssigned: 0, followUpDone: 0, todayFollowUp: 0,
-            overdue: 0, unattended: 0, timelyCount: 0, noDues: 0,
+            overdue: 0, unattended: 0, timelyCount: 0, noDues: 0, badDebt: 0,
         });
 
         // Seed the people we know about, so a CRM with an empty book still
@@ -1552,6 +1584,13 @@ const App = () => {
                 // On the books but owing nothing — real customers, nothing to chase.
                 if (!hasOutstanding(item)) {
                     stat.noDues++;
+                    continue;
+                }
+
+                // A defaulter on somebody's book is not a follow-up they missed:
+                // it is on the recovery list, and it does not move their score.
+                if (isBadDebt(item)) {
+                    stat.badDebt++;
                     continue;
                 }
 
@@ -1768,6 +1807,13 @@ const App = () => {
                         sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> committed</>}
                     />
                 </div>
+                <BadDebtStrip
+                    className="mt-3.5"
+                    count={fourBoxesSummary.badDebtCount}
+                    amount={fourBoxesSummary.badDebtAmount}
+                    active={categoryFilter === 'bad_debt'}
+                    onClick={() => { handleCategoryBoxClick('bad_debt'); setAdminTab('reports'); }}
+                />
             </section>
 
             {/* ---------- portfolio ageing ---------- */}
@@ -2005,6 +2051,13 @@ const App = () => {
                                     sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.futureAmount)}</span> committed</>}
                                 />
                             </div>
+                            <BadDebtStrip
+                                className="mt-3.5 lg:mt-2.5"
+                                count={userBoxMetrics.badDebtCount}
+                                amount={userBoxMetrics.badDebtAmount}
+                                active={categoryFilter === 'bad_debt'}
+                                onClick={() => handleCategoryBoxClick('bad_debt')}
+                            />
                         </section>
 
                         {/* ---------- my book, and the accounts beside it ----------
@@ -2099,6 +2152,7 @@ const App = () => {
                                         : categoryFilter === 'overdue' ? 'Past their promised date'
                                         : categoryFilter === 'no_follow_up' ? 'No follow-up planned'
                                         : categoryFilter === 'future' ? 'Scheduled'
+                                        : categoryFilter === 'bad_debt' ? 'Bad debt — the recovery list'
                                         : 'My accounts'
                                 }
                                 subtitle={`${filteredData.length} account${filteredData.length === 1 ? '' : 's'}${searchTerm ? ' matching your search' : ''}`}
@@ -2133,6 +2187,7 @@ const App = () => {
                                                         >
                                                             {customer.company}
                                                         </button>
+                                                        {isBadDebt(customer) && <Badge tone="dang">Bad debt</Badge>}
                                                         {customer.isUrgent && <Badge tone="dang">Urgent</Badge>}
                                                         {cat === 'overdue' && <Badge tone="dang">{due?.text || 'Overdue'}</Badge>}
                                                         {cat === 'today' && <Badge tone="brand">Due today</Badge>}

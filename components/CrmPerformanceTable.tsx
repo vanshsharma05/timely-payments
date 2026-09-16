@@ -12,6 +12,8 @@ interface CrmStat {
     score: number; // Percentage of timely follow-ups
     /** On this CRM's books but owing nothing — counted separately, never chased. */
     noDues?: number;
+    /** Declared defaulters on this CRM's books — on the recovery list, outside the score. */
+    badDebt?: number;
 }
 
 interface CrmPerformanceTableProps {
@@ -56,7 +58,7 @@ const CrmPerformanceTable = ({ stats }: CrmPerformanceTableProps) => {
                                 <div className="text-right flex-none">
                                     <span className="num text-[15px] font-bold text-gray-900 dark:text-white">{stat.totalAssigned}</span>
                                     <span className="block text-[11px] text-gray-500 dark:text-gray-400 leading-tight">
-                                        with dues{stat.noDues ? ` · +${stat.noDues} no dues` : ''}
+                                        with dues{stat.noDues ? ` · +${stat.noDues} no dues` : ''}{stat.badDebt ? ` · +${stat.badDebt} bad debt` : ''}
                                     </span>
                                 </div>
                             </div>
@@ -127,6 +129,12 @@ const CrmPerformanceTable = ({ stats }: CrmPerformanceTableProps) => {
                                     {!!stat.noDues && (
                                         <span className="block font-normal text-[11.5px] text-gray-500 dark:text-gray-400">
                                             +{stat.noDues} no dues
+                                        </span>
+                                    )}
+                                    {/* Defaulters: on the recovery list, outside this score. */}
+                                    {!!stat.badDebt && (
+                                        <span className="block font-normal text-[11.5px] text-dang">
+                                            +{stat.badDebt} bad debt
                                         </span>
                                     )}
                                 </td>

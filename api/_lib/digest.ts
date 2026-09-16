@@ -83,6 +83,9 @@ export interface Digest {
     chequesOverdue: ChequeRow[];
     noFollowUpCount: number;
     noFollowUpValue: number;
+    /** Declared defaulters: on the recovery list in the app, not in this email. */
+    badDebtCount: number;
+    badDebtValue: number;
     bookValue: number;
     bookCount: number;
     /** Only for people who read the whole book. */
@@ -254,7 +257,11 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
 
     return recipients.map(recipient => {
         const mine = scopeFor(recipient, customers);
-        const open = mine.filter(c => c.status !== 'Completed');
+        // A declared defaulter is not the morning's work: the app keeps them
+        // on a recovery list of their own, and so does this email — as one
+        // line, not as rows among the follow-ups (isBadDebt in types.ts).
+        const badDebt = mine.filter(c => c.payment_rank === 'Bad' && Math.abs(Number(c.total) || 0) > 0);
+        const open = mine.filter(c => c.status !== 'Completed' && c.payment_rank !== 'Bad');
 
         const dueToday = open.filter(c => sameDay(c.follow_up_date, today)).sort(byValue);
         const overdue = open.filter(c => beforeDay(c.follow_up_date, today)).sort(byValue);
@@ -310,6 +317,8 @@ export async function buildDigests(db: SupabaseClient, recipients: Recipient[]):
             chequesOverdue,
             noFollowUpCount: noFollowUp.length,
             noFollowUpValue: noFollowUp.reduce((s, c) => s + owes(c), 0),
+            badDebtCount: badDebt.length,
+            badDebtValue: badDebt.reduce((s, c) => s + owes(c), 0),
             bookValue: mine.reduce((s, c) => s + owes(c), 0),
             // Accounts that owe something. The Customer Master sheet puts the
             // whole customer list on the book, most of it settled; counting that
@@ -507,7 +516,11 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
           <div style="font-size:15px;color:${INK};">Good morning ${esc(first)},</div>
           <div style="font-size:22px;font-weight:800;color:${INK};letter-spacing:-.02em;margin-top:6px;">${esc(headline)}</div>
           <div style="font-size:13.5px;color:${MUTED};margin-top:6px;">
-            You are carrying ${d.bookCount} account${d.bookCount === 1 ? '' : 's'} worth ${compact(d.bookValue)}.
+            You are carrying ${d.bookCount} account${d.bookCount === 1 ? '' : 's'} worth ${compact(d.bookValue)}.${
+                d.badDebtCount
+                    ? ` ${d.badDebtCount} of them (${compact(d.badDebtValue)}) ${d.badDebtCount === 1 ? 'is' : 'are'} bad debt, on the recovery list in the app and not below.`
+                    : ''
+            }
           </div>
         </td></tr>
 
@@ -587,6 +600,9 @@ export function renderDigest(d: Digest, appUrl: string): { subject: string; html
     listOut('Promised for today', d.promisedToday.map(c => `${c.company} — ${compact(c.forecast_amount)}`));
     if (d.noFollowUpCount) {
         lines.push('', `${d.noFollowUpCount} accounts have no follow-up planned (${compact(d.noFollowUpValue)}).`);
+    }
+    if (d.badDebtCount) {
+        lines.push('', `${d.badDebtCount} bad-debt accounts (${compact(d.badDebtValue)}) are on the recovery list in the app, not in this email.`);
     }
     lines.push('', appUrl);
 

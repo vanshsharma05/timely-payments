@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing, isBadDebt } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
 import { 
@@ -18,7 +18,7 @@ import { formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
-export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent';
+export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent' | 'bad_debt';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
 
 interface ReportsViewProps {
@@ -127,11 +127,13 @@ export const ReportsView = ({
         return user ? user.name : crmId;
     };
 
-    // Classify each record into categories
-    const isTodayFollowUp = (item: Outstanding) => getFollowUpCategory(item, today) === 'today';
-    const isNoFollowUp = (item: Outstanding) => getFollowUpCategory(item, today) === 'no_follow_up';
-    const isOverdueFollowUp = (item: Outstanding) => getFollowUpCategory(item, today) === 'overdue';
-    const isFutureFollowUp = (item: Outstanding) => getFollowUpCategory(item, today) === 'future';
+    // Classify each record into categories. The four follow-up categories are
+    // routine work, and a declared defaulter is in none of them: it is on the
+    // recovery list (isBadDebt), which has its own chip and its own count.
+    const isTodayFollowUp = (item: Outstanding) => !isBadDebt(item) && getFollowUpCategory(item, today) === 'today';
+    const isNoFollowUp = (item: Outstanding) => !isBadDebt(item) && getFollowUpCategory(item, today) === 'no_follow_up';
+    const isOverdueFollowUp = (item: Outstanding) => !isBadDebt(item) && getFollowUpCategory(item, today) === 'overdue';
+    const isFutureFollowUp = (item: Outstanding) => !isBadDebt(item) && getFollowUpCategory(item, today) === 'future';
 
     // Filter by CRM first to calculate CRM-scoped box metrics
     const crmScopedData = useMemo(() => {
@@ -188,6 +190,8 @@ export const ReportsView = ({
         let ageing46_90Amount = 0;
         let ageing1_45Count = 0;
         let ageing1_45Amount = 0;
+        let badDebtCount = 0;
+        let badDebtAmount = 0;
 
         workScopedData.forEach(item => {
             totalAmount += item.total || 0;
@@ -204,6 +208,13 @@ export const ReportsView = ({
 
             if (item.status === FollowUpStatus.Completed) {
                 completedCount++;
+                return;
+            }
+
+            // The recovery list: counted, and out of the four below.
+            if (isBadDebt(item)) {
+                badDebtCount++;
+                badDebtAmount += item.total || 0;
                 return;
             }
 
@@ -225,9 +236,11 @@ export const ReportsView = ({
             }
         });
 
+        // Scores are of the routine work: a defaulter neither helps nor hurts.
+        const workCount = totalCount - badDebtCount;
         const timelyCount = todayCount + futureCount + completedCount;
-        const performanceScore = totalCount > 0 ? Math.round((timelyCount / totalCount) * 100) : 0;
-        const followUpCoverageRate = totalCount > 0 ? Math.round(((totalCount - noFollowUpCount) / totalCount) * 100) : 0;
+        const performanceScore = workCount > 0 ? Math.round((timelyCount / workCount) * 100) : 0;
+        const followUpCoverageRate = workCount > 0 ? Math.round(((workCount - noFollowUpCount) / workCount) * 100) : 0;
 
         return {
             todayCount,
@@ -253,7 +266,9 @@ export const ReportsView = ({
             ageing46_90Count,
             ageing46_90Amount,
             ageing1_45Count,
-            ageing1_45Amount
+            ageing1_45Amount,
+            badDebtCount,
+            badDebtAmount,
         };
     }, [workScopedData, today]);
 
@@ -268,11 +283,12 @@ export const ReportsView = ({
             if (categoryFilter === 'overdue' && !isOverdueFollowUp(item)) return false;
             if (categoryFilter === 'future' && !isFutureFollowUp(item)) return false;
             if (categoryFilter === 'completed' && item.status !== FollowUpStatus.Completed) return false;
+            if (categoryFilter === 'bad_debt' && !isBadDebt(item)) return false;
             // Exactly what the "needs attention" banner counts: flagged urgent,
             // or the follow-up date has gone by. The banner used to set a filter
             // that only the personal dashboard rendered, so pressing it on the
             // company dashboard dismissed the banner and did nothing else.
-            if (categoryFilter === 'urgent' && !(item.isUrgent || isOverdueFollowUp(item))) return false;
+            if (categoryFilter === 'urgent' && (isBadDebt(item) || !(item.isUrgent || isOverdueFollowUp(item)))) return false;
             if (categoryFilter === 'over90' && itemOver90 <= 0) return false;
             if (categoryFilter === 'over135' && a4 <= 0) return false;
 
@@ -790,6 +806,18 @@ export const ReportsView = ({
                             >
                                 Completed ({boxMetrics.completedCount})
                             </button>
+                            {/* The recovery list — the defaulters the four
+                                follow-up chips leave out. */}
+                            <button
+                                onClick={() => setCategoryFilter('bad_debt')}
+                                className={`h-8 px-3 rounded-full transition-colors font-semibold ${
+                                    categoryFilter === 'bad_debt'
+                                        ? 'bg-dang text-white ring-2 ring-rose-400'
+                                        : 'bg-dang-bg text-dang hover:brightness-95 border border-rose-200 dark:border-rose-800'
+                                }`}
+                            >
+                                Bad debt ({boxMetrics.badDebtCount})
+                            </button>
                         </div>
                     </div>
 
@@ -1072,6 +1100,8 @@ export const ReportsView = ({
                                     // it fought the ageing colours and repeated what the status pill says.
                                     if (item.status === FollowUpStatus.Completed) {
                                         rowBorder = 'border-l-[3px] border-l-green-500';
+                                    } else if (isBadDebt(item)) {
+                                        rowBorder = 'border-l-[3px] border-l-rose-700';
                                     } else if (isTodayFollowUp(item)) {
                                         rowBorder = 'border-l-[3px] border-l-blue-500';
                                     } else if (isOverdueFollowUp(item)) {
@@ -1112,6 +1142,13 @@ export const ReportsView = ({
                                                         <span>{item.company}</span>
                                                         {item.isUrgent && <FireIcon className="text-red-500 w-3.5 h-3.5 flex-shrink-0" />}
                                                     </button>
+                                                    {/* A defaulter, on the recovery list — said on the row, since the
+                                                        list it is in may be a search or "All". */}
+                                                    {isBadDebt(item) && (
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-extrabold bg-dang-bg text-dang" title="A declared defaulter — on the recovery list, out of the follow-up lists">
+                                                            Bad debt
+                                                        </span>
+                                                    )}
                                                     {hasOver90Dues && (
                                                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-extrabold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200 border border-red-200 dark:border-red-800" title="Overdue > 90 Days late payment focus">
                                                             &gt;90d
