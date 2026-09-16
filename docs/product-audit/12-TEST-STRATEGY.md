@@ -15,3 +15,19 @@ Highest-value coverage gaps (preliminary)
 2. Sheet import/reconciliation (`googleSheetService.ts`) — writes back to the book.
 3. Permissions: client `can()` vs RLS.
 4. Daily digest content per role.
+
+## Production-safety classification (Phase 1, inspected before execution; nothing executed)
+
+| Script | Class | Notes |
+|---|---|---|
+| `scripts/tests/stock-test.cjs`, `overview-test.cjs`, `compare-test.cjs`, `price-ui-test.cjs` (admin leg), `book-filters-test.cjs`, `chips-test.cjs`, `baddebt-test.cjs` | READ ONLY | filters, tabs, drawers, browser storage only |
+| `scripts/tests/crm-test.cjs`; `price-ui-test.cjs` CRM leg | CONTROLLED MUTATION WITH CLEANUP | creates and removes a throwaway CRM login via `/api/team`; touches production `auth.users`/`profiles` |
+| `scripts/tests/phone-test.cjs` | READ ONLY, fragile | presses the Admin bulk "Set follow-up" on "Select all" and relies on the confirm being dismissed — rewrite that step before running against production |
+| `scripts/interact.cjs`, `smoke.cjs`, `audit.cjs`, `tour.cjs` | READ ONLY (likely) | no save/confirm-accept found; not exhaustively traced |
+| none | UNSAFE FOR PRODUCTION | any future test of sync, reset, delete, bulk rank/reassign or the cheque lifecycle needs staging (Q6) |
+
+## What a staging environment needs (not pursued this session)
+1. A second Supabase project; run `supabase/schema.sql`; disable sign-up; create an Admin.
+2. Seed: either a scrubbed copy of production (`customers`, `pdc_cheques`, `customer_activity`, `profiles` with fake emails) or a generated book of ~4,000 rows with realistic Dr/Cr and ageing.
+3. `.env.staging` + a `TIMELY_ENV=staging` switch in `scripts/signin.cjs` and `npm run dev`, and a Vercel preview project pointed at it.
+4. Only then: write the S0 tests (sync/reconciliation, write-back, reset) and the destructive-edge-case tests.

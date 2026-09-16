@@ -15,3 +15,19 @@ Status: Phase 0 list (evidence-backed; first-guess priorities).
 | T9 | Schema without migration history | single `schema.sql` with `add column if not exists` blocks | P3 | HIGH |
 | T10 | 61 `any`/suppressions | grep count | P3 | MEDIUM (not yet reviewed individually) |
 | T11 | `metadata.json`, `logo.svg` unreferenced at root | grep found no references | P4 | MEDIUM |
+
+Added in Phase 1 (2026-09-16):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T12 | Scoping rule duplicated between `types.ts` and `api/_lib/digest.ts` (D1) | 03 §9 | P2 | HIGH |
+| T13 | Follow-up status stored and derived, three implementations (D2) | 03 §9 | P2 | HIGH |
+| T14 | Notes mirrored into `customers.notes[]` from the activity table (D3) | 03 §9 | P2 | HIGH |
+| T15 | Two "expected payment" notions (D4) — needs a business decision before code | 03 §9 | P3 | HIGH |
+| T16 | Performance score computed twice (D5); roll-up netting three times (D6) | 03 §9 | P3 | HIGH |
+| T17 | Official sheet URLs hard-coded and in `app_settings` (D7) | `App.tsx` 99–101 | P3 | HIGH |
+| T18 | Dead: `customers.updated_by` column never written; `canEditFinancials` gates nothing | `repository.ts`, grep | P4 | HIGH |
+| T19 | `outstandingData` (derived slice) kept in state alongside `appData` | `App.tsx` | P3 | HIGH |
+| T20 | Seven boolean+target dialog state pairs in `App.tsx` | 09 §A.1 | P3 | HIGH |
+| T21 | Two dashboards render the same tab components twice with near-identical props | 09 §A.4 | P3 | HIGH |
+| T22 | No optimistic concurrency / version column on `customers` (R1) | `schema.sql`, `useSupabaseSync.ts` | P1 | HIGH |
