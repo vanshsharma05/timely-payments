@@ -255,6 +255,15 @@
   --text-base: 0.9375rem; --text-base--line-height: 1.5rem;
 }
 
+/* motion: a folded section opening (animate-reveal) */
+@theme {
+  --animate-reveal: reveal .22s ease-out;
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
 /* ============================================================================
    Palette remap — the original 13k lines were written against stock Tailwind.
 

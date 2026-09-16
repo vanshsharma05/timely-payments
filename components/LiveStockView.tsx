@@ -23,16 +23,18 @@ import { Badge, Button, Card, EmptyState, SectionHeader, cx } from './ui/Primiti
 import { formatCompact, formatDate, formatINR, groupIndian } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { DownloadIcon, SyncIcon } from './icons/Icons';
+import { ChevronDown } from './shell/NavIcons';
 
 /* ============================================================================
    Live stock — a window onto the stores sheet.
 
    Read-only by design: the stores team keeps the sheet, and this page shows
    what they keep, a minute behind at most. It answers the question a call is
-   about — is it there, how much, is it running low — before anything else:
-   five tiles on availability, a strip of the figures worth knowing, the value
-   by brand, and the list those open onto, with a row that opens into the
-   whole record.
+   about — is it there, how much, is it running low — which is the search and
+   the list, with a row that opens into the whole record. The overview — five
+   tiles on availability, the stock by brand, a strip of the figures worth
+   knowing — is not an everyday need, so it sits folded above the list and
+   opens with one click, for everyone, closed again on the next visit.
    ============================================================================ */
 
 interface LiveStockViewProps {
@@ -43,6 +45,13 @@ interface LiveStockViewProps {
     fromCache: boolean;
     onRefresh: () => void;
     currentUser: User | null;
+    /**
+     * Whether rate and value are shown. Admin and Manager only — the boss's
+     * call — and the server has already emptied both columns for anyone
+     * else (see api/_lib/liveStock.ts), so this decides only what the page
+     * offers, never what it hides.
+     */
+    showPrices: boolean;
     /** Search text from the app bar. */
     globalSearch?: string;
 }
@@ -206,6 +215,7 @@ const BarRow = ({
     value,
     max,
     sub,
+    money = true,
     active,
     onClick,
 }: {
@@ -213,6 +223,8 @@ const BarRow = ({
     value: number;
     max: number;
     sub?: string;
+    /** Rupees, or a plain count. */
+    money?: boolean;
     active?: boolean;
     onClick?: () => void;
 }) => (
@@ -229,7 +241,7 @@ const BarRow = ({
         <div className="flex items-baseline justify-between gap-3 text-[13px]">
             <span className={cx('truncate font-semibold', active ? 'text-accent' : 'text-label')}>{label}</span>
             <span className="num text-label-2 flex-none">
-                {formatCompact(value)}
+                {money ? formatCompact(value) : `${value.toLocaleString('en-IN')} items`}
                 {sub && <span className="text-label-3 font-normal"> · {sub}</span>}
             </span>
         </div>
@@ -256,6 +268,7 @@ export const LiveStockView = ({
     fromCache,
     onRefresh,
     currentUser,
+    showPrices,
     globalSearch = '',
 }: LiveStockViewProps) => {
     const isPhone = useIsPhone();
@@ -269,9 +282,22 @@ export const LiveStockView = ({
     const [criticalOnly, setCriticalOnly] = useState(false);
     const [status, setStatus] = useState<StatusFilter>('ALL');
     const [movement, setMovement] = useState<MovementFilter>('ALL');
-    const [sortKey, setSortKey] = useState<SortKey>('value');
-    const [sortDesc, setSortDesc] = useState(true);
+    // Without prices there is no value to sort by; the brand is the next
+    // most natural order for a shelf.
+    const [sortKey, setSortKey] = useState<SortKey>(showPrices ? 'value' : 'category');
+    const [sortDesc, setSortDesc] = useState(showPrices);
+    const [sortTouched, setSortTouched] = useState(false);
+    // The prices arrive a moment after the page does; the default sort follows
+    // them, unless somebody has already chosen a sort of their own.
+    useEffect(() => {
+        if (sortTouched) return;
+        setSortKey(showPrices ? 'value' : 'category');
+        setSortDesc(showPrices);
+    }, [showPrices, sortTouched]);
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+    // The overview starts folded on every visit: there when wanted, not in
+    // the way when it is not.
+    const [overviewOpen, setOverviewOpen] = useState(false);
     const [selected, setSelected] = useState<StockItem | null>(null);
 
     // A sub-category belongs to a category; changing the category clears it.
@@ -378,8 +404,10 @@ export const LiveStockView = ({
     const health = pct(summary.inStock, summary.items);
 
     const topCategories = useMemo(
-        () => [...summary.byCategory.entries()].sort((a, b) => b[1].value - a[1].value).slice(0, 8),
-        [summary],
+        () => [...summary.byCategory.entries()]
+            .sort((a, b) => (showPrices ? b[1].value - a[1].value : b[1].items - a[1].items))
+            .slice(0, 8),
+        [summary, showPrices],
     );
 
     const viewValue = useMemo(() => filtered.reduce((a, i) => a + i.value, 0), [filtered]);
@@ -398,6 +426,7 @@ export const LiveStockView = ({
     };
 
     const sortBy = (k: SortKey) => {
+        setSortTouched(true);
         if (sortKey === k) setSortDesc(d => !d);
         else { setSortKey(k); setSortDesc(k !== 'name' && k !== 'category'); }
     };
@@ -412,8 +441,7 @@ export const LiveStockView = ({
             'Availability': AVAILABILITY_LABELS[availabilityOf(i)],
             'Quantity': i.quantity,
             'Quantity + PO': i.quantityWithPo,
-            'Rate (₹)': i.rate,
-            'Value (₹)': i.value,
+            ...(showPrices ? { 'Rate (₹)': i.rate, 'Value (₹)': i.value } : {}),
             'Min Level': i.minLevel,
             'Max Level': i.maxLevel,
             'Short of Minimum': i.isShort ? 'Yes' : '',
@@ -477,14 +505,18 @@ export const LiveStockView = ({
                     <span className="text-label-3 max-md:hidden">Re-reads every {Math.round(LIVE_STOCK_REFRESH_MS / 1000)}s while this page is open.</span>
                 )}
                 <span className="ml-auto flex items-center gap-2">
-                    <a
-                        href={LIVE_STOCK_SHEET_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-8 px-3 inline-flex items-center rounded-full text-[12.5px] font-semibold text-accent hover:bg-accent-tint"
-                    >
-                        Open the sheet ↗
-                    </a>
+                    {/* The sheet carries the prices, so the link to it goes only
+                        to the people who may see them. */}
+                    {showPrices && (
+                        <a
+                            href={LIVE_STOCK_SHEET_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="h-8 px-3 inline-flex items-center rounded-full text-[12.5px] font-semibold text-accent hover:bg-accent-tint"
+                        >
+                            Open the sheet ↗
+                        </a>
+                    )}
                     <button
                         type="button"
                         onClick={onRefresh}
@@ -507,6 +539,57 @@ export const LiveStockView = ({
                 </Card>
             ) : (
                 <>
+                    {/* ---------- overview: folded until asked for, one click either way ---------- */}
+                    <button
+                        type="button"
+                        onClick={() => setOverviewOpen(v => !v)}
+                        aria-expanded={overviewOpen}
+                        aria-controls={overviewOpen ? 'stock-overview' : undefined}
+                        className={cx(
+                            'w-full flex items-center gap-3 rounded-[14px] bg-card shadow-e1 px-4 py-2.5 text-left transition-all',
+                            'hover:shadow-e2 active:scale-[.995]',
+                            overviewOpen && 'ring-1 ring-accent-tint-2',
+                        )}
+                    >
+                        <span className={cx(
+                            'w-8 h-8 rounded-full grid place-items-center flex-none transition-colors',
+                            overviewOpen ? 'bg-accent text-on-accent' : 'bg-accent-tint text-accent',
+                        )}>
+                            <ChevronDown className={cx('w-4 h-4 transition-transform duration-200', overviewOpen && 'rotate-180')} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-[14px] font-bold text-label leading-tight">Overview</span>
+                            <span className="block text-[12.5px] text-label-3 truncate mt-0.5">
+                                {overviewOpen
+                                    ? <>
+                                        <span className="max-md:hidden">Availability, stock by brand and quick insights. Each tile is a filter.</span>
+                                        <span className="md:hidden">Each tile is a filter. Tap here to close.</span>
+                                    </>
+                                    : <>
+                                        <span className="inline-block w-2 h-2 rounded-full align-middle mr-1" style={{ background: AVAILABILITY_VAR.in }} aria-hidden="true" />
+                                        <span className="num font-semibold text-label-2">{summary.inStock.toLocaleString('en-IN')}</span> in stock
+                                        <span className="mx-1.5">·</span>
+                                        <span className="inline-block w-2 h-2 rounded-full align-middle mr-1" style={{ background: AVAILABILITY_VAR.low }} aria-hidden="true" />
+                                        <span className="num font-semibold text-label-2">{summary.low.toLocaleString('en-IN')}</span> low
+                                        <span className="mx-1.5">·</span>
+                                        <span className="inline-block w-2 h-2 rounded-full align-middle mr-1" style={{ background: AVAILABILITY_VAR.out }} aria-hidden="true" />
+                                        <span className="num font-semibold text-label-2">{summary.out.toLocaleString('en-IN')}</span> out
+                                        <span className="mx-1.5 max-md:hidden">·</span>
+                                        <span className="max-md:hidden">health <span className="num font-semibold" style={{ color: healthVar(health) }}>{Math.round(health)}%</span></span>
+                                    </>}
+                            </span>
+                        </span>
+                        {/* On a phone the chevron is the cue; the word would cost the counts their room. */}
+                        <span className={cx(
+                            'h-8 px-3 inline-flex items-center rounded-full text-[12.5px] font-semibold flex-none max-md:hidden',
+                            overviewOpen ? 'bg-card-2 text-label-2' : 'bg-accent-tint text-accent',
+                        )}>
+                            {overviewOpen ? 'Hide' : 'Show'}
+                        </span>
+                    </button>
+
+                    {overviewOpen && (
+                    <div id="stock-overview" className="space-y-5 max-md:space-y-4 animate-reveal">
                     {/* ---------- tiles: how the shelf is divided, each one a filter ---------- */}
                     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:snap-mandatory max-md:-mx-4 max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&>*]:min-w-[180px] max-md:[&>*]:snap-start">
                         <Tile
@@ -516,9 +599,11 @@ export const LiveStockView = ({
                             active={filtersOn === 0 && !search}
                             onClick={clearFilters}
                             value={summary.items.toLocaleString('en-IN')}
-                            sub={filtered.length === summary.items && !search
-                                ? <><span className="num font-semibold text-label-2">{formatCompact(summary.value)}</span> stock value</>
-                                : <><span className="num font-semibold text-label-2">{filtered.length.toLocaleString('en-IN')}</span> in view</>}
+                            sub={filtered.length !== summary.items || search
+                                ? <><span className="num font-semibold text-label-2">{filtered.length.toLocaleString('en-IN')}</span> in view</>
+                                : showPrices
+                                    ? <><span className="num font-semibold text-label-2">{formatCompact(summary.value)}</span> stock value</>
+                                    : <><span className="num font-semibold text-label-2">{summary.brands.size}</span> brands</>}
                         />
                         <Tile
                             label="In stock"
@@ -561,16 +646,17 @@ export const LiveStockView = ({
                         <Card className="p-6 max-md:p-5">
                             <SectionHeader
                                 title="Stock by brand"
-                                subtitle="Where the value sits. Tap a brand to see its items."
+                                subtitle={showPrices ? 'Where the value sits. Tap a brand to see its items.' : 'The brands with the most items. Tap one to see its items.'}
                             />
                             <div className="mt-5 space-y-1">
                                 {topCategories.map(([name, c]) => (
                                     <BarRow
                                         key={name}
                                         label={name}
-                                        value={c.value}
-                                        max={topCategories[0]?.[1].value || 1}
-                                        sub={`${c.items} items`}
+                                        value={showPrices ? c.value : c.items}
+                                        max={showPrices ? (topCategories[0]?.[1].value || 1) : (topCategories[0]?.[1].items || 1)}
+                                        sub={showPrices ? `${c.items} items` : undefined}
+                                        money={showPrices}
                                         active={category === name}
                                         onClick={() => setCategory(category === name ? 'ALL' : name)}
                                     />
@@ -602,7 +688,7 @@ export const LiveStockView = ({
                                 <Insight
                                     label="Low or out"
                                     value={pctText(summary.low + summary.out, summary.items)}
-                                    sub={`${(summary.low + summary.out).toLocaleString('en-IN')} items · ${formatCompact(summary.toMinimum)} to reach minimums`}
+                                    sub={`${(summary.low + summary.out).toLocaleString('en-IN')} items${showPrices ? ` · ${formatCompact(summary.toMinimum)} to reach minimums` : ''}`}
                                     tone={summary.low + summary.out > 0 ? 'var(--age-3-ink)' : undefined}
                                 />
                             </div>
@@ -619,6 +705,8 @@ export const LiveStockView = ({
                             </button>
                         </Card>
                     </div>
+                    </div>
+                    )}
 
                     {/* ---------- filters ---------- */}
                     <Card className="p-5 max-md:p-4 space-y-3.5">
@@ -665,18 +753,18 @@ export const LiveStockView = ({
                                 <select
                                     aria-label="Sort by"
                                     value={`${sortKey}:${sortDesc ? 'desc' : 'asc'}`}
-                                    onChange={e => { const [k, d] = e.target.value.split(':'); setSortKey(k as SortKey); setSortDesc(d === 'desc'); }}
+                                    onChange={e => { const [k, d] = e.target.value.split(':'); setSortTouched(true); setSortKey(k as SortKey); setSortDesc(d === 'desc'); }}
                                     className={selectClass}
                                 >
-                                    <option value="value:desc">Highest value first</option>
-                                    <option value="value:asc">Lowest value first</option>
+                                    {showPrices && <option value="value:desc">Highest value first</option>}
+                                    {showPrices && <option value="value:asc">Lowest value first</option>}
+                                    <option value="category:asc">Brand A–Z</option>
+                                    <option value="name:asc">Item code A–Z</option>
                                     <option value="quantity:desc">Most quantity first</option>
                                     <option value="quantity:asc">Least quantity first</option>
                                     <option value="ageing:desc">Longest since receipt</option>
                                     <option value="ageing:asc">Most recently received</option>
-                                    <option value="rate:desc">Highest rate first</option>
-                                    <option value="name:asc">Item code A–Z</option>
-                                    <option value="category:asc">Brand A–Z</option>
+                                    {showPrices && <option value="rate:desc">Highest rate first</option>}
                                 </select>
                             </div>
                         </div>
@@ -706,6 +794,18 @@ export const LiveStockView = ({
                                 <option value="ALL">Any movement</option>
                                 {(['FAST MOVING', 'REVIEW', 'SLOW MOVING'] as const).map(k => <option key={k} value={k}>{MOVEMENT_LABELS[k]}</option>)}
                             </select>
+                            {/* The overview offers this too, but the overview is folded most of the time. */}
+                            <button
+                                type="button"
+                                onClick={() => setCriticalOnly(v => !v)}
+                                aria-pressed={criticalOnly}
+                                className={cx(
+                                    'h-9 px-3 rounded-xl text-[12.5px] font-bold whitespace-nowrap transition-colors max-md:w-full max-md:h-11',
+                                    criticalOnly ? 'bg-dang text-card' : 'bg-dang-bg text-dang hover:brightness-95',
+                                )}
+                            >
+                                Critical ({summary.critical})
+                            </button>
                             {(filtersOn > 0 || search) && (
                                 <button type="button" onClick={clearFilters} className="h-8 px-2 text-[12.5px] font-bold text-dang hover:underline ml-auto">
                                     Reset
@@ -719,8 +819,12 @@ export const LiveStockView = ({
                         <div className="px-4 py-3 bg-card-2 border-b border-separator flex flex-wrap items-center justify-between gap-2 text-[13px]">
                             <span className="font-bold text-label">
                                 {filtered.length.toLocaleString('en-IN')} item{filtered.length === 1 ? '' : 's'}
-                                <span className="font-semibold text-label-3"> · </span>
-                                <span className="num font-semibold text-label-2">{formatCompact(viewValue)}</span>
+                                {showPrices && (
+                                    <>
+                                        <span className="font-semibold text-label-3"> · </span>
+                                        <span className="num font-semibold text-label-2">{formatCompact(viewValue)}</span>
+                                    </>
+                                )}
                                 <span className="text-label-3 font-medium"> in view</span>
                             </span>
                             {canExport && filtered.length > 0 && (
@@ -766,7 +870,7 @@ export const LiveStockView = ({
                                                     <p className={cx('num text-[15px] font-bold leading-tight', a === 'out' ? 'text-dang' : 'text-label')}>
                                                         {formatQty(item.quantity, item.unit)}
                                                     </p>
-                                                    <p className="num text-[12px] text-label-3 mt-0.5">{formatCompact(item.value)}</p>
+                                                    {showPrices && <p className="num text-[12px] text-label-3 mt-0.5">{formatCompact(item.value)}</p>}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 flex-wrap mt-2">
@@ -790,8 +894,8 @@ export const LiveStockView = ({
                                             <SortHead k="name" className="min-w-[280px]">Item</SortHead>
                                             <SortHead k="quantity" className="text-right">Stock</SortHead>
                                             <th className="px-3 py-2.5 uppercase tracking-wider font-bold w-[150px]">Level</th>
-                                            <SortHead k="rate" className="text-right">Rate</SortHead>
-                                            <SortHead k="value" className="text-right">Value</SortHead>
+                                            {showPrices && <SortHead k="rate" className="text-right">Rate</SortHead>}
+                                            {showPrices && <SortHead k="value" className="text-right">Value</SortHead>}
                                             <th className="px-3 py-2.5 uppercase tracking-wider font-bold">Movement</th>
                                             <SortHead k="ageing">Last received</SortHead>
                                             <th className="px-3 py-2.5 uppercase tracking-wider font-bold">Status</th>
@@ -835,8 +939,8 @@ export const LiveStockView = ({
                                                             <span className="text-[11.5px] text-label-4">no levels</span>
                                                         )}
                                                     </td>
-                                                    <td className="px-3 py-2.5 text-right whitespace-nowrap num text-label-2">{item.rate ? formatINR(item.rate) : '—'}</td>
-                                                    <td className="px-3 py-2.5 text-right whitespace-nowrap num font-semibold text-label" title={formatINR(item.value)}>{formatCompact(item.value)}</td>
+                                                    {showPrices && <td className="px-3 py-2.5 text-right whitespace-nowrap num text-label-2">{item.rate ? formatINR(item.rate) : '—'}</td>}
+                                                    {showPrices && <td className="px-3 py-2.5 text-right whitespace-nowrap num font-semibold text-label" title={formatINR(item.value)}>{formatCompact(item.value)}</td>}
                                                     <td className="px-3 py-2.5 whitespace-nowrap">
                                                         {item.movement ? <Badge tone={MOVEMENT_TONE[item.movement]}>{MOVEMENT_LABELS[item.movement]}</Badge> : <span className="text-label-4">—</span>}
                                                     </td>
@@ -930,22 +1034,32 @@ export const LiveStockView = ({
                                 {selected.colour && <Badge tone="neutral">{STOCK_COLOUR_LABELS[selected.colour]}</Badge>}
                             </div>
 
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className={cx('grid gap-2', showPrices ? 'grid-cols-3' : 'grid-cols-2')}>
                                 <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
                                     <p className="label">In stock</p>
                                     <p className={cx('num text-[20px] font-semibold mt-1 leading-none', a === 'out' ? 'text-dang' : 'text-label')}>{formatQty(selected.quantity)}</p>
                                     <p className="text-[11.5px] text-label-3 mt-1">{selected.unit || 'units'}{selected.quantityWithPo !== selected.quantity ? ` · +PO ${formatQty(selected.quantityWithPo)}` : ''}</p>
                                 </div>
-                                <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
-                                    <p className="label">Value</p>
-                                    <p className="num text-[20px] font-semibold text-label mt-1 leading-none">{formatCompact(selected.value)}</p>
-                                    <p className="text-[11.5px] text-label-3 mt-1">{formatINR(selected.value)}</p>
-                                </div>
-                                <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
-                                    <p className="label">Rate</p>
-                                    <p className="num text-[20px] font-semibold text-label mt-1 leading-none">{selected.rate ? formatINR(selected.rate) : '—'}</p>
-                                    <p className="text-[11.5px] text-label-3 mt-1">per {selected.unit || 'unit'}{selected.taxPct !== undefined ? ` · GST ${selected.taxPct}%` : ''}</p>
-                                </div>
+                                {showPrices ? (
+                                    <>
+                                        <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
+                                            <p className="label">Value</p>
+                                            <p className="num text-[20px] font-semibold text-label mt-1 leading-none">{formatCompact(selected.value)}</p>
+                                            <p className="text-[11.5px] text-label-3 mt-1">{formatINR(selected.value)}</p>
+                                        </div>
+                                        <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
+                                            <p className="label">Rate</p>
+                                            <p className="num text-[20px] font-semibold text-label mt-1 leading-none">{selected.rate ? formatINR(selected.rate) : '—'}</p>
+                                            <p className="text-[11.5px] text-label-3 mt-1">per {selected.unit || 'unit'}{selected.taxPct !== undefined ? ` · GST ${selected.taxPct}%` : ''}</p>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="bg-card-2 rounded-[14px] px-3.5 py-3">
+                                        <p className="label">Unit</p>
+                                        <p className="num text-[20px] font-semibold text-label mt-1 leading-none">{selected.unit || '—'}</p>
+                                        <p className="text-[11.5px] text-label-3 mt-1">{selected.taxPct !== undefined ? `GST ${selected.taxPct}%` : 'per item'}</p>
+                                    </div>
+                                )}
                             </div>
 
                             {hasLevels(selected) ? (
@@ -957,7 +1071,7 @@ export const LiveStockView = ({
                                     <LevelBar item={selected} className="mt-3" />
                                     <p className="text-[12.5px] mt-3 text-label-2">
                                         {selected.quantity < selected.minLevel
-                                            ? <><span className="font-semibold text-dang">{formatQty(selected.minLevel - selected.quantity, selected.unit)} short</span> of the minimum{selected.rate ? ` — about ${formatINR((selected.minLevel - selected.quantity) * selected.rate)} to bring back` : ''}.</>
+                                            ? <><span className="font-semibold text-dang">{formatQty(selected.minLevel - selected.quantity, selected.unit)} short</span> of the minimum{showPrices && selected.rate ? ` — about ${formatINR((selected.minLevel - selected.quantity) * selected.rate)} to bring back` : ''}.</>
                                             : selected.maxLevel > 0 && selected.quantity >= selected.maxLevel
                                                 ? <span className="font-semibold text-pos">At or above the maximum.</span>
                                                 : <span className="font-semibold text-warn">Between minimum and maximum.</span>}
@@ -999,15 +1113,19 @@ export const LiveStockView = ({
                         </div>
 
                         <div className="px-5 py-3.5 border-t border-separator flex items-center justify-between gap-2 pb-[calc(14px+env(safe-area-inset-bottom))]">
-                            <span className="text-[12px] text-label-3">Edit in the sheet; this page follows it.</span>
-                            <a
-                                href={`${LIVE_STOCK_SHEET_URL}&range=A${selected.serial + 2}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="h-10 px-4 inline-flex items-center rounded-full text-[13.5px] font-bold bg-accent text-on-accent hover:bg-accent-press"
-                            >
-                                Open in sheet ↗
-                            </a>
+                            <span className="text-[12px] text-label-3">
+                                {showPrices ? 'Edit in the sheet; this page follows it.' : 'Kept by the stores team; this page follows their sheet.'}
+                            </span>
+                            {showPrices && (
+                                <a
+                                    href={`${LIVE_STOCK_SHEET_URL}&range=A${selected.serial + 2}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="h-10 px-4 inline-flex items-center rounded-full text-[13.5px] font-bold bg-accent text-on-accent hover:bg-accent-press"
+                                >
+                                    Open in sheet ↗
+                                </a>
+                            )}
                         </div>
                     </div>
                 </div>

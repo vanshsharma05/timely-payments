@@ -7,6 +7,7 @@ import { handleTeamRequest } from './api/_lib/team';
 import { runDailyReminders } from './api/_lib/reminders';
 import { mailProvider } from './api/_lib/mailer';
 import { bearerToken, currentProfile, isBackendConfigured } from './api/_lib/supabase';
+import { readLiveStock, seesPrices } from './api/_lib/liveStock';
 
 /**
  * Local development server.
@@ -44,8 +45,28 @@ async function startServer() {
         }
     };
 
-    app.post('/api/fetch-sheet', (req, res) => sheetHandler(req.body?.url, res));
-    app.get('/api/fetch-sheet', (req, res) => sheetHandler(req.query?.url, res));
+    /** Same gate as api/fetch-sheet.ts: a signed-in Admin or Manager. */
+    const sheetGate = async (req: express.Request, res: express.Response): Promise<boolean> => {
+        const caller = await currentProfile(bearerToken(req.headers.authorization));
+        if (!caller) { res.status(401).json({ ok: false, error: 'Not signed in.' }); return false; }
+        if (!seesPrices(caller.role)) { res.status(403).json({ ok: false, error: 'Only an Admin or Manager can read a sheet directly.' }); return false; }
+        return true;
+    };
+    app.post('/api/fetch-sheet', async (req, res) => { if (await sheetGate(req, res)) await sheetHandler(req.body?.url, res); });
+    app.get('/api/fetch-sheet', async (req, res) => { if (await sheetGate(req, res)) await sheetHandler(req.query?.url, res); });
+
+    /** Mirrors api/live-stock.ts — the stores sheet, prices only for Admin and Manager. */
+    app.get('/api/live-stock', async (req, res) => {
+        const caller = await currentProfile(bearerToken(req.headers.authorization));
+        if (!caller) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+        try {
+            const { csv, priced, sourceUrl } = await readLiveStock(caller.role);
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ ok: true, csv, priced, sourceUrl });
+        } catch (err: any) {
+            res.status(502).json({ ok: false, error: err?.message || 'The stock sheet could not be read.' });
+        }
+    });
 
     /** Mirrors api/team.ts — create / update / remove a teammate's login. */
     app.post('/api/team', async (req, res) => {

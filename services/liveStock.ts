@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseCSVMatrix } from './googleSheetService';
+import { authHeaders } from './repository';
 
 /* ============================================================================
    Live stock — the "Live stock" page of the stores sheet, read as it is.
@@ -276,24 +277,32 @@ export interface LiveStockRead {
     items: StockItem[];
     /** When the sheet was read, ISO. */
     fetchedAt: string;
+    /**
+     * Whether rate and value came with it. The server empties both for
+     * anyone who is not an Admin or Manager, so a page reading `false` has
+     * no prices to show and must not pretend to.
+     */
+    priced: boolean;
 }
 
+/**
+ * Reads the sheet through /api/live-stock, which wants the session and
+ * decides from it whether the prices come along — see api/_lib/liveStock.ts.
+ */
 export async function fetchLiveStock(): Promise<LiveStockRead> {
-    const res = await fetch('/api/fetch-sheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: LIVE_STOCK_SHEET_URL }),
-    });
+    const res = await fetch('/api/live-stock', { headers: await authHeaders() });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.ok || !body.csv) {
         throw new Error(body.error || `The stock sheet could not be read (HTTP ${res.status}).`);
     }
     const items = parseLiveStockCsv(body.csv);
     if (!items.length) throw new Error('The stock sheet came back empty.');
+    const priced = body.priced === true;
+    const fetchedAt = new Date().toISOString();
     try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify({ csv: body.csv, fetchedAt: new Date().toISOString() }));
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ csv: body.csv, fetchedAt, priced }));
     } catch { /* private mode, or a full store — the read still works */ }
-    return { items, fetchedAt: new Date().toISOString() };
+    return { items, fetchedAt, priced };
 }
 
 /**
@@ -301,16 +310,21 @@ export async function fetchLiveStock(): Promise<LiveStockRead> {
  * than a spinner. Marked with when it was read, so it is never mistaken for
  * live; the live read replaces it within a second or two.
  */
-const CACHE_KEY = 'timely_live_stock_v1';
+const CACHE_KEY = 'timely_live_stock_v2';
 
-function readCache(): LiveStockRead | null {
+/**
+ * Only a cache of the same shape the caller is entitled to: a Manager's
+ * priced read must not flash up for a CRM who signs in on the same laptop.
+ */
+function readCache(allowPrices: boolean): LiveStockRead | null {
     try {
         const raw = localStorage.getItem(CACHE_KEY);
         if (!raw) return null;
-        const { csv, fetchedAt } = JSON.parse(raw);
+        const { csv, fetchedAt, priced } = JSON.parse(raw);
         if (typeof csv !== 'string' || typeof fetchedAt !== 'string') return null;
+        if (Boolean(priced) !== allowPrices) return null;
         const items = parseLiveStockCsv(csv);
-        return items.length ? { items, fetchedAt } : null;
+        return items.length ? { items, fetchedAt, priced: Boolean(priced) } : null;
     } catch {
         return null;
     }
@@ -318,6 +332,8 @@ function readCache(): LiveStockRead | null {
 
 export interface LiveStockState extends Partial<LiveStockRead> {
     items: StockItem[];
+    /** False until a read says otherwise — the page never assumes prices. */
+    priced: boolean;
     /** True while a read is in flight. */
     loading: boolean;
     /** The last read failed; `items` are from the read before it. */
@@ -335,8 +351,8 @@ export interface LiveStockState extends Partial<LiveStockRead> {
  * every minute. Coming back to the tab reads at once, so what is on screen is
  * never older than a moment after somebody looks at it.
  */
-export function useLiveStock(enabled: boolean): LiveStockState {
-    const [read, setRead] = useState<LiveStockRead | null>(() => readCache());
+export function useLiveStock(enabled: boolean, allowPrices: boolean): LiveStockState {
+    const [read, setRead] = useState<LiveStockRead | null>(() => readCache(allowPrices));
     const [fromCache, setFromCache] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | undefined>();
@@ -380,6 +396,7 @@ export function useLiveStock(enabled: boolean): LiveStockState {
     return {
         items: read?.items ?? [],
         fetchedAt: read?.fetchedAt,
+        priced: Boolean(read?.priced) && allowPrices,
         loading,
         error,
         fromCache,

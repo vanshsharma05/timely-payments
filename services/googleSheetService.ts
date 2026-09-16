@@ -1,4 +1,5 @@
 import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo, normaliseCategory, hasOutstanding } from '../types';
+import { authHeaders } from './repository';
 
 
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
@@ -493,7 +494,7 @@ export async function fetchGoogleSheetData(sheetUrl: string): Promise<{ data: Ou
     try {
         const res = await fetch('/api/fetch-sheet', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
             body: JSON.stringify({ url: trimmed }),
         });
 
@@ -725,7 +726,7 @@ export async function fetchCustomerMasterSheetData(sheetUrl: string): Promise<{ 
     try {
         const res = await fetch('/api/fetch-sheet', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
             body: JSON.stringify({ url: trimmed }),
         });
 

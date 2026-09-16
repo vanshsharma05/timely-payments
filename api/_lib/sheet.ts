@@ -77,6 +77,9 @@ export function isGoogleSheetUrl(url: string): boolean {
     }
 }
 
+/** How long one URL shape gets before the next is tried. */
+const PER_URL_TIMEOUT_MS = 12_000;
+
 export async function fetchGoogleSheetCsv(inputUrl: string): Promise<{ csv: string; sourceUrl: string }> {
     const candidateUrls = getCandidateCsvUrls(inputUrl);
     if (!candidateUrls.length) {
@@ -85,13 +88,19 @@ export async function fetchGoogleSheetCsv(inputUrl: string): Promise<{ csv: stri
     let lastError: Error | null = null;
 
     for (const url of candidateUrls) {
+        // Google's CSV endpoints have slow days — the gviz one took twenty
+        // seconds on one of them — and a read that hangs on the first URL
+        // shape never reaches the second. Each gets a fair wait and no more.
+        const abort = new AbortController();
+        const timer = setTimeout(() => abort.abort(), PER_URL_TIMEOUT_MS);
         try {
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/csv,text/plain,*/*'
                 },
-                redirect: 'follow'
+                redirect: 'follow',
+                signal: abort.signal,
             });
 
             if (!response.ok) {
@@ -111,7 +120,9 @@ export async function fetchGoogleSheetCsv(inputUrl: string): Promise<{ csv: stri
                 return { csv: text, sourceUrl: url };
             }
         } catch (e: any) {
-            lastError = e;
+            lastError = e?.name === 'AbortError' ? new Error(`Google did not answer within ${PER_URL_TIMEOUT_MS / 1000}s.`) : e;
+        } finally {
+            clearTimeout(timer);
         }
     }
 

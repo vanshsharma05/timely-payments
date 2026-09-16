@@ -437,6 +437,16 @@ the digest fails.
   the org chart. `scripts/smoke.cjs` asserts this.
 - `readableAuthError()` makes a wrong password indistinguishable from an unknown
   address — that difference is how an attacker enumerates who works here.
+- **Stock prices are for Admin and Manager.** `/api/live-stock`
+  (`api/_lib/liveStock.ts`) empties the rate and value columns before the sheet
+  leaves the server for anyone else, so a CRM's copy never carried a price —
+  hiding two columns in the browser would have left them one Network tab away.
+  `/api/fetch-sheet` is Admin/Manager-only for the same reason: an open proxy
+  would have handed anyone the priced sheet. The links to the sheet itself are
+  shown only to those two roles; the sheet is shared "anyone with the link",
+  which is the boss's boundary to move if it matters. The browser cache of
+  the last read is keyed by whether it carried prices, so a Manager's read
+  never flashes up for a CRM on the same laptop.
 
 ---
 
@@ -1220,7 +1230,15 @@ item code; rows without a code are skipped. The coded columns decode as:
 | `Photo` | a Drive share link | shown in the item drawer through Drive's thumbnail endpoint, with **no referrer** — with one, Drive answers with a page the browser refuses to show as an image |
 
 **The page.** It answers the question a call is about — is it there, how
-much, is it running low — before anything else. Five tiles of the whole sheet,
+much, is it running low — which is the search and the list. The figures above
+them are an **Overview that opens on request**: a one-line bar (the three
+availability counts and the health score, so the closed bar still says how
+the shelf is doing) that one click opens and one click closes, for every
+role, and that is **closed on every visit** — the boss's call, the dashboard
+is not an everyday need. Nothing of it is rendered while closed. Because the
+critical-items button lives inside it, a **Critical (n)** chip sits in the
+filter row so that list stays one click away with the overview folded.
+Inside: five tiles of the whole sheet,
 each a filter: total items · in stock · low stock · out of stock · health
 score. `availabilityOf()` puts every item in exactly one of the three
 (nothing there, or a negative quantity → **out**; there but under its minimum →
@@ -1240,6 +1258,14 @@ how much is short and what that costs, and **Open in sheet**, which deep-links
 to the row (`range=A<serial+2>`, since the sheet's S. No runs from row 3). The
 app-bar search applies here too, and the title's subtitle and placeholder are
 the sheet's, not the book's. Export needs `canExportData`.
+
+**Rate and value show only to Admin and Manager** (`showPrices` — the role,
+and the read having carried prices). For everyone else the page has no rupee
+on it: the value tiles and columns are gone, the brand card ranks by item
+count, the sort offers no value or rate, the drawer shows quantity and unit
+with how much is short but not what it costs, the export leaves the two
+columns out, and the sheet links are absent. The server had already emptied
+the figures (§5.4), so this decides what the page offers, never what it hides.
 
 The first version led with value, dead stock, movement and days-since-receipt;
 that is a buyer's view, and it was asked to be the stores' view instead. The
@@ -1263,7 +1289,8 @@ and `recovery link → choose a new password`.
 | `/api/health` | GET | none | liveness |
 | `/api/ai-status` | GET | none | is `GEMINI_API_KEY` set |
 | `/api/alert-status` | GET | session | which mail provider the server has |
-| `/api/fetch-sheet` | GET/POST | none | proxy a Google Sheet CSV (host allow-list) |
+| `/api/fetch-sheet` | GET/POST | **Admin/Manager** session | proxy a Google Sheet CSV (host allow-list) — the balance sync and the customer import |
+| `/api/live-stock` | GET | session | the stores sheet for the Live stock tab; **rate and value emptied server-side unless Admin/Manager** |
 | `/api/team` | POST | **Admin** session | create / update / delete a teammate |
 | `/api/daily-report` | GET/POST | `CRON_SECRET` **or** Admin/Manager session | run the reminder |
 | `/api/gemini-report` | POST | session | AI collection report |
@@ -1705,8 +1732,9 @@ components/
                             on a phone.
   ui/PhoneAccountRow.tsx      150. One account as a phone row — used by the
                             customer book and the reports below md.
-  LiveStockView.tsx           780. The Live stock tab: tiles, breakdowns,
-                            filters, table / phone rows, item drawer, export.
+  LiveStockView.tsx           1140. The Live stock tab: a folded overview
+                            (tiles, breakdowns), filters, table / phone
+                            rows, item drawer, export.
 
   work/Workspace.tsx          Master-detail: the queue and the account together.
   work/Worklist.tsx           The six queues, their counts and their rows.

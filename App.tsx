@@ -1276,7 +1276,9 @@ const App = () => {
      * it is stored here: stock is the stores team's record, kept in the sheet,
      * and this is a window onto it — see services/liveStock.ts.
      */
-    const liveStock = useLiveStock(isAuthenticated && navKey === 'stock');
+    const liveStock = useLiveStock(isAuthenticated && navKey === 'stock', rights.runsTheTeam);
+    /** Rate and value on the stock page: Admin and Manager, and only when the read actually carried them. */
+    const showStockPrices = rights.runsTheTeam && liveStock.priced;
 
     useEffect(() => {
         if (!isAuthenticated || typeof window === 'undefined') return;
@@ -1932,6 +1934,7 @@ const App = () => {
             fromCache={liveStock.fromCache}
             onRefresh={liveStock.refresh}
             currentUser={currentUser}
+            showPrices={showStockPrices}
             globalSearch={searchTerm}
         />
     );
@@ -3089,9 +3092,13 @@ const App = () => {
                     liveStock.items.length ? (
                         <span className="inline-flex items-center gap-2 flex-wrap">
                             <span>{liveStock.items.length.toLocaleString('en-IN')} items</span>
-                            <span className="text-label-3">&middot;</span>
-                            <span className="num font-semibold text-label-2">{formatCompact(liveStock.items.reduce((a, i) => a + i.value, 0))}</span>
-                            <span>in stock</span>
+                            {showStockPrices && (
+                                <>
+                                    <span className="text-label-3">&middot;</span>
+                                    <span className="num font-semibold text-label-2">{formatCompact(liveStock.items.reduce((a, i) => a + i.value, 0))}</span>
+                                    <span>in stock</span>
+                                </>
+                            )}
                             <span className="text-label-3">&middot;</span>
                             <span className={liveStock.error ? 'text-warn font-semibold' : 'text-pos font-semibold'}>
                                 {liveStock.error ? 'sheet unreachable' : liveStock.fromCache ? 'last read' : 'live from the stores sheet'}
