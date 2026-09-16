@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 84 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 85 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -10,16 +10,16 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 |---|---:|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `.env.example` | 25 | Documents every environment variable and which side (browser/server) reads it. | No | – | – | – | – | – | – | – | – | | | | |
 | `.gitignore` | 30 | Ignores node_modules, dist, env files, smoke shots, .deploy.local, .vercel. | No | – | – | – | – | – | – | – | – | | | | |
-| `ARCHITECTURE.md` | 1862 | Engineering handbook (1,862 lines): data model, security, domain rules, data flow, screens, API, email, design system. §9.1–9.2 stale. | No | – | – | – | – | – | – | – | – | | | | |
-| `App.tsx` | 3302 | The whole app: hash routing, session restore, data loading/scoping, ~48 state slices, every handler, Today/Reports/book/stock page renderers. | Partial | issue | ok | ok | issue | – | issue | – | none | Handlers, state, sync wiring, rights, reset read (09 §A); page renderers not reviewed line by line; SEC3 | | | |
+| `ARCHITECTURE.md` | 1862 | Engineering handbook (1,862 lines): data model, security, domain rules, data flow, screens, API, email, design system. §9.1–9.2 stale. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | §5.2 documents read-all SELECT and role-only UPDATE as deliberate; §9.1–9.2 stale | | | |
+| `App.tsx` | 3302 | The whole app: hash routing, session restore, data loading/scoping, ~48 state slices, every handler, Today/Reports/book/stock page renderers. | Partial | issue | ok | ok | issue | – | issue | – | none | Handlers, state, sync wiring, rights, reset, Data source tab, edit/follow-up plumbing read (09 §A, 11 Parts 1–3); page renderers still not line by line; SEC3, R1 | | | |
 | `DEPLOYMENT.md` | 217 | Phase-1 deployment guide: Supabase project, tables, first login, keys, Vercel, cron. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | "falls back to a plain sign-up" is stale — no signUp in code | | | |
-| `README.md` | 113 | Run locally, roles, daily email, sign-in, checks, deploy. | No | – | – | – | – | – | – | – | – | | | | |
+| `README.md` | 113 | Run locally, roles, daily email, sign-in, checks, deploy. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | "Who can do what" promises a CRM sees own accounts — read-all RLS behind it (Q14); reset not mentioned | | | |
 | `SETUP.md` | 161 | From-scratch setup for a non-technical owner (accounts, tokens, hand-off). | No | – | – | – | – | – | – | – | – | | | | |
 | `api/_lib/digest.ts` | 610 | Builds the per-recipient daily digest (due/overdue/promises/cheques/bad debt) and renders HTML + text. | Partial | issue | ok | – | ok | – | n/a | n/a | none | Scoping duplicated from types.ts (D1); bad-debt line; rest read in earlier feature work | | | |
 | `api/_lib/liveStock.ts` | 63 | Reads the stock sheet server-side; blanks rate/value columns unless Admin/Manager. | No | – | – | – | – | – | – | – | – | | | | |
 | `api/_lib/mailer.ts` | 100 | Sends mail via Resend or SMTP; reports which provider is configured. | No | – | – | – | – | – | – | – | – | | | | |
 | `api/_lib/reminders.ts` | 151 | Runs the daily reminder: recipients, digests, send, alert_log. | Partial | ok | ok | ok | ok | – | n/a | n/a | none | Run flow, settings, alert_log | | | |
-| `api/_lib/report.ts` | 213 | Gemini prompt construction and call for the AI credit report. | Partial | – | – | – | issue | – | n/a | n/a | none | SEC5: names/notes to Gemini; model gemini-3.7-flash | | | |
+| `api/_lib/report.ts` | 213 | Gemini prompt construction and call for the AI credit report. | Partial | – | – | – | issue | – | n/a | n/a | none | Prompt construction read in full (11 Part 5): names, amounts, last note to Gemini; model gemini-3.7-flash | | | |
 | `api/_lib/sheet.ts` | 130 | Fetches a Google Sheet as CSV (gviz then export URL), 12s per-URL timeout. | No | – | – | – | – | – | – | – | – | | | | |
 | `api/_lib/supabase.ts` | 79 | Service-role client, bearer token parsing, currentProfile(token), isBackendConfigured. | No | – | – | – | – | – | – | – | – | | | | |
 | `api/_lib/team.ts` | 223 | Create/update/delete teammate logins (auth user + profile) as an Admin. | Partial | – | ok | – | ok | – | n/a | n/a | none | Admin gate and create path read | | | |
@@ -33,27 +33,27 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `api/team.ts` | 28 | Team management endpoint (POST only). | Full | ok | ok | ok | ok | ok | n/a | n/a | none |  | | | |
 | `assets/shori-lockup.png` | 240 | Logo lockup (binary asset). | No | – | – | – | – | – | – | – | – | | | | |
 | `assets/shori-mark.png` | 97 | Logo mark (binary asset). | No | – | – | – | – | – | – | – | – | | | | |
-| `components/AiReportModal.tsx` | 573 | AI credit report dialog: options, call, markdown render. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/AlertsView.tsx` | 325 | Alerts & reminders settings and “send me a test”. | No | – | – | – | – | – | – | – | – | | | | |
+| `components/AiReportModal.tsx` | 573 | AI credit report dialog: options, call, markdown render. | Partial | – | ok | – | issue | – | – | – | none | Builds the Gemini payload: top 15 by >90d, last note line incl. staff name (11 Part 5) | | | |
+| `components/AlertsView.tsx` | 325 | Alerts & reminders settings and “send me a test”. | Partial | – | – | – | ok | – | – | – | none | Settings toggles, test send, log | | | |
 | `components/BalanceAmount.tsx` | 74 | Balance display with Dr/Cr semantics. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/ChangePasswordModal.tsx` | 126 | Change own password. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/CompanyProfileView.tsx` | 205 | Company profile settings form. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/CrmPerformanceTable.tsx` | 180 | Per-CRM workload/score table (+ phone cards). | No | – | – | – | – | – | – | – | – | | | | |
 | `components/CustomerActivityPanel.tsx` | 462 | The shared activity thread on an account (notes, promises, system entries). | Partial | – | ok | – | ok | – | – | – | none | Entry kinds, promise resolution (skimmed) | | | |
 | `components/CustomerDashboardView.tsx` | 1729 | Customer book: filters (one counting rule), tiles, table/phone rows, bulk actions, export. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/CustomerEditModal.tsx` | 706 | Create/edit a customer (owner required, rank, contacts). | No | – | – | – | – | – | – | – | – | | | | |
-| `components/FollowUpModal.tsx` | 1124 | Record a follow-up: outcome, next date, expected amount (>90d preset), rank, owner/collector. | Partial | – | ok | – | ok | – | issue | – | none | Save path and rights read: U7 stamps lastFollowUpOn on any Save; D3 notes mirror | | | |
+| `components/CustomerEditModal.tsx` | 706 | Create/edit a customer (owner required, rank, contacts). | Partial | ok | issue | ok | ok | – | issue | – | none | C1: handleSave rebuilds the row — drops collector/PAN/settledAt, flattens ageing types, recomputes roll-ups (11 §1.4); disabled money inputs still written | | | |
+| `components/FollowUpModal.tsx` | 1124 | Record a follow-up: outcome, next date, expected amount (>90d preset), rank, owner/collector. | Partial | – | ok | – | ok | – | issue | – | none | Save and activity-mirror paths read (11 §1.2); U7 stamps lastFollowUpOn on any Save; D3 notes mirror | | | |
 | `components/LiveStockView.tsx` | 1418 | Live stock tab: folded overview, filters, list, compare mode/bar/panel, item drawer, export. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/LoginScreen.tsx` | 535 | Sign-in screen. | No | – | – | – | – | – | – | – | – | | | | |
+| `components/LoginScreen.tsx` | 535 | Sign-in screen. | Partial | – | ok | ok | ok | – | – | – | none | Sign-in, reset, recovery event; readable errors | | | |
 | `components/NotificationBanner.tsx` | 77 | Attention banner (urgent/overdue counts). | No | – | – | – | – | – | – | – | – | | | | |
 | `components/PdcChequesView.tsx` | 1135 | PDC cheque register: tiles, filters, table/phone rows, bulk status. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/PdcModal.tsx` | 388 | Add/edit a cheque. | No | – | – | – | – | – | – | – | – | | | | |
+| `components/PdcModal.tsx` | 388 | Add/edit a cheque. | Partial | – | ok | ok | – | – | – | – | none | Validation read; cheque number format not enforced | | | |
 | `components/ReportsView.tsx` | 1331 | Reports: CRM scope, category chips (incl. Bad debt), ageing boxes, table, bulk tools, AI report, export. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/StatusBadge.tsx` | 26 | Follow-up status pill. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/SyncReconciliationModal.tsx` | 338 | Preview of a balance sync before it is applied. | Partial | – | ok | – | n/a | – | – | – | none | Confirms via mergeWithExistingFollowUps; analysis not reviewed | | | |
 | `components/TemplateModal.tsx` | 146 | WhatsApp message template editor. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/UserModal.tsx` | 516 | Create/edit a teammate login and permissions. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/WhatsAppReminderModal.tsx` | 257 | Pick recipient + template, open WhatsApp link. | No | – | – | – | – | – | – | – | – | | | | |
+| `components/UserModal.tsx` | 516 | Create/edit a teammate login and permissions. | Partial | – | ok | ok | ok | – | issue | – | none | Password minimum 6 vs 8 elsewhere (U20); CRM code unvalidated against accounts (U15) | | | |
+| `components/WhatsAppReminderModal.tsx` | 257 | Pick recipient + template, open WhatsApp link. | Partial | – | ok | – | ok | – | issue | – | none | wa.me link; writes nothing (U21) | | | |
 | `components/icons/AppLogo.tsx` | 115 | Logo component. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/icons/Icons.tsx` | 188 | Icon set. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/shell/AppShell.tsx` | 745 | App bar, tabs, phone bottom bar, settings sheet, theme toggle, user menu. | No | – | – | – | – | – | – | – | – | | | | |
@@ -78,7 +78,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `scripts/smoke.cjs` | 80 | Screenshot smoke run. | No | – | – | – | – | – | – | – | – | | | | |
 | `scripts/tour.cjs` | 76 | Screen tour (purpose to confirm). | No | – | – | – | – | – | – | – | – | | | | |
 | `server.ts` | 164 | Express dev/prod server mirroring api/*.ts; Vite middleware in dev, dist/ in prod. | No | – | – | – | – | – | – | – | – | | | | |
-| `services/googleSheetService.ts` | 874 | Sheet CSV parsing, header mapping, balance sync, customer master import, reconciliation, netRollUp. | Partial | ok | ok | ok | n/a | ok | n/a | n/a | none | Import/merge/settle read (M1, M2, M6, M7); master import and Excel mapping only skimmed | | | |
+| `services/googleSheetService.ts` | 874 | Sheet CSV parsing, header mapping, balance sync, customer master import, reconciliation, netRollUp. | Partial | ok | ok | ok | n/a | ok | n/a | n/a | none | Import/merge/settle and processStatuses read in full (11 Part 2); master import and Excel mapping only skimmed | | | |
 | `services/liveStock.ts` | 405 | Stock CSV parser, availability/critical rules, cache, 60s polling hook. | No | – | – | – | – | – | – | – | – | | | | |
 | `services/messageTemplate.ts` | 139 | Template rendering for WhatsApp messages. | Partial | – | ok | – | n/a | – | – | – | none | Placeholders and roll-up copy (D6) | | | |
 | `services/repository.ts` | 770 | Supabase data access: loads, writes, activity, auth headers. | Full | ok | ok | ok | ok | ok | n/a | n/a | none | Whole-row `updateCustomers` (R1); paged reads; ~20 `any` in mappers by design | | | |
@@ -92,9 +92,10 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `vercel.json` | 15 | Build, rewrites, function duration, cron. | No | – | – | – | – | – | – | – | – | | | | |
 | `vite-env.d.ts` | 15 | Vite env typing (GEMINI deliberately absent). | No | – | – | – | – | – | – | – | – | | | | |
 | `vite.config.ts` | 22 | React + Tailwind plugins, manual vendor chunks. | No | – | – | – | – | – | – | – | – | | | | |
+| `scripts/tests/write-payload-probe.cjs` | 88 | Read-only probe: captures customer save payloads with every mutating request aborted. | Full | ok | ok | ok | ok | n/a | n/a | n/a | n/a | New this session: aborts every mutating request; evidence for 11 Part 1 | | | |
 
 ## Coverage
 
-- Reviewed at audit depth (Full): **7 / 84**; Partial (read for a workflow, not line by line): **12 / 84** — Phase 1–2, 2026-09-16.
+- Reviewed at audit depth (Full): **8 / 85**; Partial (read for a workflow, not line by line): **21 / 85** — after the validation session of 2026-09-17 (85 = 84 + the new probe script).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

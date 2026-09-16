@@ -31,3 +31,14 @@ Added in Phase 1 (2026-09-16):
 | T20 | Seven boolean+target dialog state pairs in `App.tsx` | 09 §A.1 | P3 | HIGH |
 | T21 | Two dashboards render the same tab components twice with near-identical props | 09 §A.4 | P3 | HIGH |
 | T22 | No optimistic concurrency / version column on `customers` (R1) | `schema.sql`, `useSupabaseSync.ts` | P1 | HIGH |
+
+Added in the validation session (2026-09-17):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T23 | **C1** `CustomerEditModal.handleSave` rebuilds the row from form state: drops `assignedCollectorId`/`pan`/`settledAt`, flattens `ageingTypes`, recomputes `over90`/`dueOver45` as absolute sums | 11 §1.4, captured payloads | **P1** | HIGH |
+| T24 | Whole-row PATCH on every customer write (`updateCustomers` sends 36 columns; no version predicate) — the mechanism behind R1 | 11 §1.1 | **P1** | HIGH |
+| T25 | `processStatuses` persists a derived field for every row in the snapshot on every follow-up save | 11 Part 2 | **P1** | HIGH |
+| T26 | The reset re-ids 672 legacy `out_*` accounts (delete + re-create) because it merges into `[]` | 11 Part 3 | P1 (as part of SEC3) | HIGH |
+| T27 | Four password minimums (6/6/8/8) across dialog, server, repository, Supabase | U20 | P3 | HIGH |
+| T28 | Reset clears cheques/templates/profile in memory *before* the sheet fetch that can fail | `App.tsx:753–757` | P2 | HIGH |

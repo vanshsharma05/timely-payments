@@ -24,6 +24,7 @@ Highest-value coverage gaps (preliminary)
 | `scripts/tests/crm-test.cjs`; `price-ui-test.cjs` CRM leg | CONTROLLED MUTATION WITH CLEANUP | creates and removes a throwaway CRM login via `/api/team`; touches production `auth.users`/`profiles` |
 | `scripts/tests/phone-test.cjs` | READ ONLY, fragile | presses the Admin bulk "Set follow-up" on "Select all" and relies on the confirm being dismissed — rewrite that step before running against production |
 | `scripts/interact.cjs`, `smoke.cjs`, `audit.cjs`, `tour.cjs` | READ ONLY (likely) | no save/confirm-accept found; not exhaustively traced |
+| `scripts/tests/write-payload-probe.cjs` (new) | READ ONLY by construction | Puppeteer request interception aborts every non-GET to `/rest/v1/*` and the app's mutating API routes before they leave the browser; the rows touched were re-read afterwards and unchanged. Use this pattern for any future "what would the app write" evidence. |
 | none | UNSAFE FOR PRODUCTION | any future test of sync, reset, delete, bulk rank/reassign or the cheque lifecycle needs staging (Q6) |
 
 ## What a staging environment needs (not pursued this session)
