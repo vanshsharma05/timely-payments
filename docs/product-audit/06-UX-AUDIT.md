@@ -122,7 +122,7 @@ Scope: the PDC cheques screen (`PdcChequesView`), the record/edit cheque dialog 
 
 **Visual QA (local, every write aborted) at 1366×768, 1440×900, 1024×768 and 390×844:** no horizontal overflow; the list header on the first screen at every laptop size; the table fits without sideways scroll at 1024 (owner column folds below xl); the first row is a cheque needing action; the delete icon appears on keyboard focus; the strip's *Due today* → the 6 cheques; the delete question names the cheque and Esc closes it; the record dialog opens with focus in the customer box, finds "BROTHERS" (8 matches), choosing one sets the line, pressing *Record* with empty fields sends nothing (the browser's own required check stops it at the cheque number), the button visible without scrolling at every size including the phone; the edit dialog prefilled; a refused *Clear* leaves the header at "1 change not saved" and the row saying "Not saved, retrying". 0 findings after three fixes (the delete icon's opacity transition hid it from the focus check; the table was 4 px too wide at 1024; the phone sheet grew past the screen).
 
-## Phase 4, batch 4 — the Data source page (2026-09-18, committed locally, not deployed)
+## Phase 4, batch 4 — the Data source page (2026-09-18, deployed 02:29 IST)
 
 Scope: the Data source page (Settings → Data source), the sync review dialog, the check-the-sheet step, the one-time import's confirmation. No financial rule, sheet-ownership rule, schema or permission change: what the sheet controls and what the app controls is exactly as `mergeWithExistingFollowUps()` has had it; who may sync (Admin, Manager) and who may reset (Admin) is unchanged; the fresh start still goes through `ResetConfirmModal` (backup + typed word) and `reset_book()`.
 
