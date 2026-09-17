@@ -102,9 +102,9 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     // 4. C: follow-up dialog, urgency toggled
     scenario = '4 follow-up dialog, urgent toggled';
     await search(COMPANY_C);
-    await page.evaluate(() => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => x.textContent.trim() === 'Follow Up'); b && b.click(); }); await wait(1000);
+    await page.evaluate(() => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => /^follow up$/i.test(x.textContent.trim())); b && b.click(); }); await wait(1000);
     await page.evaluate(() => { const c = document.querySelector('#isUrgent'); c && c.click(); });
-    await press('Save Follow-up & Contacts'); await settle();
+    await press('Save follow-up'); await settle();
     // Since the reliability batch a refused save keeps the dialog open (the
     // abort above is a refusal to the app), so close it before moving on.
     await closeDialogs();

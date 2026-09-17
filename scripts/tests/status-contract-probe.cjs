@@ -65,7 +65,7 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     const clock = await page.evaluate(() => new Date().toString().slice(0, 24));
 
     const search = async (q) => { await page.evaluate((v) => { const i = document.querySelector('input[placeholder^="Search by name"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); }, q); await wait(900); };
-    const rowButton = (text) => page.evaluate((t) => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => x.textContent.trim() === t || (x.getAttribute('title') || '').startsWith(t)); if (!b) return false; b.click(); return true; }, text);
+    const rowButton = (text) => page.evaluate((t) => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => x.textContent.trim().toLowerCase() === t.toLowerCase() || (x.getAttribute('title') || '').startsWith(t)); if (!b) return false; b.click(); return true; }, text);
     const press = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === l); if (!b) return false; b.click(); return true; }, label);
     const settle = () => wait(1600); // past the hook's 800 ms debounce
     const setInput = (selector, value) => page.evaluate((s, v) => { const i = document.querySelector(s); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); return true; }, selector, value);
@@ -73,14 +73,14 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     await search(COMPANY);
 
     scenario = '1 follow-up dialog, urgent toggled';
-    await rowButton('Follow Up'); await wait(1000);
+    await rowButton('Follow up'); await wait(1000);
     await page.evaluate(() => { const c = document.querySelector('#isUrgent'); c && c.click(); });
-    await press('Save Follow-up & Contacts'); await settle();
+    await press('Save follow-up'); await settle();
 
     scenario = '2 follow-up dialog, payment collected';
-    await rowButton('Follow Up'); await wait(1000);
+    await rowButton('Follow up'); await wait(1000);
     await page.evaluate(() => { const r = document.querySelector('input[name="outcome"][value="collected"]'); r && r.click(); });
-    await press('Save Follow-up & Contacts'); await settle();
+    await press('Save follow-up'); await settle();
 
     scenario = '3 edit dialog, next follow-up date changed';
     await search(COMPANY_B);
