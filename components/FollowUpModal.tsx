@@ -9,6 +9,7 @@ import { renderTemplate } from '../services/messageTemplate';
 import CustomerActivityPanel from './CustomerActivityPanel';
 import { useIsPhone } from './ui/usePhone';
 import { Disclosure } from './ui/Disclosure';
+import { ChequeStateBadge, stateOf } from './ui/ChequeState';
 import StatusBadge from './StatusBadge';
 import { followUpStatusOf } from '../types';
 
@@ -1051,17 +1052,8 @@ const FollowUpModal = ({
                                                         <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
                                                             ₹{formatCurrency(pdc.amount)}
                                                         </span>
-                                                        <span className={`px-1.5 py-0.5 rounded text-[11.5px] font-bold ${
-                                                            pdc.status === PdcStatus.Cleared
-                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                                                : pdc.status === PdcStatus.Hold
-                                                                ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'
-                                                                : pdc.status === PdcStatus.Bounced
-                                                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
-                                                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
-                                                        }`}>
-                                                            {pdc.status}
-                                                        </span>
+                                                        {/* The same words as the register: Due today, Date passed, Upcoming… */}
+                                                        <ChequeStateBadge state={stateOf(pdc)} />
                                                         {onUpdatePdcStatus && pdc.status !== PdcStatus.Cleared && (
                                                             <button
                                                                 type="button"

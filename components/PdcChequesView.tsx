@@ -2,7 +2,34 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useIsPhone } from './ui/usePhone';
 import * as XLSX from 'xlsx';
 import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE, findOwner, ownerKey } from '../types';
-import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
+import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon } from './icons/Icons';
+import { Button } from './ui/Primitives';
+import { formatCompact, formatINR, chequeWhen } from './ui/format';
+import { CHEQUE_STATES, CHEQUE_STATE_ORDER, ChequeStateBadge, sortCheques } from './ui/ChequeState';
+import { ConfirmDialog } from './ui/ConfirmDialog';
+import type { SyncFailure } from '../services/useSupabaseSync';
+
+/**
+ * The list's one filter on where a cheque stands. Every key is a state
+ * chequeState() works out, so a card, its chip and the list it opens count
+ * the same cheques: "Upcoming" used to be the stored status Pending, which
+ * also covered the ones due today and the ones whose date had gone.
+ */
+export type ChequeStateFilter = 'all' | 'active' | ChequeState;
+
+/** The old filter names the dashboard still sends, mapped to states. */
+export const normaliseStateFilter = (value?: string | null): ChequeStateFilter => {
+    switch (value) {
+        case 'today': case 'due': return 'due';
+        case 'overdue': return 'overdue';
+        case 'active': return 'active';
+        case PdcStatus.Pending: case 'upcoming': return 'upcoming';
+        case PdcStatus.Hold: case 'hold': return 'hold';
+        case PdcStatus.Cleared: case 'cleared': return 'cleared';
+        case PdcStatus.Bounced: case 'bounced': return 'bounced';
+        default: return 'all';
+    }
+};
 
 interface PdcChequesViewProps {
     pdcCheques: PdcCheque[];
@@ -19,6 +46,10 @@ interface PdcChequesViewProps {
     onOpenCustomerFollowUp?: (customer: Outstanding) => void;
     initialStatusFilter?: string | null;
     initialCustomerFilter?: string | null;
+    /** The first read of the register has not come back yet. */
+    loading?: boolean;
+    /** Cheques the server has refused, with the reason — shown on the row, not only in the header. */
+    unsaved?: SyncFailure[];
 }
 
 export const isSameDay = (d1: Date, d2: Date) => {
@@ -28,6 +59,17 @@ export const isSameDay = (d1: Date, d2: Date) => {
         d1.getDate() === d2.getDate()
     );
 };
+
+type DateRange = 'all' | 'today' | 'this_week' | 'this_month' | 'passed';
+const DATE_RANGES: { value: DateRange; label: string }[] = [
+    { value: 'all', label: 'Any date' },
+    { value: 'today', label: 'Dated today' },
+    { value: 'this_week', label: 'This week' },
+    { value: 'this_month', label: 'This month' },
+    { value: 'passed', label: 'Date passed, not cleared' },
+];
+
+const PAGE = 50;
 
 const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     pdcCheques,
@@ -43,14 +85,18 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     onOpenCustomerFollowUp,
     initialStatusFilter,
     initialCustomerFilter,
+    loading = false,
+    unsaved = [],
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState<string>(initialCustomerFilter || 'all');
     const [selectedCrm, setSelectedCrm] = useState<string>('all');
-    const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || 'all');
+    const [stateFilter, setStateFilter] = useState<ChequeStateFilter>(normaliseStateFilter(initialStatusFilter));
     const [bankFilter, setBankFilter] = useState<string>('all');
-    const [dateRangeFilter, setDateRangeFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'passed'>('all');
+    const [dateRangeFilter, setDateRangeFilter] = useState<DateRange>('all');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    /** What is about to be deleted, named, until the person says so. */
+    const [confirmDelete, setConfirmDelete] = useState<{ ids: string[] } | null>(null);
 
     const today = useMemo(() => new Date(), []);
 
@@ -108,6 +154,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
         [allowedCheques, today],
     );
 
+    const customerById = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
+    const unsavedById = useMemo(() => new Map(unsaved.map(f => [f.id, f.message])), [unsaved]);
+
     const metricsByState = useMemo(() => {
         const blank = () => ({ count: 0, amount: 0 });
         const acc: Record<ChequeState, { count: number; amount: number }> = {
@@ -121,18 +170,12 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
         return acc;
     }, [chequesWithComputedStatus]);
 
-    // Metric Calculations
-    const metrics = useMemo(() => {
+    // Everything still with us, whether or not its date has come.
+    const inHand = useMemo(() => {
         const m = metricsByState;
         return {
-            todayCount: m.due.count,        todayAmount: m.due.amount,
-            overdueCount: m.overdue.count,  overdueAmount: m.overdue.amount,
-            pendingCount: m.upcoming.count, pendingAmount: m.upcoming.amount,
-            holdCount: m.hold.count,        holdAmount: m.hold.amount,
-            clearedCount: m.cleared.count,  clearedAmount: m.cleared.amount,
-            bouncedCount: m.bounced.count,  bouncedAmount: m.bounced.amount,
-            // Everything still with us, whether or not its date has come.
-            activeTotalAmount: m.due.amount + m.overdue.amount + m.upcoming.amount + m.hold.amount,
+            count: m.due.count + m.overdue.count + m.upcoming.count + m.hold.count,
+            amount: m.due.amount + m.overdue.amount + m.upcoming.amount + m.hold.amount,
         };
     }, [metricsByState]);
 
@@ -147,10 +190,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
     // Filter Logic
     const filteredCheques = useMemo(() => {
-        return chequesWithComputedStatus.filter(c => {
+        const list = chequesWithComputedStatus.filter(c => {
             // CRM Filter
             if (selectedCrm !== 'all') {
-                const customer = customers.find(cust => cust.id === c.customerId);
+                const customer = customerById.get(c.customerId);
                 const crmId = customer ? customer.crmOwnerId : c.crmOwnerId;
                 // Compared through the roster: the dropdown holds a CRM code
                 // and the stored value may be either spelling. A plain !==
@@ -170,15 +213,11 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                 return false;
             }
 
-            // Status Filter
-            if (statusFilter !== 'all') {
-                if (statusFilter === 'today') {
-                    if (c.state !== 'due') return false;
-                } else if (statusFilter === 'overdue') {
-                    if (c.state !== 'overdue') return false;
-                } else if (statusFilter === 'active') {
+            // State filter — every key is a computed state, so it lists what its count said.
+            if (stateFilter !== 'all') {
+                if (stateFilter === 'active') {
                     if (!CHEQUE_ACTIVE.includes(c.state)) return false;
-                } else if (c.status !== statusFilter) {
+                } else if (c.state !== stateFilter) {
                     return false;
                 }
             }
@@ -187,7 +226,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             if (dateRangeFilter !== 'all') {
                 const cDate = c.chequeDate;
                 if (dateRangeFilter === 'today') {
-                    if (c.state !== 'due') return false;
+                    if (!isSameDay(cDate, today)) return false;
                 } else if (dateRangeFilter === 'this_week') {
                     const startOfWeek = new Date(today);
                     startOfWeek.setDate(today.getDate() - today.getDay());
@@ -213,25 +252,28 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                 const matchChequeNo = c.chequeNumber.toLowerCase().includes(term);
                 const matchBank = c.bankName.toLowerCase().includes(term);
                 const matchRemarks = (c.remarks || '').toLowerCase().includes(term);
-                if (!matchCustomer && !matchChequeNo && !matchBank && !matchRemarks) {
+                const matchAmount = String(c.amount).includes(term.replace(/[₹,\s]/g, ''));
+                if (!matchCustomer && !matchChequeNo && !matchBank && !matchRemarks && !matchAmount) {
                     return false;
                 }
             }
 
             return true;
-        }).sort((a, b) => a.chequeDate.getTime() - b.chequeDate.getTime());
-    }, [chequesWithComputedStatus, selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm, customers, users, today]);
+        });
+        return sortCheques(list);
+    }, [chequesWithComputedStatus, selectedCrm, selectedCustomer, bankFilter, stateFilter, dateRangeFilter, searchTerm, customerById, users, today]);
 
-    /** Selecting rows then filtering them away would act on cheques nobody can
-        see, so the selection is trimmed to whatever is currently listed. */
+    const filteredAmount = useMemo(() => filteredCheques.reduce((sum, c) => sum + c.amount, 0), [filteredCheques]);
+
     /** Below `md` the table becomes a list of cheque cards; the filter
         selects fold away behind one button. */
     const isPhone = useIsPhone();
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
-    /** Cheque cards are tall; the phone list grows as it is read. */
-    const PHONE_PAGE = 40;
-    const [phoneVisible, setPhoneVisible] = useState(PHONE_PAGE);
-    useEffect(() => { setPhoneVisible(PHONE_PAGE); }, [selectedCrm, selectedCustomer, bankFilter, statusFilter, dateRangeFilter, searchTerm]);
+    /** Fifty at a time, on a phone and a laptop alike; the register was 150 rows and eleven screens. */
+    const [visibleCount, setVisibleCount] = useState(PAGE);
+    useEffect(() => { setVisibleCount(PAGE); }, [selectedCrm, selectedCustomer, bankFilter, stateFilter, dateRangeFilter, searchTerm]);
+    /** Selecting rows then filtering them away would act on cheques nobody can
+        see, so the selection is trimmed to whatever is currently listed. */
     const visibleIds = useMemo(() => new Set(filteredCheques.map(c => c.id)), [filteredCheques]);
     const selected = useMemo(() => selectedIds.filter(id => visibleIds.has(id)), [selectedIds, visibleIds]);
     const allSelected = selected.length > 0 && selected.length === filteredCheques.length;
@@ -245,12 +287,25 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
         setSelectedIds([]);
     };
 
+    /** The rows a delete is about, for the question that names them. */
+    const chequesToDelete = useMemo(
+        () => (confirmDelete ? confirmDelete.ids.map(id => chequesWithComputedStatus.find(c => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c) : []),
+        [confirmDelete, chequesWithComputedStatus],
+    );
+    const runDelete = () => {
+        if (!confirmDelete) return;
+        const ids = confirmDelete.ids;
+        setConfirmDelete(null);
+        if (ids.length === 1) onDeletePdc(ids[0]);
+        else if (onBulkDeletePdc) onBulkDeletePdc(ids);
+        setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
+    };
 
     // Export to Excel / CSV
     const handleExport = () => {
         if (XLSX) {
             const dataToExport = filteredCheques.map(c => {
-                const customer = customers.find(cust => cust.id === c.customerId);
+                const customer = customerById.get(c.customerId);
                 const crmUser = users.find(u => u.id === (customer?.crmOwnerId || c.crmOwnerId));
                 return {
                     'Customer Name': c.customerName,
@@ -259,6 +314,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     'Cheque Date': c.chequeDate.toLocaleDateString('en-GB'),
                     'Amount (₹)': c.amount,
                     'Status': c.status,
+                    'Where it stands': CHEQUE_STATES[c.state].label,
                     'Received Date': normalizeDate(c.receivedDate).toLocaleDateString('en-GB'),
                     'CRM Owner': crmUser ? crmUser.name : (customer?.crmOwnerId || 'N/A'),
                     'Remarks': c.remarks || ''
@@ -278,268 +334,136 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
         setSearchTerm('');
         setSelectedCustomer('all');
         setSelectedCrm('all');
-        setStatusFilter('all');
+        setStateFilter('all');
         setBankFilter('all');
         setDateRangeFilter('all');
     };
 
-    const hasActiveFilters = searchTerm !== '' || selectedCustomer !== 'all' || selectedCrm !== 'all' || statusFilter !== 'all' || bankFilter !== 'all' || dateRangeFilter !== 'all';
+    const hasActiveFilters = searchTerm !== '' || selectedCustomer !== 'all' || selectedCrm !== 'all' || stateFilter !== 'all' || bankFilter !== 'all' || dateRangeFilter !== 'all';
+    const filteredCustomer = selectedCustomer !== 'all' ? customerById.get(selectedCustomer) : undefined;
+    const ownerName = (id?: string) => (id ? (findOwner(users, id)?.name || id) : '');
+
+    /**
+     * The one or two things worth doing to a cheque where it stands. A cheque
+     * in hand can be cleared, held or bounced; one on hold can be released;
+     * a bounced one can be re-presented; a cleared one can only be un-cleared
+     * — a mistake, so it is quiet. Three toggles on every row, with "Clear"
+     * lit green on the ninety cleared ones, hid the six that mattered.
+     */
+    const RowActions = ({ cheque, phone = false }: { cheque: PdcCheque & { state: ChequeState }; phone?: boolean }) => {
+        const size = phone ? 'h-10 px-3 text-[13px]' : 'h-8 px-2.5 text-[12.5px]';
+        const btn = (label: string, status: PdcStatus, title: string, tone: 'pos' | 'warn' | 'dang' | 'quiet') => (
+            <button
+                key={label}
+                type="button"
+                onClick={() => onUpdatePdcStatus(cheque.id, status)}
+                title={title}
+                className={`${size} rounded-lg font-bold whitespace-nowrap transition-colors ${
+                    tone === 'pos' ? 'bg-accent text-on-accent hover:bg-accent-press shadow-2xs'
+                    : tone === 'warn' ? 'text-label-2 hover:bg-warn-bg hover:text-warn'
+                    : tone === 'dang' ? 'text-label-2 hover:bg-dang-bg hover:text-dang'
+                    : 'text-label-2 hover:bg-hover hover:text-label'
+                }`}
+            >
+                {label}
+            </button>
+        );
+        const group = (children: React.ReactNode) => (
+            <div className={`inline-flex items-center gap-0.5 bg-card-2 p-0.5 rounded-xl ${phone ? 'flex-1 [&>button]:flex-1' : ''}`}>{children}</div>
+        );
+        switch (cheque.state) {
+            case 'due': case 'overdue': case 'upcoming':
+                return group([
+                    btn('Clear', PdcStatus.Cleared, 'Mark cleared — the bank paid it', 'pos'),
+                    btn('Hold', PdcStatus.Hold, 'Put on hold — do not present it for now', 'warn'),
+                    btn('Bounce', PdcStatus.Bounced, 'Mark bounced — returned unpaid', 'dang'),
+                ]);
+            case 'hold':
+                return group([
+                    btn('Clear', PdcStatus.Cleared, 'Mark cleared — the bank paid it', 'pos'),
+                    btn('Release', PdcStatus.Pending, 'Back to pending — present it when it is due', 'quiet'),
+                    btn('Bounce', PdcStatus.Bounced, 'Mark bounced — returned unpaid', 'dang'),
+                ]);
+            case 'bounced':
+                return group([
+                    btn('Clear', PdcStatus.Cleared, 'Mark cleared — re-presented and paid', 'pos'),
+                    btn('Back to pending', PdcStatus.Pending, 'Not bounced after all — back in hand, waiting for its date', 'quiet'),
+                ]);
+            case 'cleared':
+                return group([
+                    btn('Undo', PdcStatus.Pending, 'Not cleared after all — back in hand, waiting for its date', 'quiet'),
+                ]);
+        }
+    };
+
+    const stateStrip = (
+        /* Where the register stands, in one row. Every cell is the filter it
+           names: press it and the list is that list; press it again for all.
+           The six cards this replaces filled the first screen at 1366×768 and
+           the sixth of them wrapped to a row of its own. */
+        <div className="bg-card rounded-[16px] shadow-e1 px-4 py-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-2 gap-y-2 items-start max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:[scrollbar-width:none] max-md:[&>button]:min-w-[132px] max-md:[&>button]:snap-start">
+                <button
+                    type="button"
+                    onClick={() => setStateFilter(stateFilter === 'active' ? 'all' : 'active')}
+                    aria-pressed={stateFilter === 'active'}
+                    title="Every cheque still with us — dated today, date passed, upcoming or on hold"
+                    className={`text-left rounded-[12px] px-2.5 py-1.5 min-w-0 transition-colors ${stateFilter === 'active' ? 'bg-accent-tint ring-2 ring-accent' : 'hover:bg-hover'}`}
+                >
+                    <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">In hand</span>
+                    <span className="num block text-[19px] font-semibold text-label leading-tight mt-0.5">{inHand.count}</span>
+                    <span className="block text-[12px] text-label-3 mt-0.5 truncate" title={formatINR(inHand.amount)}>{formatCompact(inHand.amount)}</span>
+                </button>
+                {CHEQUE_STATE_ORDER.map(state => {
+                    const m = metricsByState[state];
+                    const s = CHEQUE_STATES[state];
+                    const attention = (state === 'overdue' || state === 'due' || state === 'bounced') && m.count > 0;
+                    return (
+                        <button
+                            key={state}
+                            type="button"
+                            onClick={() => setStateFilter(stateFilter === state ? 'all' : state)}
+                            aria-pressed={stateFilter === state}
+                            title={`${s.hint}. Press to list them.`}
+                            className={`text-left rounded-[12px] px-2.5 py-1.5 min-w-0 transition-colors ${stateFilter === state ? 'bg-accent-tint ring-2 ring-accent' : 'hover:bg-hover'}`}
+                        >
+                            <span className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wider text-label-3 whitespace-nowrap">
+                                <span className="w-2 h-2 rounded-full flex-none" style={{ background: s.dot }} aria-hidden="true" />
+                                {s.label}
+                            </span>
+                            <span className={`num block text-[19px] font-semibold leading-tight mt-0.5 ${attention ? 'text-dang' : m.count === 0 ? 'text-label-3' : 'text-label'}`}>{m.count}</span>
+                            <span className="block text-[12px] text-label-3 mt-0.5 truncate" title={formatINR(m.amount)}>{m.count > 0 ? formatCompact(m.amount) : '—'}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
 
     return (
-        <div className="space-y-6">
-            {/* Header with Title & Action */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 max-md:p-4 max-md:gap-3">
-                <div className="flex items-center space-x-3">
-                    <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-pos rounded-xl max-md:hidden">
-                        <ChequeIcon className="w-7 h-7" />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 max-md:text-[19px] max-md:flex-wrap">
-                            PDC Cheques Management
-                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-semibold">
-                                {pdcCheques.length} Cheques
-                            </span>
-                        </h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 max-md:text-[13px]">
-                            Track post-dated cheques, bank presentation schedules, and clearing status
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-3 w-full sm:w-auto max-md:[&>button]:flex-1 max-md:[&>button]:justify-center max-md:[&>button]:min-h-[44px]">
-                    {canExport && (
-                        <button
-                            onClick={handleExport}
-                            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-medium transition-colors flex items-center gap-2"
-                            title="Export PDC list to Excel"
-                        >
-                            <DownloadIcon />
-                            <span>Export Excel</span>
-                        </button>
-                    )}
-                    {canManagePdc && (
-                        <button
-                            onClick={() => onAddPdc()}
-                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-colors flex items-center gap-2"
-                        >
-                            <span className="text-lg leading-none">+</span>
-                            <span>Add PDC Cheque</span>
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* 5 Main Focus Cards */}
-            {/* Stacked, five of these were a screen and a half before the list;
-                on a phone they run sideways and snap one at a time. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:snap-mandatory max-md:-mx-4 max-md:px-4 max-md:pb-1 max-md:[scrollbar-width:none] max-md:[&>div]:min-w-[236px] max-md:[&>div]:snap-start">
-                {/* 1. Today's Cheques to Present in Bank */}
-                <div
-                    onClick={() => {
-                        setStatusFilter('today');
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === 'today'
-                            ? 'bg-amber-500 text-white border-amber-600 shadow-lg shadow-amber-500/25 ring-2 ring-amber-400'
-                            : 'bg-white dark:bg-gray-800 hover:border-amber-400 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'today' ? 'text-amber-100' : 'text-warn'}`}>
-                            Today's Bank Presentation
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === 'today' ? 'bg-white/20' : 'bg-amber-100 dark:bg-amber-900/40 text-warn'}`}>
-                            <ClockIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.todayCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === 'today' ? 'text-white' : 'text-warn'}`}>
-                        ₹{metrics.todayAmount.toLocaleString('en-IN')}
-                    </div>
-                    {metrics.todayCount > 0 && (
-                        <div className={`text-xs mt-2 font-medium flex items-center gap-1 ${statusFilter === 'today' ? 'text-amber-100' : 'text-warn'}`}>
-                            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                            <span>Ready to present in bank today</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* 2. Cheques whose date has passed and are still in hand. */}
-                <div
-                    onClick={() => {
-                        setStatusFilter('overdue');
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === 'overdue'
-                            ? 'bg-dang text-card border-dang shadow-lg ring-2 ring-dang'
-                            : 'bg-card hover:border-dang border-separator text-label'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'overdue' ? 'text-card' : 'text-dang'}`}>
-                            Date passed, not banked
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === 'overdue' ? 'bg-white/20' : 'bg-dang-bg text-dang'}`}>
-                            <ClockIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.overdueCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === 'overdue' ? 'text-card' : 'text-dang'}`}>
-                        ₹{metrics.overdueAmount.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs opacity-70 mt-2">
-                        {metrics.overdueCount > 0 ? 'Bank these or record why not' : 'Nothing left unbanked'}
-                    </div>
-                </div>
-
-                {/* 3. Upcoming Pending PDCs */}
-                <div
-                    onClick={() => {
-                        setStatusFilter(PdcStatus.Pending);
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === PdcStatus.Pending
-                            ? 'bg-blue-600 text-white border-blue-700 shadow-lg shadow-blue-600/25 ring-2 ring-blue-400'
-                            : 'bg-white dark:bg-gray-800 hover:border-blue-400 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Pending ? 'text-blue-100' : 'text-accent'}`}>
-                            Upcoming PDCs
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Pending ? 'bg-white/20' : 'bg-blue-100 dark:bg-blue-900/40 text-accent'}`}>
-                            <ChequeIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.pendingCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Pending ? 'text-white' : 'text-accent'}`}>
-                        ₹{metrics.pendingAmount.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs opacity-70 mt-2">Future dated cheques in hand</div>
-                </div>
-
-                {/* 3. Cheques on Hold */}
-                <div
-                    onClick={() => {
-                        setStatusFilter(PdcStatus.Hold);
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === PdcStatus.Hold
-                            ? 'bg-orange-600 text-white border-orange-700 shadow-lg shadow-orange-600/25 ring-2 ring-orange-400'
-                            : 'bg-white dark:bg-gray-800 hover:border-orange-400 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Hold ? 'text-orange-100' : 'text-age-3-ink'}`}>
-                            Cheques on Hold
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Hold ? 'bg-white/20' : 'bg-orange-100 dark:bg-orange-900/40 text-age-3-ink'}`}>
-                            <ExclamationTriangleIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.holdCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Hold ? 'text-white' : 'text-age-3-ink'}`}>
-                        ₹{metrics.holdAmount.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs opacity-70 mt-2">Customer requested hold</div>
-                </div>
-
-                {/* 4. Cleared Cheques */}
-                <div
-                    onClick={() => {
-                        setStatusFilter(PdcStatus.Cleared);
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === PdcStatus.Cleared
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-lg shadow-emerald-600/25 ring-2 ring-emerald-400'
-                            : 'bg-white dark:bg-gray-800 hover:border-emerald-400 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Cleared ? 'text-emerald-100' : 'text-pos'}`}>
-                            Cleared in Bank
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Cleared ? 'bg-white/20' : 'bg-emerald-100 dark:bg-emerald-900/40 text-pos'}`}>
-                            <CheckCircleIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.clearedCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Cleared ? 'text-white' : 'text-pos'}`}>
-                        ₹{metrics.clearedAmount.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs opacity-70 mt-2">Funds successfully realized</div>
-                </div>
-
-                {/* 5. Bounced / Returned */}
-                <div
-                    onClick={() => {
-                        setStatusFilter(PdcStatus.Bounced);
-                        setDateRangeFilter('all');
-                    }}
-                    className={`cursor-pointer p-5 rounded-2xl border transition-all duration-200 ${
-                        statusFilter === PdcStatus.Bounced
-                            ? 'bg-rose-600 text-white border-rose-700 shadow-lg shadow-rose-600/25 ring-2 ring-rose-400'
-                            : 'bg-white dark:bg-gray-800 hover:border-rose-400 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-white'
-                    }`}
-                >
-                    <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === PdcStatus.Bounced ? 'text-rose-100' : 'text-dang'}`}>
-                            Bounced / Returned
-                        </span>
-                        <div className={`p-2 rounded-xl ${statusFilter === PdcStatus.Bounced ? 'bg-white/20' : 'bg-rose-100 dark:bg-rose-900/40 text-dang'}`}>
-                            <ExclamationTriangleIcon />
-                        </div>
-                    </div>
-                    <div className="text-2xl font-black">
-                        {metrics.bouncedCount}
-                        <span className="text-xs font-normal ml-1 opacity-80">cheques</span>
-                    </div>
-                    <div className={`text-sm font-bold mt-1 ${statusFilter === PdcStatus.Bounced ? 'text-white' : 'text-dang'}`}>
-                        ₹{metrics.bouncedAmount.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-xs opacity-70 mt-2">Requires urgent follow-up</div>
-                </div>
-            </div>
-
-            {/* Filter Bar */}
-            <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4 max-md:p-4 max-md:space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                    {/* Search Input */}
-                    <div className="lg:col-span-2 relative">
-                        <input
-                            type="text"
-                            placeholder="Search by customer, cheque no, bank, remarks..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
-                        />
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="space-y-3">
+            {/* The controls, in the order and words of the customer book and Reports. */}
+            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col xl:flex-row xl:items-end justify-between gap-3 max-md:px-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_minmax(150px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)] gap-2 items-end flex-1">
+                    <div className="sm:col-span-2 lg:col-span-1">
+                        <label htmlFor="pdcSearch" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Find a cheque</label>
+                        <div className="relative">
+                            <input
+                                id="pdcSearch"
+                                type="text"
+                                placeholder="Customer, cheque number, bank, amount, note…"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/40 max-md:h-11"
+                            />
+                            <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400 max-md:top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                             </svg>
+                            {searchTerm && (
+                                <button type="button" onClick={() => setSearchTerm('')} className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 text-sm font-bold max-md:top-2.5" aria-label="Clear search">✕</button>
+                            )}
                         </div>
                     </div>
-
                     {/* Phone only: the selects below fold behind this. */}
                     <button
                         type="button"
@@ -549,133 +473,104 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
                         {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
-                        {(selectedCustomer !== 'all' || selectedCrm !== 'all' || bankFilter !== 'all' || dateRangeFilter !== 'all') && (
+                        {(selectedCrm !== 'all' || bankFilter !== 'all' || dateRangeFilter !== 'all') && (
                             <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
-                                {[selectedCustomer !== 'all', selectedCrm !== 'all', bankFilter !== 'all', dateRangeFilter !== 'all'].filter(Boolean).length}
+                                {[selectedCrm !== 'all', bankFilter !== 'all', dateRangeFilter !== 'all'].filter(Boolean).length}
                             </span>
                         )}
                     </button>
-
-                    {/* Customer Filter */}
                     <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
+                        <label htmlFor="pdcCrm" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">CRM owner</label>
                         <select
-                            aria-label="Filter by customer"
-                            value={selectedCustomer}
-                            onChange={(e) => setSelectedCustomer(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
-                        >
-                            <option value="all">All Customers ({allowedCustomers.length})</option>
-                            {allowedCustomers.map(c => (
-                                <option key={c.id} value={c.id}>
-                                    {c.company}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* CRM Owner Filter */}
-                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
-                        <select
+                            id="pdcCrm"
                             aria-label="Filter by CRM owner"
                             value={selectedCrm}
                             onChange={(e) => setSelectedCrm(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
+                            className="w-full h-9 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white max-md:h-11"
                         >
-                            <option value="all">{canViewAll ? 'All CRM Owners' : 'Assigned CRM Owners'}</option>
+                            <option value="all">{canViewAll ? 'All CRMs' : 'My CRMs'}</option>
                             {availableCrms.map(u => (
-                                <option key={u.id} value={u.id}>
-                                    {u.name} ({u.role})
-                                </option>
+                                <option key={u.id} value={u.id}>{u.name}</option>
                             ))}
                         </select>
                     </div>
-
-                    {/* Bank Filter */}
                     <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
+                        <label htmlFor="pdcBank" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Bank</label>
                         <select
+                            id="pdcBank"
                             aria-label="Filter by bank"
                             value={bankFilter}
                             onChange={(e) => setBankFilter(e.target.value)}
-                            className="w-full px-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-gray-700/50 dark:border-gray-600 text-sm font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
+                            className="w-full h-9 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white max-md:h-11"
                         >
-                            <option value="all">All Banks ({bankList.length})</option>
+                            <option value="all">All banks ({bankList.length})</option>
                             {bankList.map(b => (
                                 <option key={b} value={b}>{b}</option>
                             ))}
                         </select>
                     </div>
-                </div>
-
-                {/* Status and Time Preset Pills */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-100 dark:border-gray-700 max-md:pt-3">
-                    <div className="flex flex-wrap items-center gap-2 max-md:flex-nowrap max-md:overflow-x-auto max-md:-mx-4 max-md:px-4 max-md:w-[calc(100%+2rem)] max-md:[scrollbar-width:none] max-md:[&>button]:flex-none max-md:[&>button]:h-9">
-                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1 max-md:hidden">
-                            Status:
-                        </span>
-                        {[
-                            { label: 'All Cheques', val: 'all' },
-                            { label:"Today's Due", val: 'today' },
-                            { label: 'Pending', val: PdcStatus.Pending },
-                            { label: 'On Hold', val: PdcStatus.Hold },
-                            { label: 'Cleared', val: PdcStatus.Cleared },
-                            { label: 'Bounced', val: PdcStatus.Bounced },
-                        ].map(item => (
-                            <button
-                                key={item.val}
-                                onClick={() => setStatusFilter(item.val)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                                    statusFilter === item.val
-                                        ? 'bg-emerald-600 text-white shadow-sm'
-                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                }`}
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className={`flex items-center gap-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
-                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mr-1">
-                            Due Date:
-                        </span>
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
+                        <label htmlFor="pdcWhen" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Cheque date</label>
                         <select
+                            id="pdcWhen"
+                            aria-label="Filter by cheque date"
                             value={dateRangeFilter}
-                            onChange={(e) => setDateRangeFilter(e.target.value as any)}
-                            aria-label="Filter cheques"
-                            className="px-3 py-1.5 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-xs font-medium focus:ring-2 focus:ring-accent focus:outline-none dark:text-white"
+                            onChange={(e) => setDateRangeFilter(e.target.value as DateRange)}
+                            className="w-full h-9 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white max-md:h-11"
                         >
-                            <option value="all">Any Date</option>
-                            <option value="today">Due Today</option>
-                            <option value="this_week">Due This Week</option>
-                            <option value="this_month">Due This Month</option>
-                            <option value="passed">Past Dated (Uncleared)</option>
+                            {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                         </select>
-
-                        {hasActiveFilters && (
-                            <button
-                                onClick={handleClearFilters}
-                                className="px-3 py-1.5 text-xs text-dang hover:underline font-semibold"
-                            >
-                                Reset Filters
-                            </button>
-                        )}
                     </div>
+                </div>
+                <div className="flex items-center gap-2 flex-none max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
+                    {canExport && (
+                        <Button size="sm" variant="quiet" onClick={handleExport} title="Download the cheques listed below as Excel">
+                            <DownloadIcon />
+                            Excel
+                        </Button>
+                    )}
+                    {canManagePdc && (
+                        <Button size="sm" variant="primary" onClick={() => onAddPdc()} title="Record a cheque a customer has given">
+                            + Record a cheque
+                        </Button>
+                    )}
                 </div>
             </div>
 
-            {/* Cheque Table */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div className="p-4 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between max-md:flex-wrap max-md:gap-2 max-md:p-3.5">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Showing {filteredCheques.length} of {pdcCheques.length} PDC Cheques
-                    </span>
-                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                        Total Filtered Amount: ₹{filteredCheques.reduce((sum, c) => sum + c.amount, 0).toLocaleString('en-IN')}
+            {stateStrip}
+
+            {/* The register */}
+            <div className="bg-card rounded-[16px] shadow-e1 overflow-hidden">
+                <div className="px-3.5 py-2.5 bg-card-2 border-b border-separator flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-gray-800 dark:text-gray-200">
+                            {filteredCheques.length.toLocaleString('en-IN')} cheque{filteredCheques.length === 1 ? '' : 's'}
+                        </span>
+                        <span className="num text-label-3">· {formatINR(filteredAmount)}</span>
+                        {stateFilter !== 'all' && (
+                            <span className="text-label-3">
+                                · {stateFilter === 'active' ? 'in hand' : CHEQUE_STATES[stateFilter].label.toLowerCase()}
+                            </span>
+                        )}
+                        {filteredCustomer && (
+                            <span className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[12px] font-semibold">
+                                {filteredCustomer.company}
+                                <button type="button" onClick={() => setSelectedCustomer('all')} className="w-5 h-5 grid place-items-center rounded-full hover:bg-accent-tint-2" aria-label="Show every customer's cheques">✕</button>
+                            </span>
+                        )}
+                        {hasActiveFilters && (
+                            <button type="button" onClick={handleClearFilters} className="text-[12.5px] text-dang font-bold hover:underline px-1">
+                                Reset
+                            </button>
+                        )}
+                    </div>
+                    <span className="text-[12px] text-label-3 hidden sm:inline">
+                        Sorted: in hand by date, then bounced, on hold, cleared
                     </span>
                 </div>
 
                 {canManagePdc && selected.length > 0 && (
-                    <div className="mb-2.5 p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2">
+                    <div className="px-3.5 py-2.5 bg-accent-tint border-b border-separator flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-label">
                             <span>{selected.length} cheque{selected.length === 1 ? '' : 's'} selected</span>
                             <button
@@ -683,56 +578,64 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                 onClick={() => setSelectedIds([])}
                                 className="px-2 py-1 min-h-[30px] rounded-md text-[12px] font-semibold text-label-2 hover:bg-hover"
                             >
-                                Clear
+                                Clear selection
                             </button>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
-                            <button
-                                onClick={() => applyBulk(PdcStatus.Cleared)}
-                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
-                            >
+                            <button onClick={() => applyBulk(PdcStatus.Cleared)} className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent hover:bg-accent-press text-on-accent" title="The bank paid them">
                                 Mark cleared
                             </button>
-                            <button
-                                onClick={() => applyBulk(PdcStatus.Hold)}
-                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
-                            >
+                            <button onClick={() => applyBulk(PdcStatus.Hold)} className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-hover text-label-2 border border-separator-strong" title="Do not present them for now">
                                 Put on hold
                             </button>
-                            <button
-                                onClick={() => applyBulk(PdcStatus.Bounced)}
-                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
-                            >
+                            <button onClick={() => applyBulk(PdcStatus.Bounced)} className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-hover text-label-2 border border-separator-strong" title="Returned unpaid">
                                 Mark bounced
                             </button>
-                            <button
-                                onClick={() => applyBulk(PdcStatus.Pending)}
-                                className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-card-3 text-label-2 border border-separator-strong"
-                            >
+                            <button onClick={() => applyBulk(PdcStatus.Pending)} className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-card hover:bg-hover text-label-2 border border-separator-strong" title="Back in hand, waiting for their dates">
                                 Back to pending
                             </button>
                             {onBulkDeletePdc && (
                                 <button
-                                    onClick={() => {
-                                        if (!window.confirm(`Delete ${selected.length} cheque${selected.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
-                                        onBulkDeletePdc(selected);
-                                        setSelectedIds([]);
-                                    }}
+                                    onClick={() => setConfirmDelete({ ids: selected })}
                                     className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold text-dang hover:bg-dang-bg border border-separator-strong"
                                 >
-                                    Delete
+                                    Delete…
                                 </button>
                             )}
                         </div>
                     </div>
                 )}
 
-                {isPhone ? (
+                {loading && pdcCheques.length === 0 ? (
+                    <div className="px-4 py-14 text-center text-label-3" role="status" aria-live="polite">
+                        <ChequeIcon className="w-8 h-8 mx-auto text-label-4 animate-pulse" />
+                        <p className="text-sm font-semibold mt-2">Loading the register…</p>
+                    </div>
+                ) : filteredCheques.length === 0 ? (
+                    <div className="px-4 py-14 text-center text-label-3">
+                        <ChequeIcon className="w-8 h-8 mx-auto text-label-4" />
+                        {pdcCheques.length === 0 ? (
+                            <>
+                                <p className="text-sm font-bold text-label mt-2">No cheques recorded yet</p>
+                                <p className="text-[12.5px] mt-1">When a customer gives a post-dated cheque, record it here and it will come up on its date.</p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm font-bold text-label mt-2">No cheques match</p>
+                                <p className="text-[12.5px] mt-1">Try another state or date, or press Reset.</p>
+                            </>
+                        )}
+                        <div className="flex items-center justify-center gap-2 mt-4">
+                            {hasActiveFilters && <Button size="sm" variant="quiet" onClick={handleClearFilters}>Reset filters</Button>}
+                            {canManagePdc && <Button size="sm" variant={hasActiveFilters ? 'secondary' : 'primary'} onClick={() => onAddPdc()}>+ Record a cheque</Button>}
+                        </div>
+                    </div>
+                ) : isPhone ? (
                     /* Phone: a card per cheque. The customer, the amount and the
-                       state on top; the cheque itself under it; the same three
-                       quick actions as the table, sized for a thumb. */
-                    <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                        {canManagePdc && filteredCheques.length > 0 && (
+                       state on top; the cheque itself under it; the actions for
+                       where it stands, sized for a thumb. */
+                    <div className="divide-y divide-separator">
+                        {canManagePdc && (
                             <div className="px-3.5 py-2 flex items-center justify-end">
                                 <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-gray-600 dark:text-gray-300 min-h-[32px]">
                                     <input
@@ -746,32 +649,12 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                 </label>
                             </div>
                         )}
-                        {filteredCheques.length === 0 ? (
-                            <div className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
-                                <ChequeIcon className="w-8 h-8 mx-auto text-gray-300 dark:text-gray-600" />
-                                <p className="text-sm font-semibold mt-2">No PDC cheques found</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    {hasActiveFilters ? 'Try adjusting your filters or search terms.' : 'Add a cheque to start the register.'}
-                                </p>
-                                {canManagePdc && (
-                                    <button onClick={() => onAddPdc()} className="mt-3 h-10 px-4 bg-emerald-600 text-white rounded-xl text-sm font-semibold">
-                                        + Add PDC Cheque
-                                    </button>
-                                )}
-                            </div>
-                        ) : filteredCheques.slice(0, phoneVisible).map(cheque => {
-                            const customer = customers.find(c => c.id === cheque.customerId);
-                            const isDueToday = cheque.state === 'due';
-                            const isPastDue = cheque.state === 'overdue';
+                        {filteredCheques.slice(0, visibleCount).map(cheque => {
+                            const customer = customerById.get(cheque.customerId);
                             const isSelected = selected.includes(cheque.id);
-                            const state = cheque.status === PdcStatus.Cleared ? ['Cleared', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300']
-                                : cheque.status === PdcStatus.Hold ? ['On hold', 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300']
-                                : cheque.status === PdcStatus.Bounced ? ['Bounced', 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300']
-                                : isDueToday ? ['Due today', 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300']
-                                : isPastDue ? ['Date passed', 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300']
-                                : ['Pending', 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300'];
+                            const notSaved = unsavedById.get(cheque.id);
                             return (
-                                <div key={cheque.id} className={`px-3.5 py-3 ${isSelected ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''}`}>
+                                <div key={cheque.id} className={`px-3.5 py-3 border-l-[3px] ${CHEQUE_STATES[cheque.state].edge} ${isSelected ? 'bg-accent-tint/60' : ''}`}>
                                     <div className="flex gap-3">
                                         {canManagePdc && (
                                             <label className="flex-none pt-0.5">
@@ -788,66 +671,46 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     {customer && onOpenCustomerFollowUp ? (
-                                                        <button onClick={() => onOpenCustomerFollowUp(customer)} className="text-[15px] font-bold text-gray-900 dark:text-white text-left leading-snug break-words">
+                                                        <button onClick={() => onOpenCustomerFollowUp(customer)} className="text-[15px] font-bold text-label text-left leading-snug break-words hover:text-accent">
                                                             {cheque.customerName}
                                                         </button>
                                                     ) : (
-                                                        <span className="text-[15px] font-bold text-gray-900 dark:text-white leading-snug break-words">{cheque.customerName}</span>
+                                                        <span className="text-[15px] font-bold text-label leading-snug break-words">{cheque.customerName}</span>
                                                     )}
-                                                    <p className="text-[12.5px] text-gray-500 dark:text-gray-400 mt-1 font-mono">
-                                                        #{cheque.chequeNumber} · {cheque.bankName}
+                                                    <p className="text-[12.5px] text-label-3 mt-1">
+                                                        <span className="font-mono">#{cheque.chequeNumber}</span> · {cheque.bankName}
                                                     </p>
                                                 </div>
                                                 <div className="text-right flex-none">
-                                                    <p className="num text-[15.5px] font-extrabold text-pos">₹{cheque.amount.toLocaleString('en-IN')}</p>
-                                                    <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${state[1]}`}>{state[0]}</span>
+                                                    <p className="num text-[15.5px] font-extrabold text-label">{formatINR(cheque.amount)}</p>
+                                                    <ChequeStateBadge state={cheque.state} className="mt-1" />
                                                 </div>
                                             </div>
-                                            <p className="text-[12.5px] text-gray-600 dark:text-gray-300 mt-1.5">
-                                                Dated <span className="font-semibold">{cheque.chequeDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                                                {customer ? ` · O/S ₹${customer.total.toLocaleString('en-IN')}` : ''}
-                                                {(customer?.crmOwnerId || cheque.crmOwnerId) ? ` · ${customer?.crmOwnerId || cheque.crmOwnerId}` : ''}
+                                            <p className="text-[12.5px] text-label-2 mt-1.5">
+                                                Dated <span className={`font-semibold ${cheque.state === 'overdue' ? 'text-dang' : cheque.state === 'due' ? 'text-warn' : ''}`}>{chequeWhen(cheque.chequeDate, today)}</span>
+                                                {customer ? ` · O/S ${formatCompact(customer.total)}` : ''}
+                                                {ownerName(customer?.crmOwnerId || cheque.crmOwnerId) ? ` · ${ownerName(customer?.crmOwnerId || cheque.crmOwnerId)}` : ''}
                                             </p>
                                             {cheque.remarks && (
-                                                <p className="text-[12px] text-gray-400 italic mt-1 truncate">"{cheque.remarks}"</p>
+                                                <p className="text-[12px] text-label-3 italic mt-1 truncate">“{cheque.remarks}”</p>
+                                            )}
+                                            {notSaved && (
+                                                <p className="text-[12px] font-semibold text-dang mt-1" title={notSaved}>Not saved · will be retried</p>
                                             )}
                                             {canManagePdc && (
                                                 <div className="flex items-center gap-2 mt-2.5">
-                                                    <div className="flex-1 inline-flex items-center gap-1 bg-card-2 p-1 rounded-xl border border-separator">
-                                                        <button
-                                                            onClick={() => onUpdatePdcStatus(cheque.id, PdcStatus.Cleared)}
-                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Cleared ? 'bg-emerald-600 text-white' : 'text-label-2 active:bg-pos-bg'}`}
-                                                        >
-                                                            Clear
-                                                        </button>
-                                                        <button
-                                                            onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Hold ? PdcStatus.Pending : PdcStatus.Hold)}
-                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Hold ? 'bg-orange-600 text-white' : 'text-label-2 active:bg-warn-bg'}`}
-                                                        >
-                                                            Hold
-                                                        </button>
-                                                        <button
-                                                            onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Bounced ? PdcStatus.Pending : PdcStatus.Bounced)}
-                                                            className={`flex-1 h-9 rounded-lg text-[12.5px] font-bold transition-colors ${cheque.status === PdcStatus.Bounced ? 'bg-rose-600 text-white' : 'text-label-2 active:bg-dang-bg'}`}
-                                                        >
-                                                            Bounce
-                                                        </button>
-                                                    </div>
+                                                    <RowActions cheque={cheque} phone />
                                                     <button
                                                         onClick={() => onEditPdc(cheque)}
-                                                        className="w-11 h-11 grid place-items-center rounded-full text-gray-500 active:bg-blue-50 dark:active:bg-blue-900/30"
-                                                        aria-label="Edit cheque"
+                                                        className="w-11 h-11 grid place-items-center rounded-full text-label-3 active:bg-accent-tint"
+                                                        aria-label={`Edit cheque ${cheque.chequeNumber}`}
                                                     >
                                                         <EditIcon />
                                                     </button>
                                                     <button
-                                                        onClick={() => {
-                                                            if (window.confirm(`Are you sure you want to delete Cheque #${cheque.chequeNumber} for ${cheque.customerName}?`)) {
-                                                                onDeletePdc(cheque.id);
-                                                            }
-                                                        }}
-                                                        className="w-11 h-11 grid place-items-center rounded-full text-gray-500 active:text-dang active:bg-rose-50 dark:active:bg-rose-900/30"
-                                                        aria-label="Delete cheque"
+                                                        onClick={() => setConfirmDelete({ ids: [cheque.id] })}
+                                                        className="w-11 h-11 grid place-items-center rounded-full text-label-3 active:text-dang active:bg-dang-bg"
+                                                        aria-label={`Delete cheque ${cheque.chequeNumber}`}
                                                     >
                                                         <TrashIcon />
                                                     </button>
@@ -858,21 +721,21 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                 </div>
                             );
                         })}
-                        {phoneVisible < filteredCheques.length && (
+                        {visibleCount < filteredCheques.length && (
                             <div className="p-3">
                                 <button
-                                    onClick={() => setPhoneVisible(c => c + PHONE_PAGE * 2)}
-                                    className="w-full h-11 rounded-xl bg-gray-100 dark:bg-gray-700 active:bg-gray-200 text-[14px] font-semibold text-gray-700 dark:text-gray-200"
+                                    onClick={() => setVisibleCount(c => c + PAGE * 2)}
+                                    className="w-full h-11 rounded-xl bg-card-2 active:bg-hover text-[14px] font-semibold text-label-2"
                                 >
-                                    Show more &mdash; {(filteredCheques.length - phoneVisible).toLocaleString('en-IN')} left
+                                    Show more &mdash; {(filteredCheques.length - visibleCount).toLocaleString('en-IN')} left
                                 </button>
                             </div>
                         )}
                     </div>
                 ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-                    <table className="w-full text-left border-collapse text-xs sm:text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-800/90 text-[12.5px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-card-2 text-[11.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-separator">
                             <tr>
                                 {canManagePdc && (
                                     <th className="px-2.5 py-2.5 w-10 text-center">
@@ -889,245 +752,153 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                         </label>
                                     </th>
                                 )}
-                                <th className="px-3 py-2.5">Customer</th>
-                                <th className="px-2.5 py-2.5">Cheque Details</th>
-                                <th className="px-2.5 py-2.5">PDC Date</th>
-                                <th className="px-2.5 py-2.5 text-right">Amount (₹)</th>
-                                <th className="px-2.5 py-2.5 text-center">Status</th>
-                                <th className="px-2.5 py-2.5 hidden md:table-cell">CRM / Added By</th>
-                                <th className="px-2.5 py-2.5 text-center">Quick Action</th>
-                                <th className="px-2.5 py-2.5 text-right">Actions</th>
+                                <th className="px-3 py-2.5 min-w-[170px]">Customer</th>
+                                <th className="px-2.5 py-2.5">Cheque</th>
+                                <th className="px-2.5 py-2.5 text-right">Amount</th>
+                                <th className="px-2.5 py-2.5" title="Where the cheque stands today, from its date and what has been decided about it">Status · dated</th>
+                                <th className="px-2.5 py-2.5 hidden xl:table-cell">CRM owner</th>
+                                {canManagePdc && <th className="px-2.5 py-2.5 text-right">Actions</th>}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-800 bg-white dark:bg-gray-900">
-                            {filteredCheques.length === 0 ? (
-                                <tr>
-                                    <td colSpan={canManagePdc ? 9 : 8} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
-                                        <div className="flex flex-col items-center justify-center space-y-1.5">
-                                            <ChequeIcon className="w-8 h-8 text-gray-300 dark:text-gray-600" />
-                                            <p className="text-sm font-semibold">No PDC cheques found</p>
-                                            <p className="text-xs text-gray-400">
-                                                {hasActiveFilters 
-                                                    ? 'Try adjusting your filters or search terms.' 
-                                                    : 'Click"+ Add PDC Cheque" to register a new post-dated cheque.'}
-                                            </p>
-                                            <button
-                                                onClick={() => canManagePdc && onAddPdc()}
-                                                disabled={!canManagePdc}
-                                                className="mt-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors"
-                                            >
-                                                + Add PDC Cheque
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredCheques.map(cheque => {
-                                    const customer = customers.find(c => c.id === cheque.customerId);
-                                    const isDueToday = cheque.state === 'due';
-                                    const isPastDue = cheque.state === 'overdue';
-
-                                    return (
-                                        <tr
-                                            key={cheque.id}
-                                            className={`transition-colors ${selected.includes(cheque.id) ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : 'hover:bg-gray-50/80 dark:hover:bg-gray-800/50'}`}
-                                        >
-                                            {canManagePdc && (
-                                                <td className="px-2.5 py-2.5 text-center">
-                                                    <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selected.includes(cheque.id)}
-                                                            onChange={() => toggleRow(cheque.id)}
-                                                            aria-label={`Select cheque ${cheque.chequeNumber || ''} for ${cheque.customerName}`}
-                                                            className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
-                                                            style={{ outlineOffset: 6 }}
-                                                        />
-                                                    </label>
-                                                </td>
+                        <tbody className="divide-y divide-separator">
+                            {filteredCheques.slice(0, visibleCount).map(cheque => {
+                                const customer = customerById.get(cheque.customerId);
+                                const notSaved = unsavedById.get(cheque.id);
+                                return (
+                                    <tr
+                                        key={cheque.id}
+                                        className={`group border-l-[3px] ${CHEQUE_STATES[cheque.state].edge} transition-colors ${selected.includes(cheque.id) ? 'bg-accent-tint/60' : 'hover:bg-hover'}`}
+                                    >
+                                        {canManagePdc && (
+                                            <td className="px-2.5 py-2 text-center">
+                                                <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selected.includes(cheque.id)}
+                                                        onChange={() => toggleRow(cheque.id)}
+                                                        aria-label={`Select cheque ${cheque.chequeNumber || ''} for ${cheque.customerName}`}
+                                                        className="w-4 h-4 rounded text-pos focus:ring-accent cursor-pointer"
+                                                        style={{ outlineOffset: 6 }}
+                                                    />
+                                                </label>
+                                            </td>
+                                        )}
+                                        {/* Customer: the name opens the account, the way it does in the book. */}
+                                        <td className="px-3 py-2 min-w-[170px] max-w-[240px]">
+                                            {customer && onOpenCustomerFollowUp ? (
+                                                <button
+                                                    onClick={() => onOpenCustomerFollowUp(customer)}
+                                                    className="font-bold text-label hover:text-accent text-left truncate max-w-full block min-h-[24px]"
+                                                    title="Open this account: log the call, see the other cheques"
+                                                >
+                                                    {cheque.customerName}
+                                                </button>
+                                            ) : (
+                                                <span className="font-bold text-label truncate max-w-full block">{cheque.customerName}</span>
                                             )}
-                                            {/* Customer Name */}
-                                            <td className="px-3 py-2.5 min-w-[150px] max-w-[220px]">
-                                                <div className="flex items-start flex-col">
-                                                    <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white truncate max-w-full">
-                                                        {cheque.customerName}
-                                                    </span>
-                                                    {customer && (
-                                                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                            <span className="text-[12.5px] text-gray-500 dark:text-gray-400">
-                                                                O/S: ₹{customer.total.toLocaleString('en-IN')}
-                                                            </span>
-                                                            {onOpenCustomerFollowUp && (
-                                                                <button
-                                                                    onClick={() => onOpenCustomerFollowUp(customer)}
-                                                                    className="text-[11.5px] text-pos hover:underline font-semibold"
-                                                                >
-                                                                    Follow-up →
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
+                                            <span className="block text-[12px] text-label-3 truncate">
+                                                {customer ? `O/S ${formatCompact(customer.total)}` : 'Not in the book'}
+                                                {notSaved && <span className="ml-1.5 font-semibold text-dang" title={notSaved}>· Not saved, retrying</span>}
+                                            </span>
+                                        </td>
 
-                                            {/* Cheque Details */}
-                                            <td className="px-2.5 py-2.5">
-                                                <div className="flex flex-col">
-                                                    <div className="flex items-center gap-1 font-mono text-xs font-bold text-gray-800 dark:text-gray-200">
-                                                        <span>#{cheque.chequeNumber}</span>
-                                                    </div>
-                                                    <span className="text-[12.5px] text-gray-500 dark:text-gray-400 truncate max-w-[120px]">
-                                                        {cheque.bankName}
-                                                    </span>
-                                                    {cheque.remarks && (
-                                                        <span className="text-[11.5px] text-gray-400 italic truncate max-w-[140px]">"{cheque.remarks}"
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
+                                        {/* The cheque itself */}
+                                        <td className="px-2.5 py-2">
+                                            <span className="block font-mono text-[12.5px] font-bold text-label">#{cheque.chequeNumber}</span>
+                                            <span className="block text-[12px] text-label-3 truncate max-w-[150px] xl:max-w-[200px]" title={cheque.remarks ? `${cheque.bankName} — ${cheque.remarks}` : cheque.bankName}>
+                                                {cheque.bankName}{cheque.remarks ? ` · ${cheque.remarks}` : ''}
+                                            </span>
+                                        </td>
 
-                                            {/* Cheque Date */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap">
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
-                                                        {cheque.chequeDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                    </span>
-                                                    {isDueToday && cheque.status !== PdcStatus.Cleared && (
-                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 w-fit animate-pulse">
-                                                            Today
-                                                        </span>
-                                                    )}
-                                                    {isPastDue && (
-                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300 w-fit">
-                                                            Overdue
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
+                                        {/* Amount */}
+                                        <td className="px-2.5 py-2 whitespace-nowrap text-right">
+                                            <span className="num text-[13.5px] font-extrabold text-label">{formatINR(cheque.amount)}</span>
+                                        </td>
 
-                                            {/* Amount */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap text-right">
-                                                <span className="text-sm sm:text-base font-extrabold text-pos">
-                                                    ₹{cheque.amount.toLocaleString('en-IN')}
-                                                </span>
-                                            </td>
+                                        {/* Where it stands, and when */}
+                                        <td className="px-2.5 py-2 whitespace-nowrap">
+                                            <ChequeStateBadge state={cheque.state} />
+                                            <span
+                                                className={`block text-[12px] mt-0.5 ${cheque.state === 'overdue' ? 'text-dang font-bold' : cheque.state === 'due' ? 'text-warn font-bold' : 'text-label-3'}`}
+                                                title={cheque.chequeDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                            >
+                                                {cheque.state === 'cleared' ? cheque.chequeDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : chequeWhen(cheque.chequeDate, today)}
+                                            </span>
+                                        </td>
 
-                                            {/* Status Badge */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
-                                                {cheque.status === PdcStatus.Cleared ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12.5px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
-                                                        Cleared
-                                                    </span>
-                                                ) : cheque.status === PdcStatus.Hold ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12.5px] font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300">
-                                                        On Hold
-                                                    </span>
-                                                ) : cheque.status === PdcStatus.Bounced ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12.5px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300">
-                                                        Bounced
-                                                    </span>
-                                                ) : isDueToday ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12.5px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
-                                                        Due Today
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12.5px] font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
-                                                        Pending
-                                                    </span>
-                                                )}
-                                            </td>
+                                        {/* CRM owner */}
+                                        <td className="px-2.5 py-2 whitespace-nowrap hidden xl:table-cell">
+                                            <span className="block text-[12.5px] font-semibold text-label-2 truncate max-w-[110px]">
+                                                {ownerName(customer?.crmOwnerId || cheque.crmOwnerId) || 'Unassigned'}
+                                            </span>
+                                            {cheque.addedBy && (
+                                                <span className="block text-label-3 text-[11.5px] truncate max-w-[110px]">added by {cheque.addedBy}</span>
+                                            )}
+                                        </td>
 
-                                            {/* CRM / Added By */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap hidden md:table-cell">
-                                                <div className="text-xs">
-                                                    <span className="font-semibold text-gray-700 dark:text-gray-300 truncate block max-w-[100px]">
-                                                        {customer?.crmOwnerId || cheque.crmOwnerId || 'Unassigned'}
-                                                    </span>
-                                                    {cheque.addedBy && (
-                                                        <span className="block text-gray-400 text-[11.5px] truncate max-w-[100px]">
-                                                            by {cheque.addedBy}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            {/* Quick Status Toggle */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap text-center">
-                                                {!canManagePdc ? (
-                                                    <span className="text-[12.5px] text-label-3">{cheque.status}</span>
-                                                ) : (
-                                                <div className="inline-flex items-center gap-1 bg-card-2 p-1 rounded-lg border border-separator">
+                                        {/* Actions: what can be done where it stands; delete only on hover or focus */}
+                                        {canManagePdc && (
+                                            <td className="px-2.5 py-2 whitespace-nowrap text-right">
+                                                <div className="inline-flex items-center justify-end gap-1">
+                                                    <RowActions cheque={cheque} />
                                                     <button
-                                                        onClick={() => onUpdatePdcStatus(cheque.id, PdcStatus.Cleared)}
-                                                        title="Mark as Cleared in Bank"
-                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
-                                                            cheque.status === PdcStatus.Cleared
-                                                                ? 'bg-emerald-600 text-white shadow-xs'
-                                                                : 'hover:bg-pos-bg text-label-2 hover:text-pos'
-                                                        }`}
+                                                        onClick={() => onEditPdc(cheque)}
+                                                        className="w-8 h-8 grid place-items-center text-label-3 hover:text-accent hover:bg-accent-tint rounded-full transition-colors"
+                                                        title="Edit the cheque's details"
+                                                        aria-label={`Edit cheque ${cheque.chequeNumber}`}
                                                     >
-                                                        ✓ Clear
+                                                        <EditIcon />
                                                     </button>
                                                     <button
-                                                        onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Hold ? PdcStatus.Pending : PdcStatus.Hold)}
-                                                        title={cheque.status === PdcStatus.Hold ?"Release from Hold" :"Put on Hold"}
-                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
-                                                            cheque.status === PdcStatus.Hold
-                                                                ? 'bg-orange-600 text-white shadow-xs'
-                                                                : 'hover:bg-warn-bg text-label-2 hover:text-warn'
-                                                        }`}
+                                                        onClick={() => setConfirmDelete({ ids: [cheque.id] })}
+                                                        className="w-8 h-8 grid place-items-center text-label-3 hover:text-dang hover:bg-dang-bg rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 group-focus-within:opacity-100"
+                                                        title="Delete this cheque…"
+                                                        aria-label={`Delete cheque ${cheque.chequeNumber}`}
                                                     >
-                                                        Hold
-                                                    </button>
-                                                    <button
-                                                        onClick={() => onUpdatePdcStatus(cheque.id, cheque.status === PdcStatus.Bounced ? PdcStatus.Pending : PdcStatus.Bounced)}
-                                                        title="Mark as Bounced / Returned"
-                                                        className={`px-2.5 py-1.5 min-h-[30px] rounded-md text-[12.5px] font-bold transition-colors ${
-                                                            cheque.status === PdcStatus.Bounced
-                                                                ? 'bg-rose-600 text-white shadow-xs'
-                                                                : 'hover:bg-dang-bg text-label-2 hover:text-dang'
-                                                        }`}
-                                                    >
-                                                        ✕ Bounce
+                                                        <TrashIcon />
                                                     </button>
                                                 </div>
-                                                )}
                                             </td>
-
-                                            {/* Action Buttons */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap text-right space-x-1">
-                                                {canManagePdc && (
-                                                <button
-                                                    onClick={() => onEditPdc(cheque)}
-                                                    className="p-1 text-gray-400 hover:text-accent hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-                                                    title="Edit Cheque Details"
-                                                >
-                                                    <EditIcon />
-                                                </button>
-                                                )}
-                                                {canManagePdc && (
-                                                <button
-                                                    onClick={() => {
-                                                        if (window.confirm(`Are you sure you want to delete Cheque #${cheque.chequeNumber} for ${cheque.customerName}?`)) {
-                                                            onDeletePdc(cheque.id);
-                                                        }
-                                                    }}
-                                                    className="p-1 text-gray-400 hover:text-dang hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
-                                                    title="Delete Cheque"
-                                                >
-                                                    <TrashIcon />
-                                                </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
+                                        )}
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
+                    {visibleCount < filteredCheques.length && (
+                        <div className="p-3 border-t border-separator flex justify-center">
+                            <button
+                                type="button"
+                                onClick={() => setVisibleCount(c => c + PAGE * 2)}
+                                className="h-9 px-5 rounded-xl bg-card-2 hover:bg-hover text-[13px] font-semibold text-label-2"
+                            >
+                                Show more &mdash; {(filteredCheques.length - visibleCount).toLocaleString('en-IN')} left
+                            </button>
+                        </div>
+                    )}
                 </div>
                 )}
             </div>
+
+            <ConfirmDialog
+                open={!!confirmDelete}
+                title={chequesToDelete.length === 1 ? 'Delete this cheque?' : `Delete ${chequesToDelete.length} cheques?`}
+                confirmLabel={chequesToDelete.length === 1 ? 'Delete cheque' : `Delete ${chequesToDelete.length} cheques`}
+                onConfirm={runDelete}
+                onCancel={() => setConfirmDelete(null)}
+            >
+                {chequesToDelete.length === 1 && chequesToDelete[0] ? (
+                    <p>
+                        <strong className="text-label">#{chequesToDelete[0].chequeNumber}</strong> · {chequesToDelete[0].bankName} · <span className="num font-semibold text-label">{formatINR(chequesToDelete[0].amount)}</span> · dated {chequesToDelete[0].chequeDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {chequesToDelete[0].customerName}.
+                    </p>
+                ) : (
+                    <p>
+                        <span className="num font-semibold text-label">{formatINR(chequesToDelete.reduce((s, c) => s + c.amount, 0))}</span> across {chequesToDelete.length} cheques
+                        {chequesToDelete.length > 0 ? ` (${chequesToDelete.slice(0, 3).map(c => `#${c.chequeNumber}`).join(', ')}${chequesToDelete.length > 3 ? ', …' : ''})` : ''}.
+                    </p>
+                )}
+                <p className="mt-2">It leaves the register for everyone and cannot be undone. A cheque that was returned should be marked <strong>bounced</strong>, not deleted, so the record stays.</p>
+            </ConfirmDialog>
         </div>
     );
 };

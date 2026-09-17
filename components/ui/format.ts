@@ -124,3 +124,23 @@ export const followUpWhen = (item: Outstanding, today: Date): string => {
     if (diff === 1) return `Tomorrow · ${short}`;
     return diff <= 14 ? `in ${diff}d · ${short}` : short;
 };
+
+/**
+ * "Today", "Tomorrow · 18 Sept", "in 4d · 21 Sept", "3d ago · 14 Sept",
+ * "25 Aug": when a cheque is dated, relative to today, for the register.
+ * The same shape as followUpWhen so the two lists read alike.
+ */
+export const chequeWhen = (date: Date | string, today: Date): string => {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return 'No date';
+    const day = new Date(d); day.setHours(0, 0, 0, 0);
+    const t = new Date(today); t.setHours(0, 0, 0, 0);
+    const diff = Math.round((day.getTime() - t.getTime()) / 86_400_000);
+    const short = d.toLocaleDateString('en-IN', d.getFullYear() === t.getFullYear() ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+    if (diff === 0) return 'Today';
+    if (diff === 1) return `Tomorrow · ${short}`;
+    if (diff === -1) return `Yesterday · ${short}`;
+    if (diff < 0 && diff >= -30) return `${-diff}d ago · ${short}`;
+    if (diff > 0 && diff <= 14) return `in ${diff}d · ${short}`;
+    return short;
+};

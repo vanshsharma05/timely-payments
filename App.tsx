@@ -1856,6 +1856,9 @@ const App = () => {
     };
 
     const handleUpdatePdcStatus = (chequeId: string, newStatus: PdcStatus) => {
+        // Pressing the state a cheque is already in is not a change — it used
+        // to rewrite clearedDate to now on a cleared cheque and save the row.
+        if (pdcCheques.find(p => p.id === chequeId)?.status === newStatus) return;
         setPdcCheques(prev => prev.map(p => {
             if (p.id === chequeId) {
                 return {
@@ -2434,8 +2437,11 @@ const App = () => {
                             onUpdatePdcStatus={handleUpdatePdcStatus}
                             onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
                             onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
+                            onOpenCustomerFollowUp={handleOpenFollowUp}
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
+                            loading={!serverLoaded}
+                            unsaved={syncStatuses.cheques?.failed ?? []}
                         />
                     </Card>
                 )}
@@ -2566,8 +2572,11 @@ const App = () => {
                             onUpdatePdcStatus={handleUpdatePdcStatus}
                             onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
                             onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
+                            onOpenCustomerFollowUp={handleOpenFollowUp}
                             initialCustomerFilter={pdcInitialCustomerFilter || undefined}
                             initialStatusFilter={pdcInitialStatusFilter || undefined}
+                            loading={!serverLoaded}
+                            unsaved={syncStatuses.cheques?.failed ?? []}
                         />
                     </Card>
                 )}
@@ -3475,6 +3484,8 @@ const App = () => {
                     currentUser={currentUser!}
                     chequeToEdit={editingPdcCheque}
                     preselectedCustomerId={pdcPreselectedCustomerId}
+                    existingCheques={pdcCheques}
+                    users={users}
                 />
             )}
             {resetPlan && (

@@ -87,7 +87,9 @@ Added in the reliability session (2026-09-17, eleventh):
 
 | # | Item | Evidence | Prio | Confidence |
 |---|---|---|---|---|
-| T44 | Only the customer book is refreshed on focus; cheques and templates keep the sign-in snapshot until reload (the same `accept`/`forget` path would serve them) | `App.tsx` `refreshBook` | P3 | HIGH |
+| T44 | Only the customer book is refreshed on focus; cheques and templates keep the sign-in snapshot until reload (the same `accept`/`forget` path would serve them). Felt more now that the register is the morning's list | `App.tsx` `refreshBook` | P3 | HIGH |
+| T52 | The follow-up dialog's Cheques fold keeps its own layout ("PDCs in Hand", "Uncovered Dues", "+ Add Cheque", "✓ Clear") beside the register's; only the badge is shared now. One `ChequeRow` used by both would close it | `FollowUpModal.tsx` Cheques section | P4 | HIGH |
+| T53 | `window.confirm()` remains on: delete customer (App), remove contact (FollowUpModal), remove user, delete template, bulk follow-up date (Reports), master import. `ConfirmDialog` exists now; each is a small swap | `App.tsx`, `FollowUpModal.tsx`, `ReportsView.tsx` | P3 | HIGH |
 | T45 | The refused-write reason still names the account by id (`Could not save the changes to out_86_…`) — T32 restated; the dialog shows which account, the header/banner do not | `repository.ts` `updateCustomerColumns` | P4 | HIGH |
 | T46 | A refresh while the follow-up dialog is open is skipped rather than merged; a very long dialog (minutes) means the tab is as stale as the dialog is old | `App.tsx` `dialogOpenRef` | P4 | HIGH |
 | T47 | Two creates are not idempotent but are also never retried automatically: `addActivities` (the bulk date tool's system notes — a re-run of the tool skips accounts already on the date, so no double) and `reset_book` (a second press after a lost answer is refused when the plan added accounts, and otherwise runs an identical reset with one more snapshot row). A client id on both would close it | `repository.ts`, `supabase/reset.sql` | P4 | HIGH |

@@ -86,19 +86,21 @@ describe('activity entries and promises', () => {
 describe('new cheques', () => {
     const customer = mixedAccount();
     const fill = () => {
-        fireEvent.change(screen.getByLabelText('Customer Account'), { target: { value: customer.id } });
+        fireEvent.change(screen.getByLabelText('Customer'), { target: { value: 'TEST MIXED' } });
+        fireEvent.click(screen.getByRole('option', { name: /TEST MIXED UDYOG/ }));
         fireEvent.change(screen.getByPlaceholderText('e.g. 004821'), { target: { value: '000777' } });
         fireEvent.change(screen.getByPlaceholderText('e.g. 50000'), { target: { value: '15000' } });
-        fireEvent.change(screen.getByLabelText('Cheque Date (PDC Date)'), { target: { value: '2026-12-01' } });
+        fireEvent.change(screen.getByLabelText('Bank'), { target: { value: 'SBI' } });
+        fireEvent.change(screen.getByLabelText('Dated'), { target: { value: '2026-12-01' } });
     };
     it('the dialog keeps one id for the cheque it is composing; a Save pressed again carries the same id', async () => {
         const onSave = vi.fn(async (_c: Omit<PdcCheque, 'id'> & { id?: string }) => ({ ok: false as const, message: 'no connection to the server' }));
         render(<PdcModal isOpen customers={[customer]} currentUser={crmUser()} onClose={() => {}} onSave={onSave} />);
         fill();
-        fireEvent.click(screen.getByRole('button', { name: /add pdc cheque/i }));
+        fireEvent.click(screen.getByRole('button', { name: /record cheque/i }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
         await waitFor(() => expect(document.body.textContent).toMatch(/Not saved/));
-        fireEvent.click(screen.getByRole('button', { name: /add pdc cheque/i }));
+        fireEvent.click(screen.getByRole('button', { name: /record cheque/i }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
         const ids = onSave.mock.calls.map(c => c[0].id);
         expect(ids[0]).toMatch(/^pdc_/);
