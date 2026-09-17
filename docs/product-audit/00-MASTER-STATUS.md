@@ -5,11 +5,11 @@ The authoritative continuation file. Read this first in every session; update it
 PROJECT: Timely Payment — Shori Chemicals' receivables follow-up app (customer book, follow-up queue, PDC cheques, reports, live stock).
 STACK: React 18 + TypeScript 5 + Vite 5 + Tailwind v4 (browser) · Express 5 dev server / Vercel serverless functions `api/*.ts` (server) · Supabase (Postgres + Auth + RLS) · Google Sheets CSV as the source of balances and stock · Nodemailer/Resend for the daily email · Google Gemini for the AI report · Vercel hosting. See 01-REPOSITORY-MAP.md.
 
-CURRENT PHASE: Engineering batch 6 done (reliability of daily use: honest saves + fresh tabs; committed locally, NOT deployed). Batches 2–5 live. Phases 0–3 done; Phase 4 (UX) not started; R1-B waits on Q15.
+CURRENT PHASE: Engineering batch 6 (reliability of daily use: honest saves + fresh tabs + retry idempotency) **DEPLOYED 2026-09-17 15:33 IST**. Batches 2–6 live. Phases 0–3 done; Phase 4 (UX) not started; R1-B waits on Q15.
 CURRENT SUBPHASE: —
 LAST COMPLETED TASK: Reliability session 2026-09-17 (eleventh; retry-idempotency check added the same day — client ids for activity entries, new cheques and new customers, so a retry after a lost answer never doubles a record): `useCollectionSync` gained `flush()` (per-row verdict), automatic retry with backoff and on focus/online, `onStatus`, `accept`/`forget`; the follow-up, edit and cheque dialogs wait for the verdict and stay open with everything typed on a refusal; success messages only after acceptance; bulk actions report "saved N of M"; a persistent refused-write banner and a `SaveStatus` header line on every page; the book is re-read on return to the tab / every 5 min / reconnect / Refresh button with a pending-aware merge (`services/refresh.ts`) and paused while a dialog is open. 18 new tests (167). Browser probe with every write aborted confirmed the whole path. Production untouched.
 CURRENT TASK: None in progress.
-NEXT TASK: Owner approves the deploy of batch 6 (no SQL change; 17-RELEASE-CHECKLIST.md). Then Q15 → R1-B. See RECOMMENDED NEXT SESSION START.
+NEXT TASK: Owner answers Q15 (conflict policy). Then R1-B per 11 §2.2. See RECOMMENDED NEXT SESSION START.
 
 BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run typecheck` (tsc --noEmit, strict): PASS, 0 errors.
@@ -37,17 +37,17 @@ IMPORTANT ISSUES:
 - P3 · Dead right `canEditFinancials`; dead column `customers.updated_by`; legacy enum values; stray root files.
 
 CURRENT DESIGN WORK: none. UX findings U1–U23 classified in 06 (17 CONFIRMED BY CODE, 3 CONFIRMED BY RUNNING UI, 3 BUSINESS-DEPENDENT/HYPOTHESIS); journeys J1–J16 in 05.
-CURRENT ENGINEERING WORK: batch 6 (reliability) **committed locally on `restore-and-fix`, not pushed, not deployed**. No SQL prerequisite. DEPLOYMENT STATE: production = `dpl_7mKQWQGhHHNKGnLcDe7Y13EgvHKq` = `3fbe7f7` (+ docs `373af34` on the branches). When approved: gate + push + deploy per 17, then the smoke test and both probes, plus the reliability probe (`scratchpad/reliability-probe.cjs` pattern: a refused save must show in the dialog and the header).
+CURRENT ENGINEERING WORK: nothing in flight. DEPLOYMENT STATE (2026-09-17 15:40 IST): production = `dpl_GfxvXMy7gxHCRTbHSBLJeAkxQn1o` = commit `7e1136a` (bundles byte-identical); `origin/restore-and-fix` = `origin/main` = `7e1136a` (+ this docs commit). Previous deployment `dpl_7mKQWQGhHHNKGnLcDe7Y13EgvHKq` (`3fbe7f7`) remains promotable. Post-deploy: smoke 12/12, both probes identical to the recorded results, production unchanged.
 FILES REVIEWED: 31 Full + 22 Partial of 107 (18-FILE-AUDIT-LEDGER.md). This session: `useSupabaseSync.ts` rewritten (Full); `PdcModal.tsx` submit path (Partial); new Full: `services/refresh.ts`, `components/SaveStatus.tsx`, two test files.
 FILES REMAINING: 54 not yet opened at audit depth; 22 partials to complete in Phase 8.
-CHANGES NOT YET VERIFIED: the reliability batch is verified by 18 unit tests, typecheck, build and a write-aborted browser probe on the local build, but is not deployed and not yet exercised by a human.
+CHANGES NOT YET VERIFIED: none by tooling — the reliability batch is live and verified by 25 unit tests, byte comparison of the deployed bundles, the read-only smoke test and both interception probes; not yet exercised by a human on the live build.
 OPEN QUESTIONS: Q1–Q14 in 19-OPEN-QUESTIONS.md, now as decision briefs for Q7, Q8, Q9, Q11, Q12, Q13, Q14. Blocking nothing; Q6 (staging), Q8 (reset) and Q14 (isolation) shape the fix batches.
 DECISIONS REQUIRED: none to continue Phase 4. Before the reset fix: Q8. Before RLS tightening: Q14. Before destructive tests: Q6. D7 records the recommended R1 remediation.
 REGRESSION RISKS (reliability batch): dialogs now wait ~0–1 s for the server before closing (a "Saving…" state); a slow network shows that wait where it used to close instantly. A refused write is now loud (banner stays until saved) — expected. The refresh replaces rows the tab has not changed; a dialog open on a row pauses it (T46). `handleUpdateOutstanding` / `handleSaveCustomer` / `handleSavePdc` return promises — any new caller that ignores the outcome still gets the old fire-and-forget behaviour. Standing: any change to `App.tsx`, `types.ts`, `googleSheetService.ts`, `useSupabaseSync.ts`, `repository.ts`, the dialogs or `supabase/*.sql` without the unit layer.
 RECOMMENDED NEXT SESSION START:
 1. Read this file, then 11-SECURITY-RELIABILITY.md (Part 3b the reliability batch; §2.2 the concurrency brief) and 19 Q15. Run `npm run test:run` (expect 174/174) and `npm run typecheck`.
-2. If the owner approved: deploy batch 6 per 17-RELEASE-CHECKLIST.md (no SQL step), then the smoke test, both probes and a write-aborted check that a refused save is shown in the dialog and the header.
+2. Confirm `npx vercel ls --prod` still shows `dpl_GfxvXMy7gxHCRTbHSBLJeAkxQn1o`. Remember the probes abort writes, so the dialogs now stay open on them — `write-payload-probe.cjs` closes them itself.
 3. Session 12 — R1-B per 11 §2.2, only after Q15 is answered (field-aware compare-and-set on the baseline; conflict shown through the same `SaveOutcome` path the dialogs now have).
 4. Then T44 (refresh cheques/templates the same way); then Phase 4 UX audit, continuing the ledger (U24, T36, T37, T40, T45, T46 are on the list).
 5. Update this file.
-LAST UPDATED: 2026-09-17 (reliability session, eleventh).
+LAST UPDATED: 2026-09-17 (reliability batch deployed and verified, twelfth).

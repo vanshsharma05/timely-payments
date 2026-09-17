@@ -15,7 +15,8 @@
  *   1. A: edit dialog, saved without changes        → expect NO request
  *   2. A: edit dialog, phone number changed          → expect contact_number
  *   3. B: row owner dropdown changed                 → expect crm_owner_id
- *   4. C: follow-up dialog, Urgent toggled, saved    → expect is_urgent (+ last_follow_up_on, which the dialog stamps)
+ *   4. C: follow-up dialog, Urgent toggled, saved    → expect is_urgent (+ last_follow_up_on, which the dialog stamps);
+ *      the dialog stays open because the aborted write is a refusal to the app — the probe closes it
  *   5. Data source → Sync balances → Update balances → expect only rows whose figures moved, money columns only
  * A report of every captured request, with the columns it carried, is written
  * to <out-dir>/write-payload-probe.json and summarised on stdout.
@@ -70,6 +71,8 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     const firstRowButton = (title) => page.evaluate((t) => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => (x.getAttribute('title') || '').startsWith(t)); if (!b) return false; b.click(); return true; }, title);
     const press = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === l) || [...document.querySelectorAll('form button[type="submit"]')].find((x) => /save/i.test(x.textContent)); if (!b) return false; b.click(); return true; }, label);
     const settle = () => wait(1600); // past the hook's 800 ms debounce
+    /** Closes whatever dialog is open — since the reliability batch a refused save keeps its dialog open. */
+    const closeDialogs = async () => { for (let i = 0; i < 3; i++) { const closed = await page.evaluate(() => { const b = [...document.querySelectorAll('button[aria-label="Close"]')].pop(); if (!b) return false; b.click(); return true; }); if (!closed) break; await wait(400); } };
 
     // 1. A: edit dialog, no change
     scenario = '1 edit dialog, no change';
@@ -82,6 +85,8 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     await firstRowButton('Edit customer master details'); await wait(500);
     await page.evaluate(() => { const i = document.querySelector('input[placeholder="e.g. 9876543210"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '9800000000'); i.dispatchEvent(new Event('input', { bubbles: true })); });
     await press('Save Changes'); await settle();
+    // A refused save keeps the edit dialog open (reliability batch); close it before the next scenario.
+    await closeDialogs();
 
     // 3. B: owner dropdown on the row
     scenario = '3 owner dropdown';
@@ -100,12 +105,15 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
     await page.evaluate(() => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => x.textContent.trim() === 'Follow Up'); b && b.click(); }); await wait(1000);
     await page.evaluate(() => { const c = document.querySelector('#isUrgent'); c && c.click(); });
     await press('Save Follow-up & Contacts'); await settle();
+    // Since the reliability batch a refused save keeps the dialog open (the
+    // abort above is a refusal to the app), so close it before moving on.
+    await closeDialogs();
 
     // 5. balance sync: Data source → Sync balances → Update balances
     scenario = '5 balance sync';
     await page.goto(BASE + '/#source', { waitUntil: 'networkidle2' }); await wait(1200);
     await press('Sync balances');
-    const t0 = Date.now(); while (Date.now() - t0 < 120000 && !(await page.$('[role="dialog"], .fixed.inset-0'))) await wait(500);
+    const t0 = Date.now(); while (Date.now() - t0 < 120000 && !(await page.evaluate(() => /Update balances/.test(document.body.innerText)))) await wait(500);
     await wait(800);
     const rowsInReview = await page.evaluate(() => (document.body.innerText.match(/Update balances\s*(\d+) rows/) || [])[1] || null);
     const confirmed = await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => /^Update balances/.test(x.textContent.trim())); if (!b) return false; b.click(); return true; });
