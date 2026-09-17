@@ -16,7 +16,7 @@ Status: skeleton — Phase 19. Nothing below is ticked until verified.
 
 ## Deploy and verify — the sequence as run on 2026-09-17 (dpl_8NB7JLzJoSuCKsecBwz7WiycZBgJ)
 
-1. Clean tree; `git log --oneline origin/main..restore-and-fix` lists exactly the commits meant to go out; no `supabase/`, `api/`, `package*`, `bun.lock` or Vercel-config changes unless intended.
+1. Clean tree; `git log --oneline origin/main..restore-and-fix` lists exactly the commits meant to go out; no `supabase/`, `api/`, `package*`, `bun.lock` or Vercel-config changes unless intended. **If `supabase/*.sql` changed, run the changed file in the project's SQL editor BEFORE deploying the client** (the fresh start calls `public.reset_book`, which must exist; until it does the button fails closed).
 2. Gate: `npx tsc --noEmit`, `npx vitest run` (expect the count in 00-MASTER-STATUS.md), `npm run build`, `npm run check:classes`, `npm run check:empty`.
 3. `git push origin restore-and-fix` · `git push origin restore-and-fix:main` · `git branch -f main restore-and-fix`.
 4. `npx vercel deploy --prod --yes` (retry once on "Not authorized"); note the `dpl_…` id from `npx vercel inspect <url>`; `npx vercel ls --prod` shows it as the current production deployment.

@@ -230,7 +230,33 @@ The person must learn **that** someone else changed the account, **which field**
 2. **Conflict card with two choices (medium).** The sync-error banner (T32) becomes a conflict card listing each field: *Follow-up date — yours 20 Nov · theirs 25 Nov (10:14)* with **Keep theirs** (drop mine, baseline refreshed) and **Use mine** (re-send against the refreshed baseline — an explicit overwrite, possibly Manager/Admin only). Naming *who* requires `updated_by`, which nothing sets today (T38); until then "someone else".
 3. **Check before editing (larger).** Opening the follow-up dialog re-fetches the row first and warns *"changed since you loaded it"* before any typing; on Save the same per-field card appears inside the dialog with the two choices. Fewest surprises, most code.
 
-## Part 3 — SEC3 "COMPLETE FRESH START": VALIDATED
+## Part 3 — SEC3 "COMPLETE FRESH START": VALIDATED → **FIXED (ninth session, 2026-09-17; committed locally, NOT deployed — needs `supabase/reset.sql` applied first)**
+
+### 3.0 What the reset is now
+
+| | Before | After |
+|---|---|---|
+| Where it runs | the browser: state cleared, then the sync hooks wrote the difference as hundreds of separate requests | the database: `public.reset_book()` (`supabase/reset.sql`), **one transaction** — everything or nothing |
+| Order | cheques/templates/profile emptied in memory **before** the sheet fetch; a failed fetch still persisted those | the sheet is read **first**; if that fails nothing at all changes (fail closed) |
+| Ids | every sheet row became a new `cust_*` account; 672 legacy `out_*` accounts deleted and re-created | **no account is deleted or re-idd**; matched by name (`mergeWithExistingFollowUps`, the sync's own rule) and updated in place |
+| Accounts the sheet no longer lists | deleted, cascading their cheques and their activity threads | **settled to nil and stamped** (`settled_at`), exactly as the balance sync does; already-settled ones untouched |
+| Owners, collectors, contacts, rank, category, PAN/GSTIN | wiped (whole row rebuilt from the sheet) | **kept** |
+| Activity threads (`customer_activity`) | lost with every deleted account (606 entries at risk) | **never touched** |
+| Cheques | deleted one by one; a failure stopped the loop | deleted in the transaction (declared behaviour kept) — and in the snapshot |
+| Follow-up work (date, notes mirror, forecast, urgency, last-follow-up, `status`→`Pending`) | cleared | cleared (declared behaviour kept) |
+| Templates / profile / data-source settings | reset | reset; the customer-master URL is kept (configuration) |
+| Backup | none | `book_backups` row written inside the same transaction (customers, cheques, templates, profile, settings, who, when, counts) **plus** a JSON file the dialog makes the person download |
+| Audit | none | the `book_backups` row is the record (`created_by`, `created_by_name`, `counts`) |
+| Recovery | none | `public.restore_book_backup(id)` (Admin only): puts every snapshotted row back, restores cheques/templates/profile/settings, and first snapshots the state it replaces so it is itself reversible; never deletes a customer |
+| Confirmation | one `window.confirm` | dialog with counts computed from the sheet just read and the book loaded, "what will not happen", mandatory backup download + checkbox, typed `RESET`; the database re-checks the phrase and refuses a plan that no longer matches the book |
+| Manager pressing it | half-reset + duplicates (RLS refused their deletes) | same clean result as an Admin (there are no deletes any more); who may press it is still Q8 |
+| Partial failure | yes, at any of hundreds of requests | no: the transaction rolls back (pinned by a test that fails the last step). What remains: a write from *another* open tab landing after the reset (last-writer-wins on that one row), and this tab's reload after success failing (the database is already consistent; refresh the page) |
+
+Probe on the local build against the real book (every write aborted): the dialog showed 144 cheques · 709 accounts with follow-up work · 684 listed · 1 to settle · 3,342 already at nil · 0 new · 4,027 on file; **0 mutating requests before confirmation**; confirm → exactly one `POST /rest/v1/rpc/reset_book` (4,027 updates, 0 inserts), aborted; the dialog reported the failure and nothing changed (production re-read: newest write unchanged).
+
+**Deploy prerequisite:** `supabase/reset.sql` must be run in the SQL editor **before** the client that calls it is deployed; until then the button fails closed ("Could not find the function…", nothing changes).
+
+### 3.1 Trace (as it was before the fix)
 
 ### 3.1 Trace
 - **Control**: Data source tab → "Troubleshooting & Fresh Start" → red button "Reset All Data (Fresh Start)" (`App.tsx:2940–2956`). The tab renders only when `rights.canSyncSheets` (Admin **or Manager**, :1261–1262).
@@ -253,7 +279,7 @@ The person must learn **that** someone else changed the account, **which field**
 
 ### 3.2 Decision brief
 
-**TECHNICAL SAFETY REQUIREMENTS** (defects regardless of who may press it):
+**TECHNICAL SAFETY REQUIREMENTS** (defects regardless of who may press it) — **all six met by the ninth session (3.0 above)**:
 - T1 The reset must not silently change ids: it should reuse existing ids by matching names (`mergeWithExistingFollowUps(existing, records)` with a "clear app data" step), or be re-specified. Today it deletes and re-creates 672 accounts and loses their threads.
 - T2 It must not run as hundreds of independent client requests. A server-side function (service role) or a Postgres function should do it in one transaction, or it should be removed.
 - T3 It must write an audit record (who, when, counts).

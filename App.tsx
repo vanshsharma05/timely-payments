@@ -37,6 +37,8 @@ import TemplateModal from './components/TemplateModal';
 import NotificationBanner from './components/NotificationBanner';
 import ReportsView, { FollowUpCategoryFilter } from './components/ReportsView';
 import SyncReconciliationModal from './components/SyncReconciliationModal';
+import ResetConfirmModal from './components/ResetConfirmModal';
+import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
 import PdcChequesView from './components/PdcChequesView';
 import PdcModal from './components/PdcModal';
 import { CompanyProfileView } from './components/CompanyProfileView';
@@ -198,6 +200,9 @@ const App = () => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [sheetUpdatedTillDate, setSheetUpdatedTillDate] = useState<string>('');
     const [lastSyncTime, setLastSyncTime] = useState<string>('');
+
+    /** A fresh start waiting for its confirmation: the sheet has been read and the plan computed; nothing is written yet. */
+    const [resetPlan, setResetPlan] = useState<ResetPlan | null>(null);
 
     // Pending sync data waiting for Admin reconciliation
     const [pendingSync, setPendingSync] = useState<{
@@ -748,66 +753,78 @@ const App = () => {
      * deliberately leaves logins alone: those are real accounts, and they are
      * removed one at a time in Team & access.
      */
-    const handleResetAllDataAndUsers = async (skipConfirm = false) => {
-        if (!skipConfirm) {
-            const confirmed = window.confirm(
-                "COMPLETE FRESH START\n\nThis rewrites the shared dataset for the whole team:\n1. Clear all follow-up notes, tags, forecast amounts and custom contacts\n2. Delete every Post-Dated Cheque (PDC)\n3. Re-import a clean dataset from the live Google Sheet\n4. Restore the default message template and company profile\n\nEvery account comes back with NO CRM against it, because the outstanding sheet does not decide ownership. Run the one-time customer import afterwards, or assign owners from the customer list.\n\nTeam logins are NOT touched — remove those in Team & access.\n\nClick OK to proceed."
-            );
-            if (!confirmed) return;
-        }
-
+    /**
+     * "Complete fresh start", step one: read the sheet and work out the plan.
+     *
+     * Nothing in the tab or the database changes here. The sheet is read
+     * first because a reset that could not re-import it has nothing to reset
+     * to — the old version emptied the cheques, templates and profile in
+     * memory *before* trying the sheet, and the sync hooks wrote that
+     * through even when the fetch then failed. The plan is shown as counts
+     * in a dialog that asks for a backup copy and a typed phrase; the reset
+     * itself is one database transaction (services/reset.ts, supabase/reset.sql).
+     */
+    const handleResetAllDataAndUsers = async () => {
         setIsSyncing(true);
-        setSyncMessage({ type: 'success', text: 'Resetting system and fetching clean fresh data...' });
-
+        setSyncMessage({ type: 'success', text: 'Reading the live sheet before anything changes…' });
         try {
-            // Each of these is picked up by the sync effects, which write the
-            // reset through to Supabase for the whole team.
-            setPdcCheques([]);
-            setCompanyProfile(DEFAULT_COMPANY_PROFILE);
-            setTemplates([DEFAULT_TEMPLATE]);
-            setDataSourceMode('google');
-            setGoogleSheetUrl(OFFICIAL_SHEET_URL);
-
-            // Fetch clean data from Google Sheet without merging old overrides
-            try {
-                const parsed = await fetchGoogleSheetData(OFFICIAL_SHEET_URL);
-                if (parsed.records && parsed.records.length > 0) {
-                    // Through the merge, not around it: a reset re-imports the
-                    // sheet, and the sheet does not get to decide ownership just
-                    // because the book happens to be empty at that moment. Every
-                    // account comes back unassigned, and the customer import is
-                    // what puts the owners back.
-                    const freshProcessed = mergeWithExistingFollowUps([], parsed.records);
-                    setAppData(freshProcessed);
-                    if (parsed.updatedTillDate) {
-                        setSheetUpdatedTillDate(parsed.updatedTillDate);
-                    }
-                } else {
-                    throw new Error('The sheet returned no rows.');
-                }
-            } catch (fetchErr: any) {
-                // Leave the real dataset alone and say why the reset stopped.
-                throw new Error(
-                    `Could not re-import the sheet, so the customer list was left as it is: ${fetchErr?.message || fetchErr}`
-                );
+            const parsed = await fetchGoogleSheetData(OFFICIAL_SHEET_URL);
+            if (!parsed.records || parsed.records.length === 0) {
+                throw new Error('The sheet returned no rows.');
             }
-
-            setLastSyncTime(new Date().toISOString());
-
-            setSyncMessage({
-                type: 'success',
-                text: 'Dataset reset and re-imported. Every account is unassigned — run the customer import, or set owners from the customer list. Team logins were left untouched.',
-            });
-            setTimeout(() => setSyncMessage(null), 6000);
+            setResetPlan(buildResetPlan(appData, parsed.records, pdcCheques, parsed.updatedTillDate));
+            setSyncMessage(null);
         } catch (err: any) {
-            console.error("Failed to reset:", err);
             setSyncMessage({
                 type: 'error',
-                text: err?.message || 'Reset encountered an error. Please try again.',
+                text: `Could not read the sheet, so nothing was reset: ${err?.message || err}`,
             });
         } finally {
             setIsSyncing(false);
         }
+    };
+
+    /** The copy of the book the dialog asks the person to keep, from what this tab has loaded. */
+    const handleDownloadResetBackup = () => {
+        const blob = new Blob([backupFileContents(appData, pdcCheques, templates, companyProfile)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = backupFileName();
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    /**
+     * Step two: the database applies the plan in one transaction, then this
+     * tab reloads everything from the server. Dropping `serverLoaded` is the
+     * same path sign-out uses: the sync hooks forget their baselines and
+     * re-seed from the reloaded data without writing anything back.
+     */
+    const handleConfirmReset = async (phrase: string) => {
+        if (!resetPlan) return;
+        const result = await resetBook(resetPlan, {
+            templates: [DEFAULT_TEMPLATE],
+            profile: DEFAULT_COMPANY_PROFILE,
+            settings: {
+                data_source_mode: 'google',
+                google_sheet_url: OFFICIAL_SHEET_URL,
+                sheet_updated_till_date: resetPlan.updatedTillDate || '',
+                last_sync_time: new Date().toISOString(),
+            },
+        }, phrase);
+        setResetPlan(null);
+        setServerLoaded(false);
+        setSyncMessage({
+            type: 'success',
+            text: `Fresh start done: ${result.cheques_deleted} cheque${result.cheques_deleted === 1 ? '' : 's'} removed, `
+                + `${result.accounts_updated} account${result.accounts_updated === 1 ? '' : 's'} re-imported (${result.accounts_settled} settled), `
+                + `${result.accounts_added} added. Owners, collectors, contacts and activity history were kept. `
+                + `Snapshot ${String(result.backup_id).slice(0, 8)} is saved in the database.`,
+        });
+        setTimeout(() => setSyncMessage(null), 12000);
     };
 
     // Template Modal Handlers
@@ -2956,16 +2973,17 @@ const App = () => {
                                             <h4 className="text-sm font-semibold text-label-2 mb-3">Troubleshooting & Fresh Start</h4>
                                             <div className="flex flex-wrap items-center gap-3">
                                                 <button 
-                                                    onClick={() => handleResetAllDataAndUsers(false)}
+                                                    onClick={handleResetAllDataAndUsers}
                                                     className="px-4 py-2 bg-dang-bg text-dang hover:brightness-95 rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5"
-                                                    title="Clear follow-ups and cheques for everyone and re-import the live sheet. Logins are not touched."
+                                                    title="Clear follow-ups and cheques for everyone and re-import the live sheet. Accounts, owners, contacts and history are kept; logins are not touched."
                                                 >
                                                     <TrashIcon /> <span>Reset All Data (Fresh Start)</span>
                                                 </button>
                                             </div>
                                             <p className="text-xs text-label-3 mt-2">
-                                                This wipes notes, forecasts and PDC cheques for the whole team and
-                                                re-imports the sheet. Team logins are managed in Team &amp; access.
+                                                This clears follow-up dates, notes, forecasts and PDC cheques for the whole team and
+                                                re-imports the sheet's figures, in one step, after a backup. Accounts keep their ids,
+                                                owners, collectors, contacts and history. Team logins are managed in Team &amp; access.
                                             </p>
                                         </div>
                                     </div>
@@ -3273,6 +3291,14 @@ const App = () => {
                     currentUser={currentUser!}
                     chequeToEdit={editingPdcCheque}
                     preselectedCustomerId={pdcPreselectedCustomerId}
+                />
+            )}
+            {resetPlan && (
+                <ResetConfirmModal
+                    plan={resetPlan}
+                    onDownloadBackup={handleDownloadResetBackup}
+                    onConfirm={handleConfirmReset}
+                    onCancel={() => setResetPlan(null)}
                 />
             )}
             {pendingSync && (

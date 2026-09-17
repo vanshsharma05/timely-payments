@@ -322,7 +322,7 @@ const rowToPdc = (r: any): PdcCheque => ({
     addedBy: r.added_by || undefined,
 });
 
-const pdcToRow = (p: PdcCheque): Record<string, any> => ({
+export const pdcToRow = (p: PdcCheque): Record<string, any> => ({
     id: p.id,
     customer_id: p.customerId || null,
     customer_name: p.customerName ?? '',

@@ -490,3 +490,8 @@ create policy customer_activity_insert on public.customer_activity
 -- remove their own slip, and an Admin can remove anything.
 create policy customer_activity_delete on public.customer_activity
     for delete using (author_id = auth.uid() or public.is_admin());
+
+-- ---------------------------------------------------------------------------
+-- The "Complete fresh start" function and its backup table live in reset.sql;
+-- run that file after this one (it is idempotent too).
+-- ---------------------------------------------------------------------------

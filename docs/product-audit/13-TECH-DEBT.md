@@ -73,3 +73,12 @@ Added in the status-contract session (2026-09-17, seventh):
 | T37 | Both dialogs pre-fill the follow-up date with `toISOString().split('T')[0]` — the UTC day — so a date stored at local midnight IST shows as the previous day and, if saved untouched, moves the follow-up back a day | `FollowUpModal.tsx:35–44`, `CustomerEditModal.tsx:99` | P2 | HIGH (by reading; not yet reproduced on a stored local-midnight date — the app stores what the date input gives, UTC midnight, so today's rows are unaffected) |
 | T38 | `customers.updated_by` exists and is never set (0 of 4,027 rows) — a conflict message cannot say who | read-only query | P3 | HIGH |
 | T39 | The book is loaded once at sign-in and never refreshed (no polling, focus refetch or realtime for customers); live stock has all three | `App.tsx:453`, `services/liveStock.ts:385–392` | P2 | HIGH |
+
+Added in the fresh-start session (2026-09-17, ninth):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T40 | No screen for restoring a `book_backups` snapshot: an Admin runs `select public.restore_book_backup('<id>')` in the Supabase SQL editor (procedure in DEPLOYMENT.md). A small Admin-only list-and-restore panel would close this | `supabase/reset.sql` | P3 | HIGH |
+| T41 | `book_backups` rows are ~4 MB each and nothing prunes them; a dozen resets is fine, a habit is not | schema | P4 | HIGH |
+| T42 | A write from another open tab landing right after a reset overwrites that one row's cleared follow-up (last-writer-wins, R1-B territory); the tab that ran the reset reloads, others do not until they refresh (T39) | 11 §3.0 | P3 | HIGH |
+| T43 | `customer_activity` is not in the snapshot because the reset does not touch it; if Q8 ever says threads should be cleared, add them to the snapshot first | 19 Q8 | P4 | HIGH |

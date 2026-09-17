@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 96 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 103 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -109,8 +109,16 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `tests/statusContract.dom.test.tsx` | 195 | The status contract end to end: both dialogs driven in jsdom, exact PATCH columns per action, every reopen path, Reports categories and the server digest on stale rows. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 15 tests | | | | |
 | `scripts/tests/status-contract-probe.cjs` | 99 | READ-ONLY probe: tab clock moved to the next day, urgency / collected / edit-dialog date; every write aborted. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | probe | | | | |
 
+| `supabase/reset.sql` | 355 | Fresh start as one transaction: `book_backups`, `reset_book()`, `restore_book_backup()`. | Full | ok | ok | n/a | ok | ok | n/a | n/a | 21 tests (PGlite) | Written this session; roles Admin/Manager (reset), Admin (restore) | | | |
+| `services/reset.ts` | 162 | The plan (via the sync's merge), the RPC call, the backup file. | Full | ok | ok | n/a | ok | n/a | n/a | n/a | 10 tests | Written this session | | | |
+| `components/ResetConfirmModal.tsx` | 153 | Counts, what will not happen, backup download + checkbox, typed phrase, in-place refusal. | Full | ok | ok | ok | ok | ok | ok | – | 6 tests | Written this session | | | |
+| `tests/pglite.ts` | 43 | Throwaway Postgres for SQL tests: auth stubs + the real schema. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | harness | | | | |
+| `tests/resetPlan.test.ts` | 122 | The plan keeps ids, moves money only, settles, adds, counts; the backup file. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 10 tests | | | | |
+| `tests/resetSql.test.ts` | 254 | `reset_book` / `restore_book_backup` against the real schema with a synthetic book. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 21 tests | | | | |
+| `tests/resetConfirmModal.dom.test.tsx` | 86 | The confirmation dialog's gating and messages. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 6 tests | | | | |
+
 ## Coverage
 
-- Reviewed at audit depth (Full): **20 / 96**; Partial (read for a workflow, not line by line): **22 / 96** — after the status-contract session of 2026-09-17 (96 = 94 + one test file + one probe).
+- Reviewed at audit depth (Full): **27 / 103**; Partial (read for a workflow, not line by line): **22 / 103** — after the fresh-start session of 2026-09-17 (103 = 96 + seven new files).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

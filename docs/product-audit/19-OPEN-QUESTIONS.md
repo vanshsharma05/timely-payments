@@ -40,7 +40,13 @@ Questions the repository cannot answer. Each brief states what the software does
 
 **Real-world effect.** One misclick by a Manager loses the team's cheque register and the history of every account; a stolen Manager session could do the same.
 
-**Options (policy).** (a) Admin only. (b) Admin and Manager, as now. (c) Remove from the app; keep a documented offline procedure (SQL run by whoever administers Supabase). (d) Keep, but only as a server-side transactional job with backup + audit + typed confirmation (the technical fixes), under whichever roles (a)/(b).
+**Status 2026-09-17 (ninth session).** Option (d) is built (11 §3.0): one database transaction with a snapshot, a restore function, counts-and-phrase confirmation, no deletes, ids/owners/history kept. Three things remain the owner's call:
+
+1. **Who may press it** — still Admin **and** Manager (unchanged; the function checks the same two roles). Narrowing to Admin is one line in `reset_book()` and the button's gate.
+2. **Should a fresh start clear CRM owners and collectors?** The old reset did ("every account comes back with NO CRM — run the customer import afterwards"); the new one **keeps** them, because losing them was the most-complained-about side effect and the import that restores them is a separate step people forget. If the business wants owners cleared, it is one more column in step 3 of the function.
+3. **Should it clear the activity threads?** The old reset lost them only as a side effect of deleting accounts; the new one keeps every entry. Clearing them is a `delete from customer_activity` in the transaction (and they are not in the snapshot today — that would have to be added first).
+
+**Options (policy).** (a) Admin only. (b) Admin and Manager, as now. (c) Remove from the app; keep a documented offline procedure (SQL run by whoever administers Supabase). (d) Keep, but only as a server-side transactional job with backup + audit + typed confirmation (the technical fixes), under whichever roles (a)/(b) — **built**.
 
 **Technical consequences.** (a) client gate + a server route or RLS check, one afternoon; does not fix T1–T6. (b) nothing; risk stays. (c) delete ~70 lines; least risk. (d) new `/api/reset` with service role: export tables to storage, run one transaction, write `alert_log`; the id-rewrite (T1) must be fixed either way.
 

@@ -26,6 +26,10 @@ both with `timelypaymentsupport@gmail.com` so they stay together.
 You should see `Success. No rows returned`. This creates the tables, the Row
 Level Security policies, and a trigger that gives every new account a profile.
 
+4. Then do the same with [`supabase/reset.sql`](supabase/reset.sql). It adds
+   the "Complete fresh start" function and its backup table. Both files are
+   safe to run again — running them a second time changes nothing.
+
 ## 3. Create your first login
 
 The first account created automatically becomes **Admin**, so make it yours.
@@ -187,6 +191,33 @@ hosting. Note Vercel's Hobby plan is for non-commercial use — if this becomes 
 production tool for the business, you need a Pro seat.
 
 ---
+
+## The "Complete fresh start" button, and the way back
+
+*Data source → Troubleshooting & Fresh Start → Reset All Data.* Admin and
+Manager see it. It reads the live sheet first (if that fails, nothing
+happens), shows exactly what it will do as counts, makes you download a
+backup file and type `RESET`, then runs **one database transaction**: a
+snapshot of customers, cheques, templates, profile and settings is saved in
+the `book_backups` table, every cheque is deleted, the follow-up work on every
+account is cleared (dates, notes, forecasts, urgency), the sheet's figures
+are re-imported, accounts the sheet no longer lists are settled to nil, and
+the template/profile/settings go back to their defaults. **No account is
+deleted or given a new id; owners, collectors, contacts, rank, category and
+the activity history are kept.**
+
+To undo a reset (Admin only), open **SQL Editor** and run:
+
+```sql
+select id, created_at, created_by_name, reason, counts from public.book_backups order by created_at desc;
+select public.restore_book_backup('<the id you want>');
+```
+
+The restore puts every snapshotted account, cheque, template, the profile and
+the settings back as they were, takes a snapshot of the state it is replacing
+first (so it can itself be undone), and never deletes an account. The JSON
+file downloaded from the dialog is a second copy of the same data in your own
+hands.
 
 ## Troubleshooting
 
