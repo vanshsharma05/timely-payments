@@ -14,9 +14,9 @@ const columnsOf = (before: Outstanding, after: Outstanding) => Object.keys(custo
 const atDay = (offset: number) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset); return d; };
 
 describe('follow-up save (FollowUpModal.handleSave shape: spread the live row, set the outcome)', () => {
-    it('next date → follow_up_date, status, last_follow_up_on and the forecast, nothing else', () => {
+    it('next date → follow_up_date, last_follow_up_on and the forecast, nothing else (no status word)', () => {
         const before = mixedAccount();
-        const after: Outstanding = { ...before, followUpDate: atDay(3), status: FollowUpStatus.Upcoming, lastFollowUpOn: new Date(), forecastAmount: 50000, forecastDate: atDay(3) };
+        const after: Outstanding = { ...before, followUpDate: atDay(3), lastFollowUpOn: new Date(), forecastAmount: 50000, forecastDate: atDay(3) };
         expect(columnsOf(before, after)).toEqual(['follow_up_date', 'forecast_amount', 'forecast_date', 'last_follow_up_on']);
     });
     it('collected → status and follow_up_date (and last_follow_up_on)', () => {
@@ -54,13 +54,19 @@ describe('owner / collector / rank / category', () => {
     });
 });
 
-describe('bulk follow-up date (handleBulkSetFollowUp writes the date and the word the date means today)', () => {
-    it('sends follow_up_date and status only', () => {
+describe('bulk follow-up date (handleBulkSetFollowUp shape: the date, plus Pending only to reopen a collected account)', () => {
+    const bulk = (item: Outstanding, nextDate: Date): Outstanding => ({ ...item, followUpDate: nextDate, ...(item.status === FollowUpStatus.Completed ? { status: FollowUpStatus.Pending } : {}) });
+    it('sends follow_up_date only on an open account', () => {
         const before = mixedAccount();
         const nextDate = atDay(0);
-        const [after] = processStatuses([{ ...before, followUpDate: nextDate, status: followUpStatusOf({ status: FollowUpStatus.Pending, followUpDate: nextDate }) }]);
-        expect(columnsOf(before, after)).toEqual(['follow_up_date', 'status']);
-        expect(after.status).toBe(FollowUpStatus.Today);
+        const [after] = processStatuses([bulk(before, nextDate)]);
+        expect(columnsOf(before, after)).toEqual(['follow_up_date']);
+        expect(followUpStatusOf(after)).toBe(FollowUpStatus.Today);
+    });
+    it('sends follow_up_date and status: Pending on a collected account (reopened)', () => {
+        const before: Outstanding = { ...mixedAccount(), status: FollowUpStatus.Completed, followUpDate: atDay(-10) };
+        const [after] = processStatuses([bulk(before, atDay(2))]);
+        expect(customerRowDiff(outstandingToRow(before), outstandingToRow(after))).toEqual({ follow_up_date: atDay(2).toISOString(), status: 'Pending' });
     });
 });
 

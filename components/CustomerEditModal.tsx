@@ -202,18 +202,6 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             updatedNotes.unshift(`[${dateStr} - ${author}] ${initialNote.trim()}`);
         }
 
-        /** Status from a follow-up date, the way this dialog has always derived it. */
-        const statusFor = (date: Date | undefined, fallback: FollowUpStatus): FollowUpStatus => {
-            if (!date) return fallback;
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const targetMidnight = new Date(date);
-            targetMidnight.setHours(0, 0, 0, 0);
-            if (targetMidnight.getTime() === today.getTime()) return FollowUpStatus.Today;
-            if (targetMidnight < today) return FollowUpStatus.Overdue;
-            return FollowUpStatus.Upcoming;
-        };
-
         /** The money block as this form computes it — for a new customer, or an intentional edit by someone with the right. */
         const moneyFromForm = () => {
             const calculatedOver90 = a91_135 + aOver135;
@@ -260,7 +248,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                 crmOwnerId: crmOwnerId.trim(),
                 ...moneyFromForm(),
                 followUpDate: targetDate,
-                status: statusFor(targetDate, FollowUpStatus.Pending),
+                // Where the follow-up stands is read from the date; the stored
+                // status only ever says "collected", which a new account is not.
+                status: FollowUpStatus.Pending,
                 isNewCustomer: true,
                 addedAt: new Date().toISOString(),
                 creationDate: new Date(),
@@ -296,7 +286,10 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             if (followUpChanged) {
                 const targetDate = followUpDate ? new Date(followUpDate) : undefined;
                 savedRecord.followUpDate = targetDate;
-                savedRecord.status = statusFor(targetDate, customerToEdit.status || FollowUpStatus.Pending);
+                // A new date on an account closed as collected opens it again;
+                // clearing the date leaves a collected account collected. No
+                // word for where the follow-up stands is stored (the date decides).
+                if (targetDate && customerToEdit.status === FollowUpStatus.Completed) savedRecord.status = FollowUpStatus.Pending;
             }
             if (moneyChanged) Object.assign(savedRecord, moneyFromForm());
         }

@@ -959,10 +959,10 @@ const App = () => {
             }
             entries.push({ customerId: item.id, kind: 'system', body });
 
-            // The stored word is what the date says today; setting it is also
-            // what reopens an account marked Completed, which the follow-up form
-            // does the same way. (Tomorrow the date, not this word, decides.)
-            const next: Outstanding = { ...item, followUpDate: nextDate, status: followUpStatusOf({ status: FollowUpStatus.Pending, followUpDate: nextDate }) };
+            // Where the follow-up stands is read from the date; the only status
+            // written here is the reopening of an account closed as collected,
+            // the same way the follow-up form does it.
+            const next: Outstanding = { ...item, followUpDate: nextDate, ...(wasCompleted ? { status: FollowUpStatus.Pending } : {}) };
             changed.push(next);
             return next;
         });

@@ -125,3 +125,17 @@ Questions the repository cannot answer. Each brief states what the software does
 **Technical consequences.** (a) none. (b) new RLS policies mirroring `scopeTo` (the rule already exists in SQL-able form), Manager/Admin unaffected; company-wide metrics for non-whole-book users disappear (they are already hidden); the digest is unaffected (service role). Risk: a policy bug hides an account from the person who must work it — needs staging (Q6). (c) as (b) plus `profiles` column masking (a view).
 
 **Ask the owner.** "If a CRM opened the app's data directly and saw the whole book, would that be a breach, or just how a small team works?" · "When someone leaves, is deleting their login the same day a reliable routine?"
+
+## Q15 — Same-field conflicts: which fields deserve a warning, and who may overwrite? (new; from R1-B, 11 §2.2)
+
+**Current implemented behaviour.** After Options A and B a save carries only the columns it changed, so two people editing different things on one account no longer overwrite each other. If two people change the *same* field from stale tabs, the later save silently wins (11 §2.2, scenarios S1–S7). Three weeks of activity show one customer-day with two authors out of 561; a tab is never refreshed after sign-in.
+
+**Why the question exists.** Detecting the race is cheap (a predicate on the columns being written); what to *do* about it is policy: which fields are worth interrupting someone for, whether "use mine anyway" is allowed and for whom, and whether the app should record who last changed an account (`updated_by` exists, nothing sets it).
+
+**Real-world effect.** A CRM and their collector plan different dates for the same customer; the one who saved first loses the plan and finds out only when the customer is called twice or not at all. Collected/reopened can flip the same way.
+
+**Options.** (a) Warn on follow-up date, collected/reopened, owner, collector, forecast, money, rank/category; contacts, urgency and "last follow-up" stay last-writer-wins; notes merge automatically. (b) Warn only on date, collected/reopened, owner and collector. (c) No warning; a focus refetch so tabs go stale for minutes rather than a day.
+
+**Technical consequences.** (a)/(b) `updateCustomerColumns` gains a predicate per changed column (~30 lines), the hook surfaces a conflict (~15 lines), one of the three conflict experiences in 11 §2.2 (toast ≈ 40 lines; card ≈ 150; in-dialog check ≈ 250). (c) ≈ 60 lines following the live-stock refresh pattern. Recording *who* needs `updated_by` to be set on every write (client-side `auth.uid()` or a trigger — a configuration change).
+
+**Ask the owner.** "When two of your people change the same thing on one customer, should the second one be stopped and shown both values — and may they override, or only a Manager?"

@@ -262,36 +262,28 @@ const FollowUpModal = ({
             updatedCustomer.forecastDate = undefined;
         }
 
+        // The stored status only records whether the money was collected.
+        // Planning a follow-up (or dropping one) on an account closed as
+        // collected opens it again — that is the one other thing written
+        // here. Where the follow-up stands (today, upcoming, overdue) is read
+        // from the date every time, so no word for it is stored: this dialog
+        // used to write one, which made a plain Save after midnight carry a
+        // status column that only restated the date.
+        const reopen = () => {
+            if (customer.status === FollowUpStatus.Completed) updatedCustomer.status = FollowUpStatus.Pending;
+        };
         switch (outcome) {
             case 'collected':
                 updatedCustomer.status = FollowUpStatus.Completed;
                 updatedCustomer.followUpDate = new Date();
                 break;
             case 'follow_up':
-                if (nextFollowUpDate) {
-                    const nextDate = new Date(nextFollowUpDate);
-                    updatedCustomer.followUpDate = nextDate;
-                    
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const targetMidnight = new Date(nextDate);
-                    targetMidnight.setHours(0, 0, 0, 0);
-                    
-                    if (targetMidnight.getTime() === today.getTime()) {
-                        updatedCustomer.status = FollowUpStatus.Today;
-                    } else if (targetMidnight.getTime() < today.getTime()) {
-                        updatedCustomer.status = FollowUpStatus.Overdue;
-                    } else {
-                        updatedCustomer.status = FollowUpStatus.Upcoming;
-                    }
-                } else {
-                    updatedCustomer.followUpDate = undefined;
-                    updatedCustomer.status = FollowUpStatus.Pending;
-                }
+                updatedCustomer.followUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : undefined;
+                reopen();
                 break;
             case 'no_follow_up':
                 updatedCustomer.followUpDate = undefined;
-                updatedCustomer.status = FollowUpStatus.Pending;
+                reopen();
                 break;
         }
 

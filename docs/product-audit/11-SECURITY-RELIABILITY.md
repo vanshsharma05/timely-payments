@@ -13,7 +13,7 @@ R1 is split into three, because Option A settles one of them and not the others:
 | # | What | State | Evidence |
 |---|---|---|---|
 | **R1-A** | **Unrelated-field lost update**: a write carried the tab's stale copy of every column, so saving X reverted somebody else's Y | **EXPECTED FIXED** — a write now carries only the columns that changed since this tab last saved the row (`customerRowDiff` → `updateCustomerColumns`); a no-change Save sends nothing | 77/77 unit tests (`tests/customerRowDiff.test.ts`, `useCollectionSync.dom.test.tsx`, `syncFlows.test.ts`, `updateCustomerColumns.test.ts`); interception probe: `[contact_number]`, `[crm_owner_id]`, `[is_urgent,last_follow_up_on]`, 0 requests for a no-change Save, balance sync 10 money-only PATCHes for 684 reviewed rows |
-| **R1-B** | **Same-field conflict**: two people change the *same* column; the later write wins and nobody is told | **OPEN** — unchanged by Option A; needs optimistic concurrency (Option C: `updated_at` predicate + conflict handling) or realtime | by design |
+| **R1-B** | **Same-field conflict**: two people change the *same* column; the later write wins and nobody is told | **OPEN — designed, not implemented** (seventh session, §2.2 below): field-aware compare-and-set on the columns a write carries, riding on Option A's baseline; row-level `updated_at` OCC rejected as the wrong granularity; owner questions in 19 Q15 | by design |
 | **R1-C** | **Derived status persisted**: `processStatuses` rewrote `status` for every date-crossed row on any follow-up save | **RESOLVED 2026-09-17 (sixth session, Option B)** — `processStatuses` no longer writes `status`; every screen, count, filter, export and the AI summary read `followUpStatusOf()` / `getFollowUpCategory()` (the date decides; the stored word is trusted only for `Completed`). Probe with the tab's clock moved to the next day, one urgency toggle: **90 PATCHes before (89 × `[status]`) → 1 after**. The `status` column stays, written only by user actions (follow-up Save, edit dialog, bulk date) — a snapshot, not a source. | `tests/derivedStatus.dom.test.tsx` (16), re-pinned cases in `money.test.ts` / `syncFlows.test.ts`; 93/93; probe BEFORE/AFTER |
 
 Option A also does not: detect a conflict (a stale tab still overwrites the *same* column silently), refresh other tabs (no realtime/polling), or change what a failed write looks like on screen (U18 stands: the row looks saved; the baseline is left unsynced so the next change retries — as before, now per row).
@@ -25,7 +25,7 @@ Performance (measured with the probe, writes aborted): a customer PATCH is now ~
 | Concept | Where it lives | Source of truth | Persisted? |
 |---|---|---|---|
 | **Declared outcome** `Completed` ("collected") | `customers.status` | the person who pressed Collected (FollowUpModal) | yes — the only value of `status` any reader trusts |
-| **Derived follow-up reading** Today / Upcoming / Overdue / Pending | `followUpStatusOf()` / `getFollowUpCategory()` in `types.ts` | `follow_up_date` against today | no — the column still receives the word a user action computed at the time (follow-up Save, edit dialog, bulk date) as a snapshot; nothing rewrites it afterwards and nothing reads it except as a fallback for a row with no usable date (0 such rows in production) |
+| **Derived follow-up reading** Today / Upcoming / Overdue / Pending | `followUpStatusOf()` / `getFollowUpCategory()` in `types.ts` | `follow_up_date` against today | **no** (final, seventh session) — no writer stores it any more and no reader consults the stored word for it; the old no-date fallback in `getFollowUpCategory` is gone too (0 production rows relied on it) |
 | Payment rank `Bad` (declared) / `Good` / `Late` (derived) | `payment_rank`, `getCustomerPaymentRank()` | unchanged | unchanged |
 | Settled (`total = 0`, `settled_at`) | money block | the sheet / sync | unchanged |
 | Cheque state | `chequeState()` from `cheque_date` | unchanged | unchanged |
@@ -33,7 +33,26 @@ Performance (measured with the probe, writes aborted): a customer PATCH is now ~
 
 Readers switched to the derived reading (each was reading the stale stored word for a *derived* meaning): the customer book's Status dropdown counts and filter, its `StatusBadge` and status colour on the table and on the phone cards; the Reports table's `StatusBadge`; the Excel export's Status column; Today's attention/priority filter; the AI report's "Status:" line. Readers left on the stored word because they mean the declared outcome: every `=== Completed` check (`crmPerformanceStats`, `cashFlowForecastMetrics`, `notificationSummary`, Reports' completed chip/count/border, AI coverage, the digest, the Today list's "collected today" branch). Writers left as they are: FollowUpModal (outcome), CustomerEditModal (only when the date field changed, since C1), bulk date tool (now computes the word itself instead of relying on `processStatuses`).
 
-**Schema:** `customers.status` is now **legacy for everything but `Completed`**. It is not dropped and no migration ran (session rule); a future cleanup could narrow it to a boolean `collected` (or keep it as an audit snapshot) once the two dialogs stop writing derived words — Phase 8, low priority.
+**Schema:** `customers.status` is now **legacy for everything but `Completed`**. It is not dropped and no migration ran (session rule); a future cleanup could narrow it to a boolean `collected` — Phase 8, low priority.
+
+#### Every writer of `customers.status` (seventh session, 2026-09-17) and what became of it
+
+| # | Action | Handler | Value written (before → after) | Class | Any reader needs it? | Business behaviour |
+|---|---|---|---|---|---|---|
+| W1 | Follow-up dialog, outcome **Payment collected** | `FollowUpModal.handleSave` `case 'collected'` | `Completed` (unchanged) | 1 declare Completed | yes — every `=== Completed` reader, the digest | unchanged |
+| W2 | Follow-up dialog, outcome **follow-up** with a date (the **default** outcome, pre-filled with the current date, so every plain Save goes here) | same, `case 'follow_up'` | Today/Overdue/Upcoming for the chosen date → **nothing** on an open account; `Pending` only if the account was `Completed` | 3 snapshot (+2 reverse when it was Completed) | no (readers derive) | unchanged: the reopen still happens, by `Pending` instead of the derived word |
+| W3 | Follow-up dialog, outcome follow-up, date cleared | same | `Pending` → nothing / `Pending` to reopen | 3 (+2) | no | unchanged |
+| W4 | Follow-up dialog, outcome **no follow-up** | same, `case 'no_follow_up'` | `Pending` → nothing / `Pending` to reopen | 3 (+2) | no | unchanged |
+| W5 | Edit dialog, follow-up date changed on an existing account | `CustomerEditModal.handleSubmit` (`statusFor`, removed) | derived word (date set) / existing word (date cleared) → **nothing**; `Pending` only when a date is set on a `Completed` account | 3 (+2) | no | unchanged: a date reopens, clearing keeps it collected |
+| W6 | Edit dialog, new account | same | derived word / `Pending` → `Pending` (the column default) | 3 | no | unchanged |
+| W7 | Reports bulk follow-up date (Admin) | `App.handleBulkSetFollowUp` | derived word (Session 6) → nothing; `Pending` to reopen (the activity line already says "reopened") | 3 (+2) | no | unchanged |
+| W8 | New rows from the balance sheet / customer master / raw import | `parseGoogleSheetCsv`, `parseCustomerMasterSheetCsv`, `App.parseRawDataArray` | `Pending` (unchanged) | 4 initial value = column default | no | unchanged |
+| — | Balance sync, settlement, master import merge, reset, `processStatuses` | `mergeWithExistingFollowUps`, `settleUnlisted`, `mergeCustomerMasterIntoAppData`, reset, `processStatuses` | never wrote `status` (spread the existing row) | — | — | — |
+| — | Server (`api/`) | reads only | — | — | — | — |
+
+**Final invariant:** `customers.status` ∈ {`Completed`, anything else}. `Completed` is written by one action (W1) and undone by planning or dropping a follow-up on the account (W2–W5, W7 → `Pending`). Nothing else writes it; nothing reads any value but `Completed`. Where a follow-up stands is `followUpStatusOf(follow_up_date)`, every time. The probe with the tab's clock moved to the next day: urgency toggle → `[is_urgent,last_follow_up_on]`; collected → `status: "Completed"`; edit-dialog date → `[follow_up_date]`.
+
+**Reopen, pinned exactly** (`tests/statusContract.dom.test.tsx` E): the follow-up dialog opens with outcome *follow-up* and the current date in the field, so a plain Save on a collected account reopens it with its collection date as the follow-up date (reads Overdue the next day) — current behaviour, kept, flagged as U24 in 06; a new date reopens with that date; *no follow-up* reopens with no date; the edit dialog reopens only when a date is set and keeps a collected account collected when the date is cleared.
 
 ## Part 1 — R1 lost updates: VALIDATED (CONFIRMED) — the state before Option A
 
@@ -137,6 +156,79 @@ Two further modes the same reconstruction caused, fixed by the same change: a **
 **Smallest robust set**: **A + B** (and the C1 fix). C is a worthwhile guard afterwards; D is optional polish. All four leave the sheet-owned money rules untouched.
 
 ---
+
+### 2.2 R1-B — the concurrency design brief (seventh session, 2026-09-17; designed, NOT implemented)
+
+**What remains after Options A and B.** Two tabs write the *same column* of the *same account*, both from a baseline the other has since changed. The later PATCH wins and neither person is told. Exact scenarios that can still happen:
+
+| # | Scenario | Roles | Column(s) |
+|---|---|---|---|
+| S1 | Two people plan different follow-up dates on one account within their tabs' lifetimes (a tab is a sign-in snapshot; nothing refreshes it) | CRM + Collector (both see the account by design: `scopeFor` matches owner **or** collector), Manager + CRM | `follow_up_date` |
+| S2 | One marks the account collected, the other's later save (default outcome = follow-up) reopens it, or vice versa | any two with `canEditFollowUp` | `status`, `follow_up_date` |
+| S3 | Two people add a note/interaction: `notes` is a jsonb array sent whole from each tab's snapshot, so the later save drops the earlier line from the mirror (the `customer_activity` row itself survives) | CRM + Collector | `notes` |
+| S4 | Owner/collector reassigned twice from stale tabs (row dropdown, dialog, bulk reassign, master-import conflict) | Admin/Manager, CRM self-claim | `crm_owner_id`, `assigned_collector_id` |
+| S5 | Two forecasts entered for one account | CRM + Collector | `forecast_amount`, `forecast_date` |
+| S6 | Two balance syncs (or a sync and a manual money edit) from tabs holding different sheet snapshots | Admin/Manager only | money block, `settled_at` |
+| S7 | Rank/category set differently by two people | Admin/Manager/CRM (`canEditCustomer`) | `payment_rank`, `category` |
+
+Not a collision any more: unrelated columns (Option A), date passage (Option B).
+
+**Evidence on how often (read-only, 2026-09-17).** `customer_activity`: 606 entries by 11 authors over 18 active days (2026-08-28 → 09-16); 561 customer-days; **1** customer-day with two or more authors. 137 accounts carry a collector (the CRM+Collector surface); 608 accounts owe money. Bulk events dominate row writes: 3,235 rows updated on 2026-09-04, 504 on 09-14, 135 on 09-16 (`updated_at` by day). Same-account-same-day collaboration is rare; same-field races rarer still (UNKNOWN exactly — saves without a note leave no trace).
+
+#### Option C1 — row-level `updated_at` optimistic concurrency
+
+* `customers.updated_at` exists (`timestamptz not null default now()`) and is maintained by `touch_customers BEFORE UPDATE … touch_updated_at()` — **confirmed present and enabled in the production catalog** (read-only `pg_trigger` query). It fires for every UPDATE however issued (PostgREST update, upsert-on-conflict, service role), so it is reliable for every customer mutation; inserts take the default. `updated_by` exists but **nothing ever sets it** (0 of 4,027 rows).
+* The browser never selects `updated_at` (`rowToOutstanding` drops it); the hook would have to carry it beside the baseline.
+* **False conflicts for unrelated-field edits: YES, by construction.** Any accepted write by anyone bumps the row's stamp, so the next write from any other tab is rejected whatever column it touches. After a balance sync (504 rows in one day; 3,235 on 09-04) every open tab conflicts on every synced row it later edits; a CRM's contact fix conflicts because a Manager reassigned the collector an hour earlier. This hands back exactly what Option A bought.
+* Verdict: **supported by the schema, wrong granularity for this product.** Not recommended.
+
+#### Option C2 — field-aware compare-and-set
+
+* PostgREST accepts filters on any column in a PATCH: `update(changes).eq('id', id).eq('follow_up_date', baseline)…` — one statement, atomic, RLS untouched. **The baseline values already exist**: Option A keeps the last-saved `CustomerRow` per id, so the predicate is "the columns I am changing still hold the values I last saw" with no new state.
+* Typed values: text → `eq`; numbers → `eq` on `numeric` (JS numbers round-trip; amounts are integers or two-decimal); dates → `eq` on `timestamptz` compares instants, and every writer is this app at millisecond precision; **null** → `.is(col, null)`; **jsonb** (`notes`, `ageing`, `ageing_types`, `additional_contacts`) → `eq` compares jsonb semantically (key order irrelevant) — feasible, to be proved by a probe before relying on it; spelling/normalisation is a non-issue because the predicate compares the server's own last value, not user input.
+* Several fields in one action → several `eq`s (AND). Zero rows affected → conflict (or the row is gone: SEC3 reset / delete — the client re-fetches by id and distinguishes). `Prefer: return=representation` (`.select('updated_at', …)`) returns the new server state to advance the baseline. ABA (changed and changed back) passes — harmless.
+* Sheet financial updates: the sync's predicate is the money block it loaded; a second tab's sync after another sync conflicts on money — correct, rare (Admin/Manager only), resolved by reload-and-rerun.
+* Not every column should carry a predicate: `last_follow_up_on` is stamped by **every** save, so two people's saves would always conflict on it — it stays last-writer-wins; `notes` should auto-merge (re-fetch, re-append) rather than ask.
+* Cost: `updateCustomerColumns(id, changes, expected)` ≈ 30 lines; hook ≈ 15 lines to pass the baseline and surface a conflict; plus the UX below. One rule to maintain: *a write may only replace what it saw*.
+* Verdict: **the right mechanism for ~18 people on one book** — detects S1–S7, never rejects an unrelated-field edit.
+
+#### Option C3 — realtime / refetch
+
+* Today the book is loaded once at sign-in (`repo.loadAll()`, `App.tsx:453`); no polling, no focus refresh, no realtime for customers. (Live stock already refreshes on interval + focus/visibility — `services/liveStock.ts:385–392` — a pattern in the codebase.)
+* Supabase Realtime needs the publication enabled on `customers` (a production configuration change) and a channel; event volume is trivial at this scale. A focus/visibility refetch of 4,027 rows is cheap. Either needs a merge rule for a row with an unsaved local edit (apply the server row to `appData` **and** to the baseline, keeping the locally changed column), which is the delicate part.
+* Value: shrinks the window from "tab age" to seconds/minutes and makes colleagues' work visible (U5) — but **no atomicity**: two saves seconds apart still race. Complementary to C2, not a substitute. Recommended later, as a focus/visibility refetch first (no configuration change), Realtime only if the team asks for live updates.
+
+#### Option C4 — accept last-writer-wins for some fields
+
+Classification from the actual write paths (§1.2, `FollowUpModal.handleSave`, `CustomerEditModal.handleSubmit`, the row dropdown, Reports bulk tools, `mergeWithExistingFollowUps`, `mergeCustomerMasterIntoAppData`):
+
+| Field | Edited by | Likelihood of two people on it (evidence) | Consequence of a same-field race | Protection today | Possible protection |
+|---|---|---|---|---|---|
+| `follow_up_date` | CRM, Collector, Manager, Admin (dialogs); Admin (bulk) | low (1/561 customer-days had two authors) | HIGH — a plan silently replaced; the other person's account vanishes from their Today list | none | C2 predicate |
+| `status` (Completed/Pending) | anyone with `canEditFollowUp` | low | HIGH — collected vs reopened | none | C2 predicate |
+| `crm_owner_id`, `assigned_collector_id` | Admin/Manager (dropdown, dialog, bulk); CRM self-claim; master import | low; bulk reassign touches many rows at once | HIGH — scoping: the account leaves someone's book and digest | none | C2 predicate |
+| `forecast_amount`, `forecast_date` | dialog (`canEditFollowUp`) | low | MEDIUM–HIGH — cash-flow forecast | none | C2 predicate |
+| money block (`total`, `ageing`, roll-ups, types), `settled_at` | balance sync (Admin/Manager); edit dialog (`canEditFinancials`) | low (syncs are occasional; 504 rows on 09-14) | MEDIUM — the sheet is the source; a re-sync repairs | none | C2 predicate (a stale sync is told to reload) |
+| `payment_rank`, `category` | Admin/Manager/CRM (`canEditCustomer`); bulk rank | low | MEDIUM — Bad moves an account to the recovery list | none | C2 predicate |
+| `notes` (jsonb mirror of the thread) | every dialog note | low–medium (both people on an account usually write a note) | MEDIUM — a line lost from the mirror; the `customer_activity` row survives | none | auto-merge: re-fetch and re-append |
+| `is_urgent` | dialogs; cleared by settlement | low | LOW | none | accept LWW |
+| contacts (`contact_*`, `email`, `additional_contacts`, address fields) | dialogs; master import fills blanks | low | LOW — visible, redoable | none | accept LWW |
+| `last_follow_up_on` | every save | high (by construction) | none (monotonic) | none | **must** stay LWW |
+| `company` | edit dialog | very low | LOW–MEDIUM | none | accept LWW |
+
+Conflict detection can reasonably be limited to the HIGH/MEDIUM rows; the LOW rows and `last_follow_up_on` stay last-writer-wins. **Whether the MEDIUM rows are worth a conflict prompt is the owner's call (19 Q15).**
+
+#### Recommended design (for the owner to confirm; nothing implemented)
+
+**C2 on the HIGH/MEDIUM fields, riding on Option A's baseline; LWW for the rest; `notes` auto-merged; a focus/visibility refetch afterwards (C3-lite).** Reasoning: it is the smallest mechanism that catches every scenario S1–S7 while never rejecting an unrelated-field edit; it needs no schema or configuration change; the data it needs (the last-saved row) is already in the hook; the cost is one predicate per changed column and one honest message. Row-level `updated_at` would trade Option A's gain for a flood of false conflicts after every bulk event.
+
+#### Conflict experience (design only; owner input needed on policy)
+
+The person must learn **that** someone else changed the account, **which field**, **what they tried**, **what the server has now**, and what they can do. Never "Save failed". Ordered by implementation size:
+
+1. **Reload and tell (smallest).** On a conflict the tab re-fetches the row and shows a toast anchored to the sync banner: *"3 BROTHERS was changed by someone else since you opened it. Your follow-up date (20 Nov) was not saved — it is now 25 Nov. Open the account to redo it."* The attempted value stays in the message; the row on screen is refreshed. No merge UI.
+2. **Conflict card with two choices (medium).** The sync-error banner (T32) becomes a conflict card listing each field: *Follow-up date — yours 20 Nov · theirs 25 Nov (10:14)* with **Keep theirs** (drop mine, baseline refreshed) and **Use mine** (re-send against the refreshed baseline — an explicit overwrite, possibly Manager/Admin only). Naming *who* requires `updated_by`, which nothing sets today (T38); until then "someone else".
+3. **Check before editing (larger).** Opening the follow-up dialog re-fetches the row first and warns *"changed since you loaded it"* before any typing; on Save the same per-field card appears inside the dialog with the two choices. Fewest surprises, most code.
 
 ## Part 3 — SEC3 "COMPLETE FRESH START": VALIDATED
 

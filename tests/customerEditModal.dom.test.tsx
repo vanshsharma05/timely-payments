@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { CustomerEditModal } from '../components/CustomerEditModal';
-import { Outstanding, FollowUpStatus } from '../types';
+import { Outstanding, FollowUpStatus, followUpStatusOf } from '../types';
 import { mixedAccount, adminUser, crmUser, collectorUser } from './fixtures';
 
 afterEach(cleanup);
@@ -169,7 +169,7 @@ describe('Case C — a field the dialog legitimately owns', () => {
         expect(after.lastFollowUpOn).not.toEqual(before.lastFollowUpOn);
     });
 
-    it('a changed follow-up date is applied with a status derived from it (two days out, so any timezone reads it as upcoming)', () => {
+    it('a changed follow-up date is applied on its own — no status word is written for it (two days out, so any timezone reads it as upcoming)', () => {
         const before = mixedAccount();
         const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 2);
         const iso = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
@@ -177,7 +177,8 @@ describe('Case C — a field the dialog legitimately owns', () => {
             fireEvent.change(screen.getByLabelText('Next Follow-up Date'), { target: { value: iso } });
         });
         expect(after.followUpDate?.toISOString().slice(0, 10)).toBe(iso);
-        expect(after.status).toBe(FollowUpStatus.Upcoming);
+        expect(after.status).toBe(before.status);
+        expect(followUpStatusOf(after)).toBe(FollowUpStatus.Upcoming);
         expect(after.over90).toBe(116028);
         expect(after.assignedCollectorId).toBe('MUNSHI_RAM');
     });

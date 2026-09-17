@@ -107,8 +107,8 @@ describe('E · boundary cases of the reading', () => {
         ['today, saved as Overdue (wrong word)', { followUpDate: at(0), status: FollowUpStatus.Overdue }, at(0), FollowUpStatus.Today],
         ['tomorrow', { followUpDate: at(1), status: FollowUpStatus.Pending }, at(0), FollowUpStatus.Upcoming],
         ['no date, saved Pending', { followUpDate: undefined, status: FollowUpStatus.Pending }, at(0), FollowUpStatus.Pending],
-        ['no date, legacy word Overdue (fallback kept; 0 such rows in production)', { followUpDate: undefined, status: FollowUpStatus.Overdue }, at(0), FollowUpStatus.Overdue],
-        ['invalid date, saved Upcoming (fallback)', { followUpDate: new Date('not a date'), status: FollowUpStatus.Upcoming }, at(0), FollowUpStatus.Upcoming],
+        ['no date, stale word Overdue (the word is never consulted; 0 such rows in production)', { followUpDate: undefined, status: FollowUpStatus.Overdue }, at(0), FollowUpStatus.Pending],
+        ['invalid date, stale word Upcoming (same)', { followUpDate: new Date('not a date'), status: FollowUpStatus.Upcoming }, at(0), FollowUpStatus.Pending],
         ['late evening still counts as today', { followUpDate: at(0), status: FollowUpStatus.Pending }, new Date(at(0).getTime() + 23 * 3600 * 1000), FollowUpStatus.Today],
     ];
     for (const [name, over, today, expected] of cases) {

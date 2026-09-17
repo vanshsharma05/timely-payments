@@ -395,14 +395,14 @@ export type FollowUpCategory = 'today' | 'future' | 'overdue' | 'no_follow_up' |
 /**
  * Where an account's follow-up stands, worked out every time it is read.
  *
- * Two different things live in `status`. `Completed` is something a person
- * declared — the money was collected — and the calendar cannot undo it. The
- * rest (Today / Upcoming / Overdue / Pending) is only ever a reading of the
- * follow-up date against today, so the date decides and the stored word is
- * at best yesterday's reading. It used to be rewritten on every save by
- * processStatuses(), which turned one edit after midnight into a write on
- * every account whose date had crossed; nothing rewrites it now, and every
- * screen, count, export and filter reads this instead.
+ * The only thing the stored `status` says is whether a person declared the
+ * money collected (`Completed`); the calendar cannot undo that. Today /
+ * Upcoming / Overdue / Pending are readings of the follow-up date against
+ * today, so the date decides and the stored word is never consulted for
+ * them. It used to be rewritten on every save by processStatuses(), which
+ * turned one edit after midnight into a write on every account whose date
+ * had crossed; now nothing writes it except "collected" and its reversal,
+ * and every screen, count, export and filter reads this instead.
  */
 export function getFollowUpCategory(item: Pick<Outstanding, 'status' | 'followUpDate'>, today: Date = new Date()): FollowUpCategory {
     if (item.status === FollowUpStatus.Completed) return 'completed';
@@ -420,17 +420,16 @@ export function getFollowUpCategory(item: Pick<Outstanding, 'status' | 'followUp
         }
     }
 
-    if (item.status === FollowUpStatus.Today) return 'today';
-    if (item.status === FollowUpStatus.Upcoming) return 'future';
-    if (item.status === FollowUpStatus.Overdue) return 'overdue';
-
+    // No usable date: nothing is planned. The stored word used to be consulted
+    // here as a last resort; it is only ever an old reading of a date that no
+    // longer exists, so it says nothing the date does not.
     return 'no_follow_up';
 }
 
 /**
  * The same reading in the vocabulary the screens, filters and exports use.
- * Derived, never stored: the `status` column keeps whatever the last person's
- * action wrote, and only its `Completed` is ever trusted.
+ * Derived, never stored: the `status` column only records whether the account
+ * was closed as collected, and only its `Completed` is ever read.
  */
 export function followUpStatusOf(item: Pick<Outstanding, 'status' | 'followUpDate'>, today: Date = new Date()): FollowUpStatus {
     switch (getFollowUpCategory(item, today)) {
