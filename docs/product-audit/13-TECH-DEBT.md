@@ -97,5 +97,5 @@ Added in the CRM-workflow session (2026-09-17, twelfth):
 | # | Item | Evidence | Prio | Confidence |
 |---|---|---|---|---|
 | T48 | The follow-up dialog still carries its own WhatsApp recipient picker + template beside `WhatsAppReminderModal` — two copies of one flow (now folded, still duplicated) | `FollowUpModal.tsx` WhatsApp section | P3 | HIGH |
-| T49 | Two search boxes act on the book (app bar `globalSearch`, the book's `searchTerm`) and combine; one should win or they should be one | `CustomerDashboardView.tsx` filter memo | P3 | HIGH |
+| T49 | ~~Two search boxes act on the book~~ — **fixed 2026-09-17**: one term, edited from either box | `CustomerDashboardView.tsx` | done | HIGH |
 | T50 | `FollowUpModal.tsx` (≈1,180 lines) and `CustomerDashboardView.tsx` (≈1,760) still use the old `gray-*` Tailwind dialect inside a token-based shell; the polish reused tokens where it touched, the rest is Phase 4 work | both files | P3 | HIGH |

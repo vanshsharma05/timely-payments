@@ -5,11 +5,11 @@ The authoritative continuation file. Read this first in every session; update it
 PROJECT: Timely Payment — Shori Chemicals' receivables follow-up app (customer book, follow-up queue, PDC cheques, reports, live stock).
 STACK: React 18 + TypeScript 5 + Vite 5 + Tailwind v4 (browser) · Express 5 dev server / Vercel serverless functions `api/*.ts` (server) · Supabase (Postgres + Auth + RLS) · Google Sheets CSV as the source of balances and stock · Nodemailer/Resend for the daily email · Google Gemini for the AI report · Vercel hosting. See 01-REPOSITORY-MAP.md.
 
-CURRENT PHASE: Phase 4 (UX) started — batch 1, the CRM daily workflow, committed locally and NOT deployed (awaiting the owner's visual review). Batches 2–6 live.
+CURRENT PHASE: Phase 4 (UX) — batch 1 + 1b (the CRM daily workflow, the owner's four decisions, visual QA at four viewports) committed locally and NOT deployed. Batches 2–6 live.
 CURRENT SUBPHASE: —
 LAST COMPLETED TASK: CRM-workflow session 2026-09-17 (twelfth): live UI inspected at 1366×768; nine usability problems recorded (06 W1–W9); the follow-up dialog restructured (context header, outcome first, four folded sections, prev/next through the list, Esc, "Save follow-up"); the book decluttered (toolbar, foldable overview by role, uniform two-line rows, plain follow-up wording, hover-only delete, empty-state reset); Esc on every workflow dialog. New `Disclosure` and `useEscape` primitives. 16 new tests (190). No rule, permission, schema or backend change.
 CURRENT TASK: None in progress.
-NEXT TASK: Owner reviews the CRM workflow visually (`npm run dev`, or approve a deploy) and answers the three UX questions in 06 (default outcome on a collected account; one search box or two; WhatsApp trace). Then Phase 4 batch 2 (Today for Managers, Reports) or R1-B after Q15. See RECOMMENDED NEXT SESSION START.
+NEXT TASK: Owner approves the deploy of the CRM UX batch (no SQL step). Then Phase 4 batch 2 (Today for Managers, Reports, Data source) or R1-B after Q15. See RECOMMENDED NEXT SESSION START.
 
 BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run typecheck` (tsc --noEmit, strict): PASS, 0 errors.
@@ -17,12 +17,12 @@ BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run check:classes`: 2 pre-existing findings (`grid-frame` in AppLogo.tsx, `stroke-based` in Icons.tsx — harmless false positives).
 - `npm run check:empty`: clean.
 - Lint: NO linter configured. Type-check is the only static gate.
-- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 190 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
+- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 196 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
 - `npm audit --omit=dev`: nodemailer 9.0.6 HIGH (fix available), qs 6.15.3 MODERATE via express (fix available). Dev-only: `tar` critical and `undici` under the `vercel` CLI.
 - Runtime: Node v24.15.0, npm 11.12.1. No `engines` field. Two lockfiles (`package-lock.json` AND `bun.lock`) — kept for now by owner's instruction (D5).
 CURRENT BUILD STATUS: tsc clean; `npm run build` clean (same chunk warning); `check:classes` 2 pre-existing; `check:empty` clean — after the CRM-workflow batch. No dependency change.
 BASELINE TEST STATUS: browser suites were green at de60fc7 (see 12-TEST-STRATEGY.md). Classified for production safety in Phase 1: 7 READ ONLY, 2 CONTROLLED MUTATION WITH CLEANUP, 1 READ ONLY-but-fragile (`phone-test.cjs`), 0 UNSAFE. None executed this session.
-CURRENT TEST STATUS: unit 190/190 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 15, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7, `crmWorkflow` 16). Live-site probes unchanged since the reliability deploy. Local screenshots of the reworked screens taken with every write aborted.
+CURRENT TEST STATUS: unit 196/196 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 16, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7, `crmWorkflow` 21). Live-site probes unchanged since the reliability deploy. Local visual QA of the CRM workflow at 1366×768, 1440×900, 1024×768 and 390×844 (every write aborted): 0 findings.
 
 CRITICAL ISSUES (P0): none confirmed.
 IMPORTANT ISSUES:
@@ -47,7 +47,7 @@ REGRESSION RISKS (CRM workflow): the follow-up dialog's sections are the same ma
 RECOMMENDED NEXT SESSION START:
 1. Read this file, then 06-UX-AUDIT.md ("Phase 4, batch 1") and 11 §2.2 / 19 Q15. Run `npm run test:run` (expect 190/190) and `npm run typecheck`.
 2. If the owner approved the batch after seeing it: deploy per 17-RELEASE-CHECKLIST.md (no SQL step), then the smoke test and both probes.
-3. Apply the owner's answers to the three UX questions in 06 (default outcome on a collected account; one search box; WhatsApp trace) — each is small.
+3. The owner's four UX decisions are applied (06, batch 1b).
 4. Phase 4 batch 2: the Manager's Today (U3, U13), Reports (U1, U12), the Data source tab (U14); or R1-B after Q15 — the owner's order.
 5. Update this file.
-LAST UPDATED: 2026-09-17 (CRM-workflow session, twelfth).
+LAST UPDATED: 2026-09-17 (CRM-workflow decisions + QA, thirteenth).

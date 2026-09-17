@@ -115,28 +115,35 @@ describe('D · Completed survives the calendar', () => {
     });
 });
 
-describe('E · reopening a collected account — pinned exactly as it works today', () => {
-    it('follow-up dialog, default outcome (a follow-up on the date in the field) → status: Pending, the date kept; this is what a plain Save on a collected account does', () => {
+describe('E · a collected account: Save leaves it collected; only an explicit follow-up reopens it (owner decision, 2026-09-17)', () => {
+    it('opens on "Keep as collected"; a plain Save writes only last_follow_up_on and the account stays Completed', () => {
         const before = collected();
+        expect((document.querySelector('input[name="outcome"][value="no_follow_up"]') as HTMLInputElement | null)).toBeNull(); // not rendered yet
         const after = saveFollowUp(before);
         const diff = customerRowDiff(outstandingToRow(before), outstandingToRow(after));
-        expect(Object.keys(diff).sort()).toEqual(['last_follow_up_on', 'status']);
-        expect(diff.status).toBe('Pending');
-        expect(followUpStatusOf(after)).toBe(FollowUpStatus.Overdue); // the collection date, now read as a follow-up date
+        expect(Object.keys(diff).sort()).toEqual(['last_follow_up_on']);
+        expect(after.status).toBe(FollowUpStatus.Completed);
+        expect(after.followUpDate).toEqual(before.followUpDate);         // the collection date is kept
+        expect(followUpStatusOf(after)).toBe(FollowUpStatus.Completed);
     });
-    it('follow-up dialog, a new date → status: Pending and follow_up_date', () => {
+    it('the default outcome shown for a collected account is "Keep as collected", ticked', () => {
+        render(<FollowUpModal customer={collected()} currentUser={crmUser()} onClose={() => {}} onUpdate={vi.fn()} users={[adminUser()]} templates={[]} />);
+        const radio = document.querySelector('input[name="outcome"][value="no_follow_up"]') as HTMLInputElement;
+        expect(radio.checked).toBe(true);
+        expect(document.body.textContent).toContain('Keep as collected');
+    });
+    it('"Follow up again" with a new date reopens it: status Pending and follow_up_date', () => {
         const before = collected();
-        const after = saveFollowUp(before, () => setDate('Next Follow-up Date', FUTURE));
+        const after = saveFollowUp(before, () => { outcome('follow_up'); setDate('Next Follow-up Date', FUTURE); });
         const diff = customerRowDiff(outstandingToRow(before), outstandingToRow(after));
         expect(Object.keys(diff).sort()).toEqual(['follow_up_date', 'last_follow_up_on', 'status']);
         expect(diff.status).toBe('Pending');
         expect(followUpStatusOf(after)).toBe(FollowUpStatus.Upcoming);
     });
-    it('follow-up dialog, "no follow-up" → status: Pending and the date cleared', () => {
-        const before = collected();
+    it('"No follow-up needed" on an open account still clears the date and writes no status', () => {
+        const before = staleOpen();
         const after = saveFollowUp(before, () => outcome('no_follow_up'));
-        const diff = customerRowDiff(outstandingToRow(before), outstandingToRow(after));
-        expect(diff).toMatchObject({ status: 'Pending', follow_up_date: null });
+        expect(columnsOf(before, after)).toEqual(['follow_up_date', 'last_follow_up_on']);
         expect(followUpStatusOf(after)).toBe(FollowUpStatus.Pending);
     });
     it('edit dialog, a new date on a collected account → status: Pending and follow_up_date', () => {

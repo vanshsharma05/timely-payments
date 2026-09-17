@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User } from '../types';
-import type { SaveOutcome } from '../services/useSupabaseSync';
+import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
 import { useEscape } from './ui/useEscape';
 import { ChequeIcon } from './icons/Icons';
 
@@ -167,7 +167,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
         }
         setSaving(false);
         if (verdict && verdict.ok === false) {
-            setError(`Not saved: ${verdict.message} The cheque is kept in this tab and will be retried; you can also try again now.`);
+            setError(`Not saved: ${sentence(verdict.message)} The cheque is kept in this tab and will be retried; you can also try again now.`);
             return;
         }
         onClose();

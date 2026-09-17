@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useEscape } from './ui/useEscape';
-import { Outstanding, Template } from '../types';
+import { Outstanding, Template, User } from '../types';
+import { recordWhatsAppOpened } from '../services/whatsappTrace';
 import { WhatsAppIcon } from './icons/Icons';
 import { renderTemplate } from '../services/messageTemplate';
 
@@ -8,9 +9,11 @@ interface WhatsAppReminderModalProps {
     customer: Outstanding;
     templates: Template[];
     onClose: () => void;
+    /** Who is opening the reminder; the entry on the account is written in their name. */
+    currentUser?: User | null;
 }
 
-export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsAppReminderModalProps) => {
+export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUser }: WhatsAppReminderModalProps) => {
     useEscape(onClose);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
     const [recipientType, setRecipientType] = useState<'primary' | string>('primary');
@@ -240,7 +243,10 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                         href={`https://wa.me/${cleanWhatsAppNumber}?text=${whatsAppMessage}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={onClose}
+                        onClick={() => {
+                            recordWhatsAppOpened(customer, { name: activeRecipient.name, number: cleanWhatsAppNumber }, templates.find(t => t.id === selectedTemplateId)?.name, currentUser);
+                            onClose();
+                        }}
                         className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-lg font-bold text-xs transition-all shadow-sm ${
                             cleanWhatsAppNumber
                                 ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -248,7 +254,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsApp
                         }`}
                     >
                         <WhatsAppIcon className="w-4 h-4" />
-                        <span>Send WhatsApp to {activeRecipient.name} ({cleanWhatsAppNumber || 'Enter Number'})</span>
+                        <span>Open WhatsApp to {activeRecipient.name} ({cleanWhatsAppNumber || 'Enter Number'})</span>
                     </a>
                 </div>
             </div>

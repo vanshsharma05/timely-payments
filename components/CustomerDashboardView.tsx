@@ -42,7 +42,9 @@ interface CustomerDashboardViewProps {
     /** Given the rows currently on screen, so a filtered list exports as one. */
     onExportExcel?: (rows: Outstanding[]) => void;
     /** Search text from the app bar. Narrows the book before the view's own filters. */
+    /** The one customer search: the app bar's field and the book's field edit the same term (decision 2026-09-17). */
     globalSearch?: string;
+    onGlobalSearch?: (value: string) => void;
 }
 
 /**
@@ -89,6 +91,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     pdcCheques = [],
     onExportExcel,
     globalSearch = '',
+    onGlobalSearch,
 }) => {
     // Permissions and Data Scoping
     const isAdmin = currentUser?.role === UserRole.Admin;
@@ -111,7 +114,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     const userAllowedData = useMemo(() => scopeTo(currentUser, data), [data, currentUser]);
 
     // Filters State
-    const [searchTerm, setSearchTerm] = useState('');
+    // One search, not two: the book's box and the app bar's box are the same term.
+    const searchTerm = globalSearch;
+    const setSearchTerm = (value: string) => onGlobalSearch?.(value);
     const [selectedCrm, setSelectedCrm] = useState<string>('ALL');
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [rankFilter, setRankFilter] = useState<'ALL' | PaymentRank>('ALL');
@@ -164,11 +169,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * which cost about five seconds a character. The input stays instant and
      * the list catches up a beat later.
      */
-    const [searchDraft, setSearchDraft] = useState('');
-
+    const [searchDraft, setSearchDraft] = useState(globalSearch);
+    // Typed in the app bar: the box here follows. Typed here: the term follows a beat later.
+    useEffect(() => { setSearchDraft(globalSearch); }, [globalSearch]);
     useEffect(() => {
+        if (searchDraft === globalSearch) return;
         const t = window.setTimeout(() => setSearchTerm(searchDraft), 220);
         return () => window.clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchDraft]);
 
 
@@ -344,30 +352,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
         };
         const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1);
 
-        const matchesText = (item: Outstanding): boolean => {
-            if (!matchesQuery(item, globalSearch)) return false;
-            // Search match across company, contact, mobile, email, GSTIN, City, State, additional contacts
-            if (searchTerm.trim()) {
-                const q = searchTerm.trim().toLowerCase();
-                const matchCompany = (item.company || '').toLowerCase().includes(q);
-                const matchContact = (item.contactPerson || '').toLowerCase().includes(q);
-                const matchPost = (item.contactPost || '').toLowerCase().includes(q);
-                const matchNumber = (item.contactNumber || '').toLowerCase().includes(q);
-                const matchEmail = (item.email || '').toLowerCase().includes(q);
-                const matchCity = (item.city || '').toLowerCase().includes(q);
-                const matchState = (item.state || '').toLowerCase().includes(q);
-                const matchGstin = (item.gstin || '').toLowerCase().includes(q);
-                const matchAddress = (item.address || '').toLowerCase().includes(q);
-                const matchCategory = (item.category || '').toLowerCase().includes(q);
-                const matchAdditional = (item.additionalContacts || []).some(
-                    c => c.name.toLowerCase().includes(q) || c.mobile.toLowerCase().includes(q) || (c.post || '').toLowerCase().includes(q)
-                );
-                if (!matchCompany && !matchContact && !matchPost && !matchNumber && !matchEmail && !matchCity && !matchState && !matchGstin && !matchAddress && !matchCategory && !matchAdditional) {
-                    return false;
-                }
-            }
-            return true;
-        };
+        const matchesText = (item: Outstanding): boolean => matchesQuery(item, globalSearch);
 
         userAllowedData.forEach(item => {
             if (!matchesText(item)) return;
@@ -1287,7 +1272,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         className="w-full max-w-full overflow-x-auto overflow-y-visible scrollbar-thin scrollbar-thumb-gray-400 hover:scrollbar-thumb-gray-500 dark:scrollbar-thumb-gray-600 dark:hover:scrollbar-thumb-gray-500 scrollbar-track-slate-100 dark:scrollbar-track-gray-800 focus:outline-none"
                         tabIndex={0}
                     >
-                        <table className="min-w-[1140px] w-full text-xs text-left border-collapse table-auto">
+                        <table className="min-w-[940px] xl:min-w-[1140px] w-full text-xs text-left border-collapse table-auto">
                             <thead className="bg-slate-100/95 dark:bg-gray-800/95 text-gray-700 dark:text-gray-300 font-bold uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-[11.5px] sticky top-0 z-10 backdrop-blur-xs">
                                 <tr>
                                     {(canReassignCrm || canEditCustomer) && (
@@ -1304,13 +1289,13 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             </label>
                                         </th>
                                     )}
-                                    <th className="px-3.5 py-2.5 min-w-[210px]">Customer & Contact Details</th>
+                                    <th className="px-3.5 py-2.5 min-w-[210px] max-xl:min-w-[200px]">Customer & Contact Details</th>
                                     <th className="px-3 py-2.5 text-right w-24">Balance</th>
-                                    <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
-                                    <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300">{focusColumn.label}</th>
-                                    <th className="px-2.5 py-2.5 text-center w-36">Follow-up / Status</th>
-                                    <th className="px-2.5 py-2.5 text-left w-32">CRM Owner</th>
-                                    <th className="px-3 py-2.5 text-right w-44 z-20 bg-slate-100 dark:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">Actions</th>
+                                    <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px] max-xl:w-[130px] max-xl:min-w-[130px]">Ageing</th>
+                                    <th className="px-2.5 py-2.5 text-right w-30 bg-rose-50/40 dark:bg-rose-950/20 font-extrabold text-rose-800 dark:text-rose-300 max-xl:hidden">{focusColumn.label}</th>
+                                    <th className="px-2.5 py-2.5 text-center w-36 max-xl:w-[120px]">Follow-up / Status</th>
+                                    <th className="px-2.5 py-2.5 text-left w-32 max-xl:w-24">CRM Owner</th>
+                                    <th className="px-3 max-xl:px-2 py-2.5 text-right w-44 max-xl:w-40 z-20 bg-slate-100 dark:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -1333,7 +1318,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             className={`group hover:bg-slate-50/90 dark:hover:bg-gray-800/60 transition-colors ${isChecked ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}`}
                                         >
                                             {(canReassignCrm || canEditCustomer) && (
-                                                <td className="px-2.5 py-2.5 text-center">
+                                                <td className="px-2.5 max-xl:px-1.5 py-2.5 text-center">
                                                     <label className="inline-flex items-center justify-center p-2 -m-2 cursor-pointer">
                                                         <input
                                                             type="checkbox"
@@ -1347,7 +1332,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             )}
 
                                             {/* Company & Contact Column */}
-                                            <td className="px-3.5 py-2 min-w-[280px] max-w-[340px]">
+                                            <td className="px-3.5 py-2 min-w-[280px] max-w-[340px] max-xl:min-w-[220px] max-xl:max-w-[250px]">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     {canEditFollowUp ? (
                                                         <button
@@ -1479,12 +1464,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             {/* Ageing — the bar for shape, then every bucket in full rupees,
                                                 colour-keyed to the bar above it. Four separate number columns
                                                 cost ~420px; this says the same in ~195px without a tooltip. */}
-                                            <td className="px-2.5 py-2 align-middle">
+                                            <td className="px-2.5 py-2 align-middle" title={AGE_BANDS.map((band, i) => `${band.label}: ${formatINR([a1, a2, a3, a4][i])}`).join(' · ')}>
                                                 <AgeingBar parts={{ a1, a2, a3, a4 }} height={6} />
                                                 {/* One line, compact figures; the exact rupees are on hover. Two
                                                     lines of full figures made every row a third taller than the
                                                     name beside it, which is what set the height of the whole list. */}
-                                                <div className="mt-1.5 flex items-center gap-2 text-[11px] leading-none whitespace-nowrap">
+                                                <div className="mt-1.5 flex items-center gap-2 text-[11px] leading-none whitespace-nowrap max-xl:hidden">
                                                     {AGE_BANDS.map((band, i) => {
                                                         const v = [a1, a2, a3, a4][i];
                                                         return (
@@ -1508,7 +1493,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             </td>
 
                                             {/* The chip's column: Due >45 days unless a chip says otherwise */}
-                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10">
+                                            <td className="px-2.5 py-2.5 text-right whitespace-nowrap bg-rose-50/30 dark:bg-rose-950/10 max-xl:hidden">
                                                 <span
                                                     className={`num text-[12.5px] ${focus > 0 ? (ageingFilter === 'current' || ageingFilter === '1-45' ? 'text-label font-extrabold' : 'text-dang font-extrabold') : 'text-label-3'}`}
                                                     title={formatCompact(focus)}
@@ -1544,7 +1529,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                         value={findOwner(crmUsers, item.crmOwnerId)?.id || item.crmOwnerId || ''}
                                                         onChange={e => onReassignCrm(item.id, e.target.value)}
                                                         aria-label={`CRM owner for ${item.company}`}
-                                                        className="text-[12.5px] h-8 px-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 font-semibold text-gray-800 dark:text-gray-200 cursor-pointer"
+                                                        className="text-[12.5px] h-8 px-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 font-semibold text-gray-800 dark:text-gray-200 cursor-pointer max-xl:w-[88px]"
                                                     >
                                                         <option value="">Unassigned</option>
                                                         {crmUsers.map(u => (
@@ -1564,7 +1549,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             {/* Actions — pinned to the right edge. The ledger is ~1850px wide, so on a
                                                 laptop this column used to sit past the fold and Edit / Follow Up could
                                                 only be reached by scrolling sideways. */}
-                                            <td className="px-3 py-2.5 text-right whitespace-nowrap z-10 bg-card group-hover:bg-slate-50 dark:group-hover:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">
+                                            <td className="px-3 max-xl:px-2 py-2.5 text-right whitespace-nowrap z-10 bg-card group-hover:bg-slate-50 dark:group-hover:bg-gray-800 sticky right-0 shadow-[inset_1px_0_0_0_var(--separator),-12px_0_16px_-12px_rgb(2_6_23_/_0.28)]">
                                                 <div className="flex items-center justify-end space-x-1">
                                                     {/* WhatsApp Reminder */}
                                                     <button

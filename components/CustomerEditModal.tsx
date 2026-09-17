@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { SaveOutcome } from '../services/useSupabaseSync';
+import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
 import { useEscape } from './ui/useEscape';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
@@ -749,7 +749,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
 
                     {saveError && (
                         <div role="alert" className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
-                            Not saved: {saveError} Your changes are still here — try again, or close and they will be retried from this tab.
+                            Not saved: {sentence(saveError)} Your changes are still here — try again, or close and they will be retried from this tab.
                         </div>
                     )}
                     {/* Footer */}

@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 
 vi.mock('../services/supabaseClient', () => ({ supabase: null, requireSupabase: () => { throw new Error('no client in tests'); }, isSupabaseConfigured: true }));
 vi.mock('../services/repository', async (importOriginal) => {
@@ -20,7 +20,9 @@ import { CustomerEditModal } from '../components/CustomerEditModal';
 import PdcModal from '../components/PdcModal';
 import { WhatsAppReminderModal } from '../components/WhatsAppReminderModal';
 import { Disclosure } from '../components/ui/Disclosure';
-import { followUpWhen } from '../components/CustomerDashboardView';
+import { CustomerDashboardView, followUpWhen } from '../components/CustomerDashboardView';
+import * as repo from '../services/repository';
+import { recordWhatsAppOpened } from '../services/whatsappTrace';
 import { Outstanding, FollowUpStatus } from '../types';
 import { mixedAccount, adminUser, crmUser, collectorUser } from './fixtures';
 
@@ -137,5 +139,64 @@ describe('the book says when a follow-up is due, in plain words', () => {
         ['collected', row({ followUpDate: at(-3), status: FollowUpStatus.Completed }), '14 Sept'],
     ])('%s', (_name, item, expected) => {
         expect(followUpWhen(item, today)).toBe(expected);
+    });
+});
+
+describe('one search (decision 2026-09-17)', () => {
+    const book = () => [
+        { ...mixedAccount(), id: 'a', company: 'ALPHA TRADERS', notes: ['[10 Sept - Vishnu] promised RTGS Friday'] },
+        { ...mixedAccount(), id: 'b', company: 'BETA HOSIERY', notes: [] },
+    ];
+    const open = (globalSearch: string, onGlobalSearch = vi.fn()) => {
+        render(<CustomerDashboardView data={book()} currentUser={adminUser()} users={users()} onAddCustomer={() => {}} onEditCustomer={() => {}} onFollowUp={() => {}} onWhatsApp={() => {}} globalSearch={globalSearch} onGlobalSearch={onGlobalSearch} />);
+        return onGlobalSearch;
+    };
+    it('the book shows the app bar term in its own box and filters by it, notes included', () => {
+        open('RTGS');
+        expect((screen.getByPlaceholderText(/search by name/i) as HTMLInputElement).value).toBe('RTGS');
+        const rows = [...document.querySelectorAll('tbody tr')].map(r => r.textContent || '');
+        expect(rows.some(t => t.includes('ALPHA TRADERS'))).toBe(true);
+        expect(rows.some(t => t.includes('BETA HOSIERY'))).toBe(false);
+    });
+    it('typing in the book box edits the same term (after a short pause) and the clear button empties it', async () => {
+        vi.useFakeTimers();
+        const onGlobalSearch = open('');
+        fireEvent.change(screen.getByPlaceholderText(/search by name/i), { target: { value: 'beta' } });
+        expect(onGlobalSearch).not.toHaveBeenCalled();
+        await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+        expect(onGlobalSearch).toHaveBeenLastCalledWith('beta');
+        vi.useRealTimers();
+    });
+});
+
+describe('opening WhatsApp leaves a record that never claims delivery (decision 2026-09-17)', () => {
+    it('recordWhatsAppOpened writes a system entry saying opened, for whom, which template — and not "sent"', () => {
+        const spy = vi.spyOn(repo, 'addActivity').mockResolvedValue(undefined as any);
+        recordWhatsAppOpened({ id: 'cust_x' }, { name: 'Shivam', number: '917973974931' }, 'Soft reminder >90days', crmUser());
+        expect(spy).toHaveBeenCalledTimes(1);
+        const entry = spy.mock.calls[0][0];
+        expect(entry.customerId).toBe('cust_x');
+        expect(entry.kind).toBe('system');
+        expect(entry.body).toMatch(/WhatsApp reminder opened for Shivam · 917973974931 — "Soft reminder >90days"/);
+        expect(entry.body).not.toMatch(/sent/i);
+        spy.mockRestore();
+    });
+    it('writes nothing without a signed-in user, and a refused write never blocks the link', async () => {
+        const spy = vi.spyOn(repo, 'addActivity').mockRejectedValue(new Error('permission denied'));
+        recordWhatsAppOpened({ id: 'cust_x' }, { name: 'Shivam', number: '9' }, undefined, null);
+        expect(spy).not.toHaveBeenCalled();
+        expect(() => recordWhatsAppOpened({ id: 'cust_x' }, { name: 'Shivam', number: '9' }, undefined, crmUser())).not.toThrow();
+        await Promise.resolve();
+        spy.mockRestore();
+    });
+    it('the WhatsApp dialog records the entry when its link is used, and its button says "Open", not "Send"', () => {
+        const spy = vi.spyOn(repo, 'addActivity').mockResolvedValue(undefined as any);
+        render(<WhatsAppReminderModal customer={mixedAccount()} templates={[{ id: 't1', name: 'Soft reminder', content: 'Hello {{contactPerson}}' }]} onClose={() => {}} currentUser={crmUser()} />);
+        const link = screen.getByRole('link', { name: /open whatsapp to/i });
+        expect(link.textContent).not.toMatch(/send/i);
+        fireEvent.click(link);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0].body).toMatch(/opened for Ramesh \(Accounts\)|opened for Ramesh/);
+        spy.mockRestore();
     });
 });

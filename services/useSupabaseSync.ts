@@ -87,6 +87,12 @@ export const humanise = (e: unknown): string => {
     return raw;
 };
 
+/** A reason as one sentence, so it reads on before the next one. */
+export const sentence = (reason: string): string => {
+    const t = (reason || '').trim();
+    return t ? (/[.!?]$/.test(t) ? t : t + '.') : t;
+};
+
 /** Backoff between automatic retries of a failed write. */
 const DEFAULT_RETRY_DELAYS_MS = [5_000, 15_000, 45_000, 90_000];
 

@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner, overdueAgeing } from '../types';
 import * as repo from '../services/repository';
-import type { SaveOutcome } from '../services/useSupabaseSync';
+import { recordWhatsAppOpened } from '../services/whatsappTrace';
+import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
@@ -69,7 +70,13 @@ const FollowUpModal = ({
     );
     const [paymentRank, setPaymentRank] = useState<PaymentRank | ''>(customer.paymentRank || '');
     const [category, setCategory] = useState(customer.category || '');
-    const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>('follow_up');
+    /**
+     * What Save means by default. A collected account opens on "no follow-up"
+     * and Save leaves it collected; it used to open on "follow up again" with
+     * the collection date pre-filled, so fixing a phone number reopened it.
+     */
+    const wasCollected = customer.status === FollowUpStatus.Completed;
+    const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>(wasCollected ? 'no_follow_up' : 'follow_up');
     const [isUrgent, setIsUrgent] = useState(customer.isUrgent || false);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
     /** Waiting for the server to accept the save; the reason if it did not. */
@@ -322,8 +329,10 @@ const FollowUpModal = ({
                 reopen();
                 break;
             case 'no_follow_up':
-                updatedCustomer.followUpDate = undefined;
-                reopen();
+                // On a collected account this means "leave it as it is": the
+                // collection date and the Completed status stay. On an open
+                // account it clears the date.
+                if (!wasCollected) updatedCustomer.followUpDate = undefined;
                 break;
         }
 
@@ -538,8 +547,8 @@ const FollowUpModal = ({
                         last — it used to sit under contacts, the WhatsApp picker and
                         the cheques, a screen and a half down. */}
                     <section className="rounded-xl border border-accent/30 bg-card p-4 space-y-4" aria-labelledby="this-follow-up">
-                        <div className="flex items-baseline justify-between gap-3">
-                            <h3 id="this-follow-up" className="text-[13.5px] font-bold text-label">This follow-up</h3>
+                        <div className="flex items-baseline justify-between gap-3 max-md:flex-col max-md:gap-0.5">
+                            <h3 id="this-follow-up" className="text-[13.5px] font-bold text-label whitespace-nowrap">This follow-up</h3>
                             <span className="text-[12px] text-label-3 lg:hidden">What happened on the call goes in Activity.</span>
                         </div>
                         <div>
@@ -561,7 +570,7 @@ const FollowUpModal = ({
                                     outcome === 'no_follow_up' ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                 }`}>
                                     <input type="radio" name="outcome" value="no_follow_up" checked={outcome === 'no_follow_up'} onChange={() => setOutcome('no_follow_up')} className="mr-2"/>
-                                    <span>No follow-up needed</span>
+                                    <span>{wasCollected ? 'Keep as collected' : 'No follow-up needed'}</span>
                                 </label>
                             </div>
                         </div>
@@ -961,6 +970,7 @@ const FollowUpModal = ({
                                 href={`https://wa.me/${cleanWhatsAppNumber}?text=${whatsAppMessage}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                onClick={() => recordWhatsAppOpened(customer, { name: activeRecipient.name, number: cleanWhatsAppNumber }, templates.find(t => t.id === selectedTemplateId)?.name, currentUser)}
                                 className={`inline-flex items-center justify-center w-full px-4 py-2.5 text-xs font-bold rounded-lg transition-all shadow-sm ${
                                     cleanWhatsAppNumber 
                                         ? 'bg-green-600 hover:bg-green-700 text-white active:scale-[0.99]' 
@@ -968,7 +978,7 @@ const FollowUpModal = ({
                                 }`}
                             >
                                 <WhatsAppIcon className="w-4 h-4 mr-1.5" />
-                                <span>Send WhatsApp to {activeRecipient.name} ({activeRecipient.number || 'No Number'})</span>
+                                <span>Open WhatsApp to {activeRecipient.name} ({activeRecipient.number || 'No Number'})</span>
                             </a>
                         </div>
                     </div>
@@ -1170,7 +1180,7 @@ const FollowUpModal = ({
 
                 {saveError && (
                     <div role="alert" className="mx-6 mb-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
-                        Not saved: {saveError} Everything you entered is still here — try again, or close and it will be retried from this tab.
+                        Not saved: {sentence(saveError)} Everything you entered is still here — try again, or close and it will be retried from this tab.
                     </div>
                 )}
                 {/* Modal Footer */}

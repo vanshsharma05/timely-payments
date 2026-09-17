@@ -2094,6 +2094,7 @@ const App = () => {
         <CustomerDashboardView
             data={appData}
             globalSearch={searchTerm}
+            onGlobalSearch={setSearchTerm}
             currentUser={currentUser}
             users={users}
             onAddCustomer={handleOpenAddCustomer}
@@ -3459,6 +3460,7 @@ const App = () => {
                 <WhatsAppReminderModal
                     customer={whatsAppCustomer}
                     templates={templates}
+                    currentUser={currentUser}
                     onClose={() => {
                         setIsWhatsAppModalOpen(false);
                         setWhatsAppCustomer(null);
