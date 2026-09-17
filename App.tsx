@@ -30,7 +30,7 @@ import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { BadDebtStrip } from './components/ui/BadDebtStrip';
-import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ClipboardListIcon, UploadIcon, ExclamationTriangleIcon, DownloadIcon, SyncIcon, BuildingOfficeIcon } from './components/icons/Icons';
+import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ExclamationTriangleIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
 import UserModal from './components/UserModal';
@@ -40,6 +40,8 @@ import NotificationBanner from './components/NotificationBanner';
 import ReportsView, { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
 import SyncReconciliationModal from './components/SyncReconciliationModal';
 import ResetConfirmModal from './components/ResetConfirmModal';
+import DataSourceView, { SheetCheck } from './components/DataSourceView';
+import { previewSync, describePreview } from './services/syncPreview';
 import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
 import PdcChequesView from './components/PdcChequesView';
 import PdcModal from './components/PdcModal';
@@ -227,6 +229,8 @@ const App = () => {
      * in Settings with the export that puts it right in the sheet.
      */
     const [crmConflicts, setCrmConflicts] = useState<{ company: string; appCrm: string; sheetCrm: string }[]>([]);
+    /** What "Check the sheet" found: reachable or not, and what the next sync would do. */
+    const [sheetCheck, setSheetCheck] = useState<SheetCheck | null>(null);
 
     // State for notifications
     const [priorityFilter, setPriorityFilter] = useState(false);
@@ -1149,6 +1153,10 @@ const App = () => {
 
     // Sync Reconciliation Handlers
     const handleConfirmSyncReconciliation = (reconciledRecords: Outstanding[]) => {
+        // The same preview the review showed, so the message says what the
+        // sync did — "Balances updated for 4,027 accounts" counted the whole
+        // book on a morning when nine had moved.
+        const done = pendingSync ? previewSync(appData, pendingSync.records) : null;
         const settled = pendingSync ? summariseUnlisted(appData, pendingSync.records) : { count: 0, amount: 0 };
         const added = pendingSync ? countNewNames(appData, pendingSync.records) : 0;
         const processed = processStatuses(reconciledRecords);
@@ -1161,21 +1169,53 @@ const App = () => {
         setSyncMessage({
             type: 'success',
             text:
-                `Balances updated for ${reconciledRecords.length} accounts.` +
+                (done ? `Sync done: ${describePreview(done)}.` : `Balances updated for ${reconciledRecords.length} accounts.`) +
                 (added
-                    ? ` ${added} new customer${added === 1 ? '' : 's'} came in from the sheet and need a CRM — they are under "Unassigned" in the customer list.`
+                    ? ` The ${added} new customer${added === 1 ? '' : 's'} need a CRM — they are under "Unassigned" in the customer book.`
                     : '') +
                 (settled.count
-                    ? ` ${settled.count} account${settled.count === 1 ? '' : 's'} the sheet no longer lists were settled to zero (${formatCompact(settled.amount)}).`
+                    ? ` ${formatCompact(settled.amount)} settled to zero on ${settled.count} account${settled.count === 1 ? '' : 's'} the sheet no longer lists.`
                     : '') +
-                (pendingSync?.updatedTillDate ? ` Sheet updated till: ${pendingSync.updatedTillDate}` : '')
+                (pendingSync?.updatedTillDate ? ` Sheet updated till ${pendingSync.updatedTillDate}.` : '')
         });
         setPendingSync(null);
+        setSheetCheck(null);
+        checkedRecords.current = null;
         setTimeout(() => setSyncMessage(null), 7000);
     };
 
     const handleCancelSyncReconciliation = () => {
         setPendingSync(null);
+    };
+
+    /**
+     * "Check the sheet": read it and say what a sync would do, without opening
+     * the review or writing anything. The answer stays on the page until the
+     * next check or sync, so a manager can see the source is healthy and what
+     * the next sync changes before pressing anything.
+     */
+    const handleCheckSheet = async () => {
+        const url = (googleSheetUrl || OFFICIAL_TRANSACTIONS_SHEET_URL).trim();
+        setIsSyncing(true);
+        setSyncMessage(null);
+        try {
+            const { records, updatedTillDate } = await fetchGoogleSheetData(url);
+            if (records.length === 0) throw new Error('The sheet has no customer rows.');
+            setSheetCheck({ at: new Date().toISOString(), url, rows: records.length, updatedTillDate, preview: previewSync(appData, records) });
+            // Kept for "Review and update", so the review opens on exactly what was checked.
+            checkedRecords.current = { records, updatedTillDate };
+        } catch (err) {
+            setSheetCheck({ at: new Date().toISOString(), url, error: err instanceof Error ? err.message : String(err) });
+            checkedRecords.current = null;
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+    const checkedRecords = useRef<{ records: Outstanding[]; updatedTillDate: string } | null>(null);
+    const handleReviewCheck = () => {
+        const c = checkedRecords.current;
+        if (!c) { void handleGoogleSync(); return; }
+        setPendingSync({ records: c.records, updatedTillDate: c.updatedTillDate, sourceName: 'Transactions Google Sheet' });
     };
 
     // Google Sheet Sync Logic (Transactions)
@@ -1240,7 +1280,7 @@ const App = () => {
      * is still a few thousand rows landing on the book at once, so it asks
      * first.
      */
-    const handleCustomerMasterSync = async (overrideUrl?: string) => {
+    const handleCustomerMasterSync = async (overrideUrl?: string, opts: { confirmed?: boolean } = {}) => {
         const urlToUse = (typeof overrideUrl === 'string' && overrideUrl.trim())
             ? overrideUrl.trim()
             : (customerMasterSheetUrl || OFFICIAL_CUSTOMER_MASTER_URL).trim();
@@ -1249,7 +1289,9 @@ const App = () => {
             setCustomerMasterSheetUrl(overrideUrl);
         }
 
-        if (appData.length > 0) {
+        // The Data source page asks in its own dialog, naming what the import
+        // does; the browser confirm() below is only for any other caller.
+        if (appData.length > 0 && !opts.confirmed) {
             const proceed = window.confirm(
                 'ONE-TIME CUSTOMER IMPORT\n\n' +
                 'The customer list is maintained in the software, not in this sheet. ' +
@@ -2847,326 +2889,34 @@ const App = () => {
                             </div>
                         )}
                         {activeTab === 'source' && rights.canSyncSheets && (
-                             <div>
-                                <h2 className="text-2xl font-bold mb-6 text-label">Data Source Management</h2>
-                                
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    
-                                    {/* Data Format Section */}
-                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2 bg-accent-tint max-md:p-4">
-                                        <div className="flex justify-between items-start max-md:flex-col max-md:gap-3">
-                                            <div>
-                                                <h3 className="text-lg font-semibold mb-2 text-label">1. Data Format Required</h3>
-                                                <p className="text-sm text-label-2 mb-4">
-                                                    Your Excel file or Google Sheet must have the following columns in this exact order (starting row 1):
-                                                </p>
-                                            </div>
-                                            <div className="flex space-x-2 max-md:w-full max-md:[&>button]:flex-1 max-md:[&>button]:justify-center max-md:[&>button]:min-h-[44px]">
-                                                 <button onClick={downloadTemplate} className="flex items-center px-3 py-2 bg-card border border-separator-strong rounded-md text-sm font-medium hover:bg-hover transition-colors">
-                                                    <DownloadIcon />
-                                                    <span className="ml-2">Download Excel Template</span>
-                                                </button>
-                                                <button onClick={copyHeaders} className="flex items-center px-3 py-2 bg-card border border-separator-strong rounded-md text-sm font-medium hover:bg-hover transition-colors">
-                                                    <ClipboardListIcon className="w-4 h-4 mr-2"/> Copy Headers
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div className="overflow-x-auto">
-                                            <table className="min-w-full text-xs text-left text-label-3">
-                                                <thead className="text-xs text-label-2 uppercase bg-card-3">
-                                                    <tr>
-                                                        {EXPECTED_HEADERS.map((h, i) => <th key={i} className="px-2 py-1 border">{h}</th>)}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr className="bg-card">
-                                                        <td className="px-2 py-1 border font-mono">out_1</td>
-                                                        <td className="px-2 py-1 border">Acme Corp</td>
-                                                        <td className="px-2 py-1 border">John Doe</td>
-                                                        <td className="px-2 py-1 border">9876543210</td>
-                                                        <td className="px-2 py-1 border">5000</td>
-                                                        <td className="px-2 py-1 border">5000</td>
-                                                        <td className="px-2 py-1 border">0</td>
-                                                        <td className="px-2 py-1 border">0</td>
-                                                        <td className="px-2 py-1 border">0</td>
-                                                        <td className="px-2 py-1 border">Priya Singh</td>
-                                                        <td className="px-2 py-1 border">Amit Kumar</td>
-                                                        <td className="px-2 py-1 border">2023-12-01</td>
-                                                        <td className="px-2 py-1 border">Follow up</td>
-                                                        <td className="px-2 py-1 border">FALSE</td>
-                                                        <td className="px-2 py-1 border">2023-01-01</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    {/* Data Source Configuration */}
-                                    <div className="p-6 rounded-lg border border-separator col-span-1 lg:col-span-2">
-                                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
-                                            <h3 className="text-lg font-semibold text-label">2. Select Data Source & Sync Status</h3>
-                                            <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 text-xs">
-                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                <span className="font-semibold">Last Synced:</span>
-                                                <span>{new Date(lastSyncTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, {new Date(lastSyncTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex flex-col sm:flex-row gap-6 mb-6">
-                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'excel' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-separator'}`}>
-                                                <div className="flex items-center mb-2">
-                                                    <input 
-                                                        type="radio" 
-                                                        name="dataSource" 
-                                                        value="excel" 
-                                                        checked={dataSourceMode === 'excel'} 
-                                                        onChange={() => setDataSourceMode('excel')}
-                                                        className="h-4 w-4 text-accent focus:ring-accent"
-                                                    />
-                                                    <span className="ml-3 font-semibold text-label">Excel Upload (Offline)</span>
-                                                </div>
-                                                <p className="text-sm text-label-3 ml-7">
-                                                    Upload a spreadsheet by hand. It is reviewed before anything is saved, and it saves to the shared database like every other change.
-                                                </p>
-                                            </label>
-
-                                            <label className={`flex-1 p-4 border rounded-lg cursor-pointer transition-all ${dataSourceMode === 'google' ? 'border-green-500 bg-green-50 dark:bg-green-900/10' : 'border-separator'}`}>
-                                                <div className="flex items-center mb-2">
-                                                    <input 
-                                                        type="radio" 
-                                                        name="dataSource" 
-                                                        value="google" 
-                                                        checked={dataSourceMode === 'google'} 
-                                                        onChange={() => setDataSourceMode('google')}
-                                                        className="h-4 w-4 text-accent focus:ring-accent"
-                                                    />
-                                                    <span className="ml-3 font-semibold text-label">Live Google Sheet (Team)</span>
-                                                </div>
-                                                <p className="text-sm text-label-3 ml-7">
-                                                    Best for teams. Multiple users see the same data. Requires sheet to be public/shared.
-                                                </p>
-                                            </label>
-                                        </div>
-
-                                        {dataSourceMode === 'excel' ? (
-                                            <div className="flex flex-col items-center justify-center border-2 border-dashed border-separator-strong rounded-lg p-10 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                                                <p className="text-sm text-label-3 mb-4 text-center">
-                                                    Upload your .xlsx file here. This will replace the current dataset.
-                                                </p>
-                                                <label htmlFor="file-upload" className="cursor-pointer flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg transition-colors bg-accent text-on-accent hover:bg-accent-press disabled:bg-gray-400 shadow-md">
-                                                     <UploadIcon />
-                                                     <span className="ml-2">{isSyncing ? 'Processing...' : 'Select Excel File'}</span>
-                                                </label>
-                                                <input id="file-upload" name="file-upload" type="file" className="sr-only" accept=".xlsx, .xls" onChange={handleFileChange} disabled={isSyncing}/>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-6">
-                                                {/* Where each thing lives, said once */}
-                                                <div className="p-4 bg-card-2 border border-separator-strong rounded-xl">
-                                                    <h4 className="text-sm font-extrabold text-label">How this works</h4>
-                                                    <p className="text-xs text-label-2 mt-1 leading-relaxed">
-                                                        <strong>The sheet carries the outstanding amounts. The software carries the customers.</strong>
-                                                    </p>
-                                                    <p className="text-xs text-label-3 mt-1.5 leading-relaxed">
-                                                        Sync the outstanding sheet as often as you like — it updates balances and ageing,
-                                                        and touches nothing else. Customers, their contacts, credit terms and CRM owners are
-                                                        added and corrected here, in the customer list, and no sync overwrites them.
-                                                    </p>
-                                                    <p className="text-xs text-label-3 mt-1.5 leading-relaxed">
-                                                        A name in the outstanding sheet that is not in the customer list yet is added
-                                                        automatically so its money is counted, with no CRM against it. Those show up under
-                                                        <strong className="text-label-2"> Unassigned</strong> in the customer list, waiting for an owner.
-                                                    </p>
-                                                </div>
-
-                                                {/* Sheet 1: Outstanding Invoices */}
-                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
-                                                    <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
-                                                            1. Outstanding Invoices &amp; Ageing Sheet
-                                                        </label>
-                                                        <span className="text-[12.5px] text-label-3">The only sheet that is synced</span>
-                                                    </div>
-                                                    <div className="flex flex-col sm:flex-row gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            value={googleSheetUrl}
-                                                            onChange={(e) => setGoogleSheetUrl(e.target.value)}
-                                                            placeholder="https://docs.google.com/spreadsheets/d/..."
-                                                            className="flex-1 p-2 border rounded-lg text-xs font-mono"
-                                                        />
-                                                        <button 
-                                                            onClick={() => handleGoogleSync()}
-                                                            disabled={isSyncing}
-                                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
-                                                        >
-                                                            <SyncIcon /> 
-                                                            <span className="ml-1.5">{isSyncing ? 'Syncing...' : 'Sync balances'}</span>
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
-                                                        <span>Balances and ageing only — contacts, credit terms and CRM owners are not read from here</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setGoogleSheetUrl(OFFICIAL_TRANSACTIONS_SHEET_URL);
-                                                            }}
-                                                            className="inline-flex items-center min-h-[28px] py-1 text-accent hover:opacity-80 font-semibold underline"
-                                                        >
-                                                            Restore Default Invoices URL
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Sheet 2: Customer Master Directory */}
-                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
-                                                    <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
-                                                            2. One-time customer import
-                                                        </label>
-                                                        <span className="text-[12.5px] text-label-3">Seeding only — not a sync</span>
-                                                    </div>
-                                                    <div className="flex flex-col sm:flex-row gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            value={customerMasterSheetUrl}
-                                                            onChange={(e) => setCustomerMasterSheetUrl(e.target.value)}
-                                                            placeholder="https://docs.google.com/spreadsheets/d/..."
-                                                            className="flex-1 p-2 border rounded-lg text-xs font-mono"
-                                                        />
-                                                        <button 
-                                                            onClick={() => handleCustomerMasterSync()}
-                                                            disabled={isSyncing}
-                                                            className="px-4 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg disabled:opacity-50 flex items-center justify-center font-bold text-xs shadow-xs transition-colors whitespace-nowrap"
-                                                        >
-                                                            <SyncIcon /> 
-                                                            <span className="ml-1.5">{isSyncing ? 'Importing...' : 'Import Customers'}</span>
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-label-3">
-                                                        <span>Loads customers in bulk. Fills in blanks only — it never overwrites a detail recorded here.</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setCustomerMasterSheetUrl(OFFICIAL_CUSTOMER_MASTER_URL);
-                                                            }}
-                                                            className="inline-flex items-center min-h-[28px] py-1 text-accent hover:opacity-80 font-semibold underline"
-                                                        >
-                                                            Restore Default Master URL
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Who owns which account, and how that gets back to the sheet */}
-                                                <div className="bg-card p-5 rounded-xl border border-separator space-y-3">
-                                                    <div className="flex justify-between items-center">
-                                                        <label className="block text-xs font-bold uppercase tracking-wider text-label">
-                                                            3. CRM Ownership
-                                                        </label>
-                                                        <span className="text-[12.5px] text-label-3">Set here, not in the sheet</span>
-                                                    </div>
-                                                    <p className="text-[12.5px] text-label-2 leading-relaxed">
-                                                        Reassigning an account in the customer list is permanent: a sync no longer hands
-                                                        it back to whoever the sheet still has in its CRM column. Either sheet may still
-                                                        fill in an owner where the app has none, and a new customer arrives with the
-                                                        owner the sheet gives it.
-                                                    </p>
-                                                    <p className="text-[12.5px] text-label-3 leading-relaxed">
-                                                        Nothing can be written back to Google Sheets from here, so export the list below
-                                                        and paste its CRM column into the <strong className="text-label-2">Customer Master</strong> sheet.
-                                                        The outstanding sheet looks its CRM up from the master, so correcting the master
-                                                        corrects both.
-                                                    </p>
-                                                    <p className="text-[12.5px] text-label-3 leading-relaxed">
-                                                        A customer missing from the master makes that lookup return
-                                                        <code className="mx-1 px-1 rounded bg-card-3 font-mono text-[11.5px]">#N/A</code>,
-                                                        which is read as "no owner" rather than filed under an owner of that name. Those
-                                                        accounts show as unassigned until the master lists them.
-                                                    </p>
-                                                    {crmConflicts.length > 0 && (
-                                                        <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
-                                                            <p className="text-[12.5px] font-bold text-amber-800 dark:text-amber-200">
-                                                                {crmConflicts.length} account{crmConflicts.length === 1 ? '' : 's'} disagree with the sheet
-                                                            </p>
-                                                            <ul className="mt-1.5 space-y-0.5 max-h-32 overflow-y-auto">
-                                                                {crmConflicts.slice(0, 25).map(c => (
-                                                                    <li key={c.company} className="text-[12px] text-amber-900 dark:text-amber-100">
-                                                                        <span className="font-semibold">{c.company}</span>
-                                                                        {' — app: '}<span className="font-mono">{c.appCrm}</span>
-                                                                        {', sheet: '}<span className="font-mono">{c.sheetCrm}</span>
-                                                                    </li>
-                                                                ))}
-                                                            </ul>
-                                                            {crmConflicts.length > 25 && (
-                                                                <p className="text-[11.5px] text-amber-700 dark:text-amber-300 mt-1">
-                                                                    And {crmConflicts.length - 25} more. The export lists every one.
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleExportCrmAssignments}
-                                                        className="px-4 py-2 bg-card-3 hover:bg-hover text-label rounded-lg border border-separator-strong font-bold text-xs transition-colors"
-                                                    >
-                                                        Download CRM owner list for the sheet
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                        
-                                        {/* The third sheet. Not imported and not synced: the Live
-                                            stock tab reads it straight, every minute it is open. */}
-                                        <div className="mt-8 pt-6 border-t border-separator">
-                                            <h4 className="text-sm font-semibold text-label-2 mb-1">Live stock sheet</h4>
-                                            <p className="text-xs text-label-3 mb-3">
-                                                The <strong className="text-label-2">Live stock</strong> tab reads the stores sheet directly and re-reads it
-                                                every minute while somebody has it open. Nothing from it is imported or stored here — the
-                                                stores team keeps the sheet, and the app shows it.
-                                            </p>
-                                            <a
-                                                href={LIVE_STOCK_SHEET_URL}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center px-4 py-2 bg-card-3 hover:bg-hover text-label rounded-lg border border-separator-strong font-bold text-xs transition-colors"
-                                            >
-                                                Open the Live stock sheet ↗
-                                            </a>
-                                        </div>
-
-                                        {/* Admin only (owner's decision, 2026-09-17): a Manager sees the
-                                            sync controls above, not this. reset_book() checks the same. */}
-                                        {rights.isAdmin && (
-                                        <div className="mt-8 pt-6 border-t border-separator">
-                                            <h4 className="text-sm font-semibold text-label-2 mb-3">Troubleshooting & Fresh Start</h4>
-                                            <div className="flex flex-wrap items-center gap-3">
-                                                <button 
-                                                    onClick={handleResetAllDataAndUsers}
-                                                    className="px-4 py-2 bg-dang-bg text-dang hover:brightness-95 rounded-lg text-xs font-bold shadow transition-all flex items-center gap-1.5"
-                                                    title="Clear follow-ups and cheques for everyone and re-import the live sheet. Accounts, owners, contacts and history are kept; logins are not touched."
-                                                >
-                                                    <TrashIcon /> <span>Reset All Data (Fresh Start)</span>
-                                                </button>
-                                            </div>
-                                            <p className="text-xs text-label-3 mt-2">
-                                                This clears follow-up dates, notes, forecasts and PDC cheques for the whole team and
-                                                re-imports the sheet's figures, in one step, after a backup. Accounts keep their ids,
-                                                owners, collectors, contacts and history. Team logins are managed in Team &amp; access.
-                                            </p>
-                                        </div>
-                                        )}
-                                    </div>
-                                </div>
-                                {syncMessage && (
-                                    <div className={`mt-6 p-3 rounded-lg text-sm font-medium ${
- syncMessage.type === 'success' 
- ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
- : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
- }`}>
-                                        {syncMessage.text}
-                                    </div>
-                                )}
-                            </div>
+                            <DataSourceView
+                                isAdmin={rights.isAdmin}
+                                dataSourceMode={dataSourceMode}
+                                onDataSourceMode={setDataSourceMode}
+                                googleSheetUrl={googleSheetUrl}
+                                onGoogleSheetUrl={setGoogleSheetUrl}
+                                officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
+                                customerMasterSheetUrl={customerMasterSheetUrl}
+                                onCustomerMasterSheetUrl={setCustomerMasterSheetUrl}
+                                officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
+                                liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
+                                lastSyncTime={lastSyncTime}
+                                sheetUpdatedTillDate={sheetUpdatedTillDate}
+                                accountsWithDues={appData.filter(hasOutstanding).length}
+                                isSyncing={isSyncing}
+                                sheetCheck={sheetCheck}
+                                onSync={() => handleGoogleSync()}
+                                onCheckSheet={handleCheckSheet}
+                                onReviewCheck={handleReviewCheck}
+                                onFileChange={handleFileChange}
+                                expectedHeaders={EXPECTED_HEADERS}
+                                onDownloadTemplate={downloadTemplate}
+                                onCopyHeaders={copyHeaders}
+                                onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
+                                crmConflicts={crmConflicts}
+                                onExportCrmAssignments={handleExportCrmAssignments}
+                                onFreshStart={handleResetAllDataAndUsers}
+                            />
                         )}
                     </div>
                 )}

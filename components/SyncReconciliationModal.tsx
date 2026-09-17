@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Outstanding, companyKey } from '../types';
-import { mergeWithExistingFollowUps, needsClearing } from '../services/googleSheetService';
+import { Outstanding } from '../types';
+import { mergeWithExistingFollowUps } from '../services/googleSheetService';
+import { previewSync, SyncEffect } from '../services/syncPreview';
+import { formatINR, formatCompact } from './ui/format';
+import { useEscape } from './ui/useEscape';
 
 export interface SyncReconciliationModalProps {
     incomingRecords: Outstanding[];
@@ -11,31 +14,24 @@ export interface SyncReconciliationModalProps {
     onCancel: () => void;
 }
 
-/** What the import will do to one account. */
-type Effect = 'updated' | 'added' | 'settled';
-
-interface ReviewRow {
-    id: string;
-    company: string;
-    effect: Effect;
-    /** The balance after the import. */
-    amount: number;
-    /** What it was before — only interesting on a settled row. */
-    was: number;
-}
+const EFFECT: Record<SyncEffect, { label: string; chip: string; hint: string }> = {
+    changed: { label: 'Figures change', chip: 'bg-accent-tint text-accent', hint: 'The sheet has different figures for this account — the balance, or how it is aged; the book takes them.' },
+    added: { label: 'New customer — needs a CRM', chip: 'bg-pos-bg text-pos', hint: 'A name the customer list has never seen. Added so its money is counted, with no owner yet.' },
+    settled: { label: 'Not in sheet — settled to zero', chip: 'bg-warn-bg text-warn', hint: 'The sheet no longer lists this account, so its balance goes to zero. The customer, contacts, cheques and history stay.' },
+    unchanged: { label: 'Same as before', chip: 'bg-card-3 text-label-3', hint: 'The sheet and the book already agree; nothing is written.' },
+};
 
 /**
  * The last look before an import is written.
  *
- * It used to ask which CRM should win, the sheet's or the app's. That question
- * is gone: the outstanding sheet is the ledger of what is owed and nothing more,
- * and who owns an account is decided in the app. So this is now a plain preview
- * of three things — what gets new figures, what arrives as a new customer, and
- * what gets settled to nil because the sheet has stopped listing it.
+ * It now says what actually changes. Every account the sheet listed used to
+ * be marked "Figures updated" — 684 on a morning when ten had moved — so a
+ * person could not tell a routine refresh from a re-cut sheet. The rows are
+ * grouped by what happens, changes first, and the button names the count.
  *
- * Nothing is recomputed here. Confirming runs mergeWithExistingFollowUps(), the
- * same function a sync runs when there is nothing to review, so what is shown
- * and what is written cannot drift apart.
+ * Nothing is recomputed here. Confirming runs mergeWithExistingFollowUps(),
+ * the same function a sync runs when there is nothing to review, so what is
+ * shown and what is written cannot drift apart.
  */
 export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = ({
     incomingRecords,
@@ -46,287 +42,183 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
     onCancel,
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewFilter, setViewFilter] = useState<'all' | 'added' | 'settled'>('all');
+    const [viewFilter, setViewFilter] = useState<'all' | SyncEffect>('all');
+    useEscape(onCancel);
 
-    const analysis = useMemo(() => {
-        const existingByKey = new Map<string, Outstanding>();
-        existingRecords.forEach(item => {
-            existingByKey.set(companyKey(item.company), item);
-            existingByKey.set(item.id, item);
-        });
-
-        const rows: ReviewRow[] = [];
-        const matchedIds = new Set<string>();
-        let updatedCount = 0;
-        let addedCount = 0;
-
-        incomingRecords.forEach(item => {
-            const existing = existingByKey.get(companyKey(item.company)) || existingByKey.get(item.id);
-            if (existing) matchedIds.add(existing.id);
-            if (existing) updatedCount++;
-            else addedCount++;
-
-            rows.push({
-                id: item.id,
-                company: item.company,
-                effect: existing ? 'updated' : 'added',
-                amount: item.total || 0,
-                was: existing?.total || 0,
-            });
-        });
-
-        // On file, not in this sheet. The sheet is the whole of what is owed, so
-        // a balance still standing against one of these has been paid.
-        const unlisted = existingRecords.filter(item => !matchedIds.has(item.id));
-        const settling = unlisted.filter(needsClearing);
-        settling.forEach(item => {
-            rows.push({
-                id: item.id,
-                company: item.company,
-                effect: 'settled',
-                amount: 0,
-                was: item.total || 0,
-            });
-        });
-
-        return {
-            rows,
-            totalIncoming: incomingRecords.length,
-            updatedCount,
-            addedCount,
-            untouchedCount: unlisted.length - settling.length,
-            settledCount: settling.length,
-            settledAmount: settling.reduce((sum, i) => sum + Math.abs(Number(i.total) || 0), 0),
-        };
-    }, [incomingRecords, existingRecords]);
+    const preview = useMemo(() => previewSync(existingRecords, incomingRecords), [incomingRecords, existingRecords]);
 
     const filteredRows = useMemo(() => {
         const q = searchTerm.trim().toLowerCase();
-        return analysis.rows.filter(row => {
-            if (viewFilter === 'added' && row.effect !== 'added') return false;
-            if (viewFilter === 'settled' && row.effect !== 'settled') return false;
+        return preview.rows.filter(row => {
+            if (viewFilter !== 'all' && row.effect !== viewFilter) return false;
             if (!q) return true;
             return row.company.toLowerCase().includes(q);
         });
-    }, [analysis.rows, viewFilter, searchTerm]);
-
-    const formatCurrency = (amount: number) =>
-        new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+    }, [preview.rows, viewFilter, searchTerm]);
 
     const handleApplySync = () => {
         onConfirm(mergeWithExistingFollowUps(existingRecords, incomingRecords));
     };
 
-    const EFFECT: Record<Effect, { label: string; chip: string }> = {
-        updated: {
-            label: 'Figures updated',
-            chip: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
-        },
-        added: {
-            label: 'New customer — needs a CRM',
-            chip: 'bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300',
-        },
-        settled: {
-            label: 'Not in sheet — settled to zero',
-            chip: 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300',
-        },
-    };
+    const nothingMoves = preview.changed === 0 && preview.added === 0 && preview.settled === 0;
+    const chips: { key: 'all' | SyncEffect; label: string; count: number }[] = [
+        { key: 'all', label: 'Everything', count: preview.rows.length },
+        { key: 'changed', label: 'Figures change', count: preview.changed },
+        { key: 'added', label: 'New customers', count: preview.added },
+        { key: 'settled', label: 'Settled to zero', count: preview.settled },
+        { key: 'unchanged', label: 'Unchanged', count: preview.unchanged },
+    ];
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 max-md:max-h-none max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start" role="dialog" aria-modal="true" aria-labelledby="sync-review-title">
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-separator max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
-                <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start">
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-300">
-                                Outstanding Import
-                            </span>
-                            {updatedTillDate && (
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    Updated till: <strong className="text-gray-700 dark:text-gray-200">{updatedTillDate}</strong>
-                                </span>
-                            )}
-                        </div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                <div className="px-5 sm:px-6 py-4 border-b border-separator flex justify-between items-start bg-card-2 rounded-t-2xl max-md:rounded-none">
+                    <div className="min-w-0">
+                        <h2 id="sync-review-title" className="text-[19px] font-extrabold text-label tracking-[-0.02em]">
                             Review before the balances are updated
                         </h2>
-                        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            {analysis.totalIncoming} rows read from {sourceName}. This changes money only — contact
-                            details, CRM owners, follow-ups and cheques are left exactly as they are.
+                        <p className="text-[13px] text-label-2 mt-1">
+                            {preview.incoming.toLocaleString('en-IN')} rows read from {sourceName}
+                            {updatedTillDate ? <> · sheet updated till <strong className="text-label">{updatedTillDate}</strong></> : null}.
+                            {' '}Only balances and ageing change — contacts, CRM owners, follow-ups, notes and cheques are left exactly as they are.
                         </p>
                     </div>
                     <button
                         onClick={onCancel}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
-                        title="Cancel — nothing is written"
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex-none"
+                        title="Cancel — nothing is written (Esc)"
+                        aria-label="Close"
                     >
-                        ✕
+                        &times;
                     </button>
                 </div>
 
-                {/* What this import does */}
-                <div className="px-5 sm:px-6 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">Rows in sheet</span>
-                        <span className="text-lg font-bold text-gray-900 dark:text-white">{analysis.totalIncoming}</span>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 block">Existing accounts updated</span>
-                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{analysis.updatedCount}</span>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span
-                            className="text-gray-500 dark:text-gray-400 block"
-                            title="Names in the sheet that are not in the customer list yet. They are added so their money is counted, with no CRM against them — assign one from the customer list."
+                {/* What this sync does, in four numbers */}
+                <div className="px-5 sm:px-6 py-3 border-b border-separator grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {([
+                        ['changed', 'Figures change', preview.changed, preview.changed ? `${preview.balancesMoved} balance${preview.balancesMoved === 1 ? '' : 's'} move (${preview.netChange >= 0 ? '+' : '−'}${formatCompact(Math.abs(preview.netChange))}) · ${preview.changed - preview.balancesMoved} ageing only` : 'the sheet and the book agree', 'text-accent'],
+                        ['added', 'New customers', preview.added, preview.added ? 'will need a CRM owner' : 'none this time', 'text-pos'],
+                        ['settled', 'Settled to zero', preview.settled, preview.settled ? `${formatCompact(preview.settledAmount)} no longer listed` : 'none this time', 'text-warn'],
+                        ['unchanged', 'Unchanged', preview.unchanged, 'same figures as before', 'text-label-2'],
+                    ] as const).map(([key, label, count, sub, tone]) => (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => setViewFilter(viewFilter === key ? 'all' : key)}
+                            aria-pressed={viewFilter === key}
+                            title={EFFECT[key].hint}
+                            className={`text-left rounded-[12px] px-3 py-2 transition-colors ${viewFilter === key ? 'bg-accent-tint ring-2 ring-accent' : 'bg-card-2 hover:bg-hover'}`}
                         >
-                            New customers
-                        </span>
-                        <span className="text-lg font-bold text-green-600 dark:text-green-400">{analysis.addedCount}</span>
-                        {analysis.addedCount > 0 && (
-                            <span className="block text-[11px] text-green-700 dark:text-green-400 font-semibold leading-tight mt-0.5">
-                                will need a CRM
-                            </span>
-                        )}
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <span
-                            className="text-gray-500 dark:text-gray-400 block"
-                            title="Accounts in the book that this sheet does not list. The customer, their contacts, cheques and history stay — only the balance goes to zero, because the sheet is the whole of what is owed."
-                        >
-                            Settled to zero
-                        </span>
-                        <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{analysis.settledCount}</span>
-                        {analysis.settledCount > 0 && (
-                            <span className="block text-[11px] text-amber-600 dark:text-amber-400 font-semibold leading-tight mt-0.5">
-                                {formatCurrency(analysis.settledAmount)} written off
-                            </span>
-                        )}
-                    </div>
+                            <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">{label}</span>
+                            <span className={`num block text-[22px] font-semibold leading-tight mt-0.5 ${count === 0 ? 'text-label-3' : tone}`}>{count.toLocaleString('en-IN')}</span>
+                            <span className="block text-[12px] text-label-3 mt-0.5 truncate">{sub}</span>
+                        </button>
+                    ))}
                 </div>
 
                 {/* Filters */}
-                <div className="p-4 sm:px-6 bg-gray-50/70 dark:bg-gray-800/40 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setViewFilter('all')}
-                            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                                viewFilter === 'all'
-                                    ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                            }`}
-                        >
-                            Everything ({analysis.rows.length})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setViewFilter('added')}
-                            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                                viewFilter === 'added'
-                                    ? 'bg-green-600 text-white'
-                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                            }`}
-                        >
-                            New customers ({analysis.addedCount})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setViewFilter('settled')}
-                            className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                                viewFilter === 'settled'
-                                    ? 'bg-amber-600 text-white'
-                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-                            }`}
-                        >
-                            Settled ({analysis.settledCount})
-                        </button>
+                <div className="px-4 sm:px-6 py-2.5 border-b border-separator flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Show">
+                        {chips.map(c => (
+                            <button
+                                key={c.key}
+                                type="button"
+                                onClick={() => setViewFilter(c.key)}
+                                aria-pressed={viewFilter === c.key}
+                                className={`h-8 px-3 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
+                                    viewFilter === c.key ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator-strong hover:bg-hover hover:text-label'
+                                }`}
+                            >
+                                {c.label} <span className="num opacity-80">({c.count.toLocaleString('en-IN')})</span>
+                            </button>
+                        ))}
                     </div>
-
                     <input
                         type="text"
-                        placeholder="Search company…"
+                        placeholder="Search customer…"
+                        aria-label="Search customer"
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full sm:w-56 px-3 py-1.5 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                        className="w-full sm:w-56 h-9 px-3 text-[13px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
                     />
                 </div>
 
                 {/* Table */}
-                <div className="flex-1 overflow-y-auto min-h-[260px] max-h-[420px]">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-xs">
-                        <thead className="bg-gray-100/70 dark:bg-gray-800/80 sticky top-0 z-10">
+                <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[420px] max-md:max-h-none">
+                    <table className="min-w-full divide-y divide-separator text-xs">
+                        <thead className="bg-card-2 sticky top-0 z-10 text-[11.5px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                             <tr>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">Customer</th>
-                                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 dark:text-gray-300">Balance now</th>
-                                <th className="px-3 py-2.5 text-right font-semibold text-gray-600 dark:text-gray-300">After import</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-600 dark:text-gray-300">What happens</th>
+                                <th className="px-4 py-2.5 text-left">Customer</th>
+                                <th className="px-3 py-2.5 text-right">Balance now</th>
+                                <th className="px-3 py-2.5 text-right">After sync</th>
+                                <th className="px-4 py-2.5 text-left">What happens</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+                        <tbody className="divide-y divide-separator">
                             {filteredRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="text-center py-8 text-gray-400">
-                                        Nothing matches the current filter.
+                                    <td colSpan={4} className="text-center py-8 text-label-3">
+                                        Nothing matches.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredRows.slice(0, 400).map(row => (
-                                    <tr
-                                        key={`${row.effect}_${row.id}`}
-                                        className={`hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors ${
-                                            row.effect === 'settled' ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''
-                                        }`}
-                                    >
-                                        <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{row.company}</td>
-                                        <td className="px-3 py-2.5 text-right text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                            {row.effect === 'added' ? '—' : formatCurrency(row.was)}
-                                        </td>
-                                        <td className="px-3 py-2.5 text-right font-semibold text-gray-800 dark:text-gray-200 whitespace-nowrap">
-                                            {formatCurrency(row.amount)}
-                                        </td>
-                                        <td className="px-4 py-2.5">
-                                            <span className={`px-2 py-0.5 rounded font-semibold ${EFFECT[row.effect].chip}`}>
-                                                {EFFECT[row.effect].label}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))
+                                filteredRows.slice(0, 400).map(row => {
+                                    const delta = row.after - row.before;
+                                    return (
+                                        <tr key={`${row.effect}_${row.id}`} className={`hover:bg-hover transition-colors ${row.effect === 'unchanged' ? 'text-label-3' : ''}`}>
+                                            <td className="px-4 py-2 font-semibold text-label">{row.company}</td>
+                                            <td className="px-3 py-2 text-right num text-label-3 whitespace-nowrap">
+                                                {row.effect === 'added' ? '—' : formatINR(row.before)}
+                                            </td>
+                                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                <span className={`num font-semibold ${row.effect === 'unchanged' ? 'text-label-3' : 'text-label'}`}>{formatINR(row.after)}</span>
+                                                {row.effect === 'changed' && delta !== 0 && (
+                                                    <span className={`num block text-[11px] ${delta > 0 ? 'text-dang' : 'text-pos'}`}>{delta > 0 ? '+' : '−'}{formatINR(Math.abs(delta))}</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap ${EFFECT[row.effect].chip}`} title={row.effect === 'changed' && !row.balanceMoves ? 'The balance is the same; how it is aged (the buckets or the over-90 figures) changed.' : EFFECT[row.effect].hint}>
+                                                    {row.effect === 'changed' ? (row.balanceMoves ? 'Balance changes' : 'Ageing changes · same balance') : EFFECT[row.effect].label}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
                     {filteredRows.length > 400 && (
-                        <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                            Showing the first 400 of {filteredRows.length}. Search to narrow it down.
+                        <p className="px-4 py-3 text-xs text-label-3">
+                            Showing the first 400 of {filteredRows.length.toLocaleString('en-IN')}. Search to narrow it down.
                         </p>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 sm:px-6 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-3">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                        {analysis.untouchedCount > 0 && (
-                            <span>{analysis.untouchedCount} account{analysis.untouchedCount === 1 ? '' : 's'} already at zero are untouched. </span>
-                        )}
-                        <strong>Follow-ups, notes, contacts, cheques and CRM owners are kept.</strong>
+                <div className="px-4 sm:px-6 py-3.5 bg-card-2 border-t border-separator flex flex-col sm:flex-row justify-between items-center gap-3 rounded-b-2xl max-md:rounded-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]">
+                    <div className="text-[12.5px] text-label-2">
+                        {nothingMoves
+                            ? <strong className="text-label">Nothing changes — the book already matches the sheet.</strong>
+                            : <strong className="text-label">Follow-ups, notes, contacts, cheques and CRM owners are kept.</strong>}
+                        {preview.untouched > 0 && <span> {preview.untouched.toLocaleString('en-IN')} account{preview.untouched === 1 ? '' : 's'} not in the sheet were already at zero.</span>}
                     </div>
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
                         <button
                             type="button"
                             onClick={onCancel}
-                            className="px-4 py-2 text-xs font-semibold rounded-xl bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label"
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
                             onClick={handleApplySync}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors flex items-center gap-1.5"
+                            title={nothingMoves ? 'Records that the book was checked against the sheet just now; nothing else is written' : `Writes the ${preview.changed + preview.added + preview.settled} changes above`}
+                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 inline-flex items-center gap-2 whitespace-nowrap"
                         >
                             <span>Update balances</span>
-                            <span className="px-1.5 py-0.5 rounded-full bg-green-700 text-[11.5px]">
-                                {analysis.totalIncoming} rows
-                            </span>
+                            <span className="num px-1.5 py-0.5 rounded-full bg-black/15 text-[11.5px]">{preview.incoming} rows</span>
                         </button>
                     </div>
                 </div>
