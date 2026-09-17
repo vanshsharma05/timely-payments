@@ -390,7 +390,21 @@ export enum FollowUpStatus {
     Completed = 'Completed',
 }
 
-export function getFollowUpCategory(item: Outstanding, today: Date = new Date()): 'today' | 'future' | 'overdue' | 'no_follow_up' | 'completed' {
+export type FollowUpCategory = 'today' | 'future' | 'overdue' | 'no_follow_up' | 'completed';
+
+/**
+ * Where an account's follow-up stands, worked out every time it is read.
+ *
+ * Two different things live in `status`. `Completed` is something a person
+ * declared — the money was collected — and the calendar cannot undo it. The
+ * rest (Today / Upcoming / Overdue / Pending) is only ever a reading of the
+ * follow-up date against today, so the date decides and the stored word is
+ * at best yesterday's reading. It used to be rewritten on every save by
+ * processStatuses(), which turned one edit after midnight into a write on
+ * every account whose date had crossed; nothing rewrites it now, and every
+ * screen, count, export and filter reads this instead.
+ */
+export function getFollowUpCategory(item: Pick<Outstanding, 'status' | 'followUpDate'>, today: Date = new Date()): FollowUpCategory {
     if (item.status === FollowUpStatus.Completed) return 'completed';
 
     const t = new Date(today);
@@ -411,6 +425,21 @@ export function getFollowUpCategory(item: Outstanding, today: Date = new Date())
     if (item.status === FollowUpStatus.Overdue) return 'overdue';
 
     return 'no_follow_up';
+}
+
+/**
+ * The same reading in the vocabulary the screens, filters and exports use.
+ * Derived, never stored: the `status` column keeps whatever the last person's
+ * action wrote, and only its `Completed` is ever trusted.
+ */
+export function followUpStatusOf(item: Pick<Outstanding, 'status' | 'followUpDate'>, today: Date = new Date()): FollowUpStatus {
+    switch (getFollowUpCategory(item, today)) {
+        case 'completed': return FollowUpStatus.Completed;
+        case 'today': return FollowUpStatus.Today;
+        case 'future': return FollowUpStatus.Upcoming;
+        case 'overdue': return FollowUpStatus.Overdue;
+        default: return FollowUpStatus.Pending;
+    }
 }
 
 export type BalanceType = 'Dr' | 'Cr';

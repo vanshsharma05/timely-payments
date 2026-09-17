@@ -13,6 +13,7 @@ import {
     hasOutstanding,
     matchesSettlement,
     getFollowUpCategory,
+    followUpStatusOf,
     chequeState,
     FollowUpStatus,
     PdcStatus,
@@ -163,23 +164,26 @@ describe('merge · the sheet changes money and nothing else', () => {
     });
 });
 
-describe('processStatuses — the date wins, Completed is left alone', () => {
+describe('follow-up status — the date wins, Completed is left alone, nothing is rewritten', () => {
     const at = (offsetDays: number) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offsetDays); return d; };
-    it('derives Overdue / Today / Upcoming / Pending from the date', () => {
-        const rows = processStatuses([
-            { ...mixedAccount(), id: 'a', followUpDate: at(-1), status: FollowUpStatus.Upcoming },
-            { ...mixedAccount(), id: 'b', followUpDate: at(0), status: FollowUpStatus.Upcoming },
-            { ...mixedAccount(), id: 'c', followUpDate: at(3), status: FollowUpStatus.Overdue },
-            { ...mixedAccount(), id: 'd', followUpDate: undefined, status: FollowUpStatus.Overdue },
-            { ...mixedAccount(), id: 'e', followUpDate: at(0), status: FollowUpStatus.Completed },
-        ]);
-        expect(rows.map(r => r.status)).toEqual(['Overdue', 'Today', 'Upcoming', 'Pending', 'Completed']);
+    const rows = () => [
+        { ...mixedAccount(), id: 'a', followUpDate: at(-1), status: FollowUpStatus.Upcoming },
+        { ...mixedAccount(), id: 'b', followUpDate: at(0), status: FollowUpStatus.Upcoming },
+        { ...mixedAccount(), id: 'c', followUpDate: at(3), status: FollowUpStatus.Overdue },
+        { ...mixedAccount(), id: 'd', followUpDate: undefined, status: FollowUpStatus.Pending },
+        { ...mixedAccount(), id: 'e', followUpDate: at(0), status: FollowUpStatus.Completed },
+    ];
+    it('followUpStatusOf derives Overdue / Today / Upcoming / Pending from the date, whatever the stored word says', () => {
+        expect(rows().map(r => followUpStatusOf(r))).toEqual(['Overdue', 'Today', 'Upcoming', 'Pending', 'Completed']);
     });
-    it('touches only status (and normalises dates)', () => {
+    it('processStatuses no longer rewrites the stored word (R1-C): it only normalises dates', () => {
+        const out = processStatuses(rows());
+        expect(out.map(r => r.status)).toEqual(['Upcoming', 'Upcoming', 'Overdue', 'Pending', 'Completed']);
         const [row] = processStatuses([{ ...mixedAccount(), followUpDate: at(-1) }]);
-        const { status: _s, followUpDate: _f, ...rest } = row;
-        const { status: _s2, followUpDate: _f2, ...expected } = mixedAccount();
+        const { followUpDate: _f, ...rest } = row;
+        const { followUpDate: _f2, ...expected } = mixedAccount();
         expect(rest).toEqual(expected);
+        expect(row.followUpDate).toBeInstanceOf(Date);
     });
     it('getFollowUpCategory agrees with it', () => {
         expect(getFollowUpCategory({ ...mixedAccount(), followUpDate: at(-1), status: FollowUpStatus.Upcoming })).toBe('overdue');

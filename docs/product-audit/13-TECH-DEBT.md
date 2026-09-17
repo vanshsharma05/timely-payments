@@ -21,7 +21,7 @@ Added in Phase 1 (2026-09-16):
 | # | Item | Evidence | Prio | Confidence |
 |---|---|---|---|---|
 | T12 | Scoping rule duplicated between `types.ts` and `api/_lib/digest.ts` (D1) | 03 §9 | P2 | HIGH |
-| T13 | Follow-up status stored and derived, three implementations (D2) | 03 §9 | P2 | HIGH |
+| T13 | Follow-up status stored and derived (D2) — readers fixed (Option B); two inline writers remain (T34) | 03 §9 | P3 (was P2) | HIGH |
 | T14 | Notes mirrored into `customers.notes[]` from the activity table (D3) | 03 §9 | P2 | HIGH |
 | T15 | Two "expected payment" notions (D4) — needs a business decision before code | 03 §9 | P3 | HIGH |
 | T16 | Performance score computed twice (D5); roll-up netting three times (D6) | 03 §9 | P3 | HIGH |
@@ -38,7 +38,7 @@ Added in the validation session (2026-09-17):
 |---|---|---|---|---|
 | T23 | ~~**C1** `CustomerEditModal.handleSave` rebuilds the row from form state~~ — **fixed 2026-09-17**, regression tests in `tests/customerEditModal.dom.test.tsx` | 11 §1.4 | done | HIGH |
 | T24 | ~~Whole-row PATCH on every customer write~~ — **fixed 2026-09-17 (Option A)**: column diff + `updateCustomerColumns`; the missing version predicate is R1-B, still open | 11 R1 table | done (R1-A) | HIGH |
-| T25 | `processStatuses` persists a derived field for every date-crossed row on every follow-up save — now one column per row (172 rows today), still redundant | 11 R1-C | P2 (was P1) | HIGH |
+| T25 | ~~`processStatuses` persists a derived field~~ — **fixed 2026-09-17 (Option B)**: it only normalises dates; readers derive | 11 R1-C | done | HIGH |
 | T26 | The reset re-ids 672 legacy `out_*` accounts (delete + re-create) because it merges into `[]` | 11 Part 3 | P1 (as part of SEC3) | HIGH |
 | T27 | Four password minimums (6/6/8/8) across dialog, server, repository, Supabase | U20 | P3 | HIGH |
 | T28 | Reset clears cheques/templates/profile in memory *before* the sheet fetch that can fail | `App.tsx:753–757` | P2 | HIGH |
@@ -57,3 +57,10 @@ Added in the Option A session (2026-09-17):
 | T31 | Roll-up netting produces floating-point noise (`due_over45: 80.60000000000036` seen in a sync payload); stored as `numeric` | probe scenario 5 | P4 | HIGH |
 | T32 | The sync error banner names the account by id ("Could not save the changes to out_86_…") since the per-row write; the company name would read better | `useSupabaseSync.ts` onError | P4 | HIGH |
 | T33 | Cheques and templates still write whole rows through `upsert` (small tables, low risk) | `App.tsx` adapters | P4 | HIGH |
+
+Added in the Option B session (2026-09-17):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T34 | `FollowUpModal.handleSave` and `CustomerEditModal.statusFor` still compute the follow-up word inline at action time instead of calling `followUpStatusOf()`; harmless (the app no longer reads it) but three copies of one rule | 11 status contract | P3 | HIGH |
+| T35 | `customers.status` is legacy for everything but `Completed`; a later cleanup could narrow it (no migration this session) | 11 status contract | P4 | HIGH |

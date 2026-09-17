@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { outstandingToRow, customerRowDiff } from '../services/repository';
 import { mergeWithExistingFollowUps, processStatuses, customerIdFor, financialsFromSheet } from '../services/googleSheetService';
-import { Outstanding, FollowUpStatus } from '../types';
+import { Outstanding, FollowUpStatus, followUpStatusOf, getFollowUpCategory } from '../types';
 import { mixedAccount } from './fixtures';
 
 const columnsOf = (before: Outstanding, after: Outstanding) => Object.keys(customerRowDiff(outstandingToRow(before), outstandingToRow(after))).sort();
@@ -54,22 +54,25 @@ describe('owner / collector / rank / category', () => {
     });
 });
 
-describe('bulk follow-up date (handleBulkSetFollowUp: date + Pending, then processStatuses)', () => {
+describe('bulk follow-up date (handleBulkSetFollowUp writes the date and the word the date means today)', () => {
     it('sends follow_up_date and status only', () => {
         const before = mixedAccount();
-        const [after] = processStatuses([{ ...before, followUpDate: atDay(0), status: FollowUpStatus.Pending }]);
+        const nextDate = atDay(0);
+        const [after] = processStatuses([{ ...before, followUpDate: nextDate, status: followUpStatusOf({ status: FollowUpStatus.Pending, followUpDate: nextDate }) }]);
         expect(columnsOf(before, after)).toEqual(['follow_up_date', 'status']);
         expect(after.status).toBe(FollowUpStatus.Today);
     });
 });
 
-describe('processStatuses on a tab open across midnight', () => {
-    it('a date-crossed row is a one-column status write; an unchanged row writes nothing; the owner is never touched', () => {
+describe('processStatuses on a tab open across midnight (R1-C)', () => {
+    it('writes nothing for a date-crossed row — the reading moves, the stored word does not', () => {
         const dueYesterday: Outstanding = { ...mixedAccount(), id: 'a', followUpDate: atDay(-1), status: FollowUpStatus.Today };
         const dueNextWeek: Outstanding = { ...mixedAccount(), id: 'b', followUpDate: atDay(7), status: FollowUpStatus.Upcoming };
         const [a, b] = processStatuses([dueYesterday, dueNextWeek]);
-        expect(customerRowDiff(outstandingToRow(dueYesterday), outstandingToRow(a))).toEqual({ status: 'Overdue' });
+        expect(customerRowDiff(outstandingToRow(dueYesterday), outstandingToRow(a))).toEqual({});
         expect(customerRowDiff(outstandingToRow(dueNextWeek), outstandingToRow(b))).toEqual({});
+        expect(followUpStatusOf(a)).toBe(FollowUpStatus.Overdue);
+        expect(getFollowUpCategory(a)).toBe('overdue');
     });
 });
 

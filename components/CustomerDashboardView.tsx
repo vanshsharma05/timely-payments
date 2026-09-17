@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing } from '../types';
+import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, can, getCustomerPaymentRank, seesWholeBook, scopeTo, PaymentRank, PAYMENT_RANK_LABELS, findOwner, ownerKey, canExportBook, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing, followUpStatusOf } from '../types';
 import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, SyncIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
@@ -354,6 +354,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             const isCurrent = a1 > 0 && over45 <= 0;
             const balance = item.totalType || 'Dr';
             const origin = item.isNewCustomer ? 'NEW' : 'SHEET';
+            // Read from the date, not the stored word: a row due yesterday is
+            // overdue this morning whether or not anything has saved it since.
+            const followUp = followUpStatusOf(item, today);
 
             // Which filters the row fails.
             const fails = new Set<Dim>();
@@ -369,7 +372,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                 if (ageingFilter === '46-90' && a2 <= 0) fails.add('ageing');
                 if (ageingFilter === '1-45' && a1 <= 0) fails.add('ageing');
             }
-            if (statusFilter !== 'ALL' && item.status !== statusFilter) fails.add('status');
+            if (statusFilter !== 'ALL' && followUp !== statusFilter) fails.add('status');
             if (balanceTypeFilter !== 'ALL' && balance !== balanceTypeFilter) fails.add('balance');
             if (originFilter === 'NEW' && !item.isNewCustomer) fails.add('origin');
             if (originFilter === 'SHEET' && item.isNewCustomer) fails.add('origin');
@@ -394,7 +397,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             }
             if (countsFor('category')) { counts.categoryAll++; if (itemCategory) bump(counts.category, itemCategory); else counts.uncategorised++; }
             if (countsFor('crm')) { counts.crmAll++; if (ownerK) bump(counts.crm, ownerK); else counts.unassigned++; }
-            if (countsFor('status')) { counts.statusAll++; bump(counts.status, item.status); }
+            if (countsFor('status')) { counts.statusAll++; bump(counts.status, followUp); }
             if (countsFor('balance')) { counts.balance.ALL++; counts.balance[balance === 'Cr' ? 'Cr' : 'Dr']++; }
             if (countsFor('origin')) { counts.origin.ALL++; counts.origin[origin]++; }
         });
@@ -1462,11 +1465,11 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             {/* Follow-up Date & Status */}
                                             <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                                 <div className="flex flex-col items-center justify-center gap-0.5">
-                                                    <StatusBadge status={item.status} />
+                                                    <StatusBadge status={followUpStatusOf(item, today)} />
                                                     <span className={`text-[11.5px] font-bold ${
-                                                        item.status === FollowUpStatus.Overdue ? 'text-dang' :
-                                                        item.status === FollowUpStatus.Today ? 'text-accent font-extrabold' :
-                                                        item.status === FollowUpStatus.Upcoming ? 'text-pos font-semibold' :
+                                                        followUpStatusOf(item, today) === FollowUpStatus.Overdue ? 'text-dang' :
+                                                        followUpStatusOf(item, today) === FollowUpStatus.Today ? 'text-accent font-extrabold' :
+                                                        followUpStatusOf(item, today) === FollowUpStatus.Upcoming ? 'text-pos font-semibold' :
                                                         'text-gray-600 dark:text-gray-400'
                                                     }`}>
                                                         {item.followUpDate ? formatDate(item.followUpDate) : 'No date'}
@@ -1612,7 +1615,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                 <span className="px-2 py-0.5 rounded-md text-[11.5px] font-bold bg-slate-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                                                     CRM: {item.crmOwnerId || 'Unassigned'}
                                                 </span>
-                                                <StatusBadge status={item.status} />
+                                                <StatusBadge status={followUpStatusOf(item, today)} />
                                             </div>
                                         </div>
 

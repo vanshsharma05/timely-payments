@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Markdown from 'react-markdown';
-import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus, overdueAgeing } from '../types';
+import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus, overdueAgeing, followUpStatusOf } from '../types';
 import { authHeaders } from '../services/repository';
 import { SparklesIcon, DownloadIcon, CheckCircleIcon, UsersIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
 
@@ -136,7 +136,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                     over90: o90,
                     over135: a4,
                     avgDays: avg,
-                    status: acc.status,
+                    status: followUpStatusOf(acc),
                     activePdc,
                     lastNote: acc.notes && acc.notes.length > 0 ? acc.notes[acc.notes.length - 1] : undefined
                 };

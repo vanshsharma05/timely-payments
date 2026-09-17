@@ -435,12 +435,21 @@ export function mergeWithExistingFollowUps(existingRecords: Outstanding[], newRe
     return processStatuses([...merged, ...retained]);
 }
 
-// Function to simulate checking and updating status based on date
-export const processStatuses = (data: Outstanding[]): Outstanding[] => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return data.map(item => {
+/**
+ * Rows as the app holds them: dates as Date objects, whatever shape they
+ * arrived in (the database sends strings, a sheet row sends nothing).
+ *
+ * This used to also rewrite `status` from the follow-up date against today,
+ * on every load and after every save. Read at load it was harmless; run again
+ * after a save from a tab left open overnight, it turned one edit into a
+ * write on every account whose date had crossed midnight — 89 of them on the
+ * morning it was measured — from that tab's copy of the book. Nothing
+ * rewrites the word now: followUpStatusOf() / getFollowUpCategory() in
+ * types.ts read the date every time, and the stored value is only trusted
+ * for `Completed`, which a person declared.
+ */
+export const processStatuses = (data: Outstanding[]): Outstanding[] =>
+    data.map(item => {
         const itemCopy = { ...item };
         if (itemCopy.followUpDate) {
             itemCopy.followUpDate = new Date(itemCopy.followUpDate);
@@ -448,24 +457,8 @@ export const processStatuses = (data: Outstanding[]): Outstanding[] => {
         if (itemCopy.forecastDate) {
             itemCopy.forecastDate = new Date(itemCopy.forecastDate);
         }
-
-        if (itemCopy.status === FollowUpStatus.Completed) return itemCopy;
-
-        if (itemCopy.followUpDate && !isNaN(itemCopy.followUpDate.getTime())) {
-            const followUpDate = new Date(itemCopy.followUpDate);
-            followUpDate.setHours(0, 0, 0, 0);
-
-            if (followUpDate.getTime() < today.getTime()) {
-                return { ...itemCopy, status: FollowUpStatus.Overdue };
-            }
-            if (followUpDate.getTime() === today.getTime()) {
-                return { ...itemCopy, status: FollowUpStatus.Today };
-            }
-            return { ...itemCopy, status: FollowUpStatus.Upcoming };
-        }
-        return { ...itemCopy, status: FollowUpStatus.Pending };
+        return itemCopy;
     });
-};
 
 /**
  * The slice of the book one person is responsible for.

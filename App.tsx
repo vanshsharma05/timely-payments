@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -305,7 +305,7 @@ const App = () => {
                 c.dueOver45 || 0,
                 c.over90 || 0,
                 c.crmOwnerId,
-                c.status,
+                followUpStatusOf(c),
                 c.followUpDate ? new Date(c.followUpDate).toISOString().split('T')[0] : '',
                 (c.notes && c.notes.length > 0) ? c.notes[c.notes.length - 1] : ''
             ]);
@@ -959,10 +959,10 @@ const App = () => {
             }
             entries.push({ customerId: item.id, kind: 'system', body });
 
-            // Pending here is a placeholder: processStatuses() reads the date and
-            // writes Today or Upcoming. Setting it explicitly is what reopens an
-            // account marked Completed, which the follow-up form does the same way.
-            const next: Outstanding = { ...item, followUpDate: nextDate, status: FollowUpStatus.Pending };
+            // The stored word is what the date says today; setting it is also
+            // what reopens an account marked Completed, which the follow-up form
+            // does the same way. (Tomorrow the date, not this word, decides.)
+            const next: Outstanding = { ...item, followUpDate: nextDate, status: followUpStatusOf({ status: FollowUpStatus.Pending, followUpDate: nextDate }) };
             changed.push(next);
             return next;
         });
@@ -1179,7 +1179,7 @@ const App = () => {
             if (isBadDebt(item) && !searching) return false;
 
             if (priorityFilter) {
-                return (item.isUrgent && item.status !== FollowUpStatus.Completed) || item.status === FollowUpStatus.Overdue;
+                return (item.isUrgent && itemCategory !== 'completed') || itemCategory === 'overdue';
             }
 
             if (unattendedFilter) {
@@ -1201,7 +1201,7 @@ const App = () => {
                 return item.status === FollowUpStatus.Completed && collectedDate.getTime() === today.getTime();
             }
             
-            return item.status === statusFilter;
+            return followUpStatusOf(item, today) === statusFilter;
         }).filter(item => {
             if (!searchTerm.trim()) return true;
             const userObj = users.find(u => u.id === item.crmOwnerId || u.name === item.crmOwnerId);
