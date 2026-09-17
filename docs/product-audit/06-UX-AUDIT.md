@@ -89,7 +89,7 @@ Scope: the company dashboard (Today for Manager/Admin), Reports, the team table,
 
 **Visual QA (local, every write aborted) at 1366×768, 1440×900, 1024×768:** no horizontal overflow on Today or Reports; the Reports table fits without sideways scroll at all three (the ageing figures and *Last note* fold below xl); 50 rows rendered; the team table's name → Reports on that person; *Unattended 50* → Reports "50 accounts" with the *Unattended* chip pressed and *Savia* selected; the 91–135 band → the band and the chip both pressed, 191 accounts; the *Overdue* card → *Overdue* chip with no stale person or band; *Show them* → *Needs attention (135)*; the tiles and chips agree in both directions; the app bar's term narrows Reports and Reports' box shows it; Ctrl+K focuses the search on Reports; *Follow up* from a Reports row opens the dialog inside the viewport. 0 findings after three fixes (the second Reports render site was not wired to the new props; the ageing column was fixed-width at 1024; the banner carried a stale band).
 
-## Phase 4, batch 3 — the cheque register and its dialog (2026-09-17, committed locally, not deployed)
+## Phase 4, batch 3 — the cheque register and its dialog (2026-09-17, deployed 23:21 IST)
 
 Scope: the PDC cheques screen (`PdcChequesView`), the record/edit cheque dialog (`PdcModal`), the cheque badge in the follow-up dialog's Cheques fold. No cheque rule changed: where a cheque stands is still `chequeState()` from its date and status; the four stored statuses, the roles that may touch a cheque, the row-level policies and the table are untouched. Two confirmed small bugs fixed on the way (below).
 
