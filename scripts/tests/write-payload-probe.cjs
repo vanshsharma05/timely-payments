@@ -27,6 +27,8 @@ const { signIn } = require(path.join(process.cwd(), 'scripts', 'signin.cjs'));
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const [OUT, COMPANY_A, COMPANY_B, COMPANY_C] = [process.argv[2], process.argv[3], process.argv[4], process.argv[5]];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The app under probe: a local dev server by default, or the deployed site (PROBE_BASE=https://…) — safe either way, every write is aborted. */
+const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, '');
 
 (async () => {
     const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] });
@@ -57,11 +59,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
         } catch { /* not json */ }
     });
 
-    await page.goto('http://localhost:3000/', { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 60000 });
     await page.evaluate(() => localStorage.setItem('timely_theme', 'light'));
     await signIn(page);
     await wait(1500);
-    await page.goto('http://localhost:3000/#customers', { waitUntil: 'networkidle2' });
+    await page.goto(BASE + '/#customers', { waitUntil: 'networkidle2' });
     await wait(1500);
 
     const search = async (q) => { await page.evaluate(() => { const i = document.querySelector('input[placeholder^="Search by name"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); }); await page.type('input[placeholder^="Search by name"]', q); await wait(900); };
@@ -101,7 +103,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
     // 5. balance sync: Data source → Sync balances → Update balances
     scenario = '5 balance sync';
-    await page.goto('http://localhost:3000/#source', { waitUntil: 'networkidle2' }); await wait(1200);
+    await page.goto(BASE + '/#source', { waitUntil: 'networkidle2' }); await wait(1200);
     await press('Sync balances');
     const t0 = Date.now(); while (Date.now() - t0 < 120000 && !(await page.$('[role="dialog"], .fixed.inset-0'))) await wait(500);
     await wait(800);

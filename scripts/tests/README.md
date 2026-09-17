@@ -26,3 +26,7 @@ node scripts/tests/<suite>.cjs <output-dir-for-screenshots>
 | `book-filters-test.cjs` | Customer book: every filter's counts follow one rule; column and order follow the ageing chip; Reset | 25 |
 | `chips-test.cjs` | Rank/ageing chip counts and lists (hard-codes the counts seen on 2026-09-16 — the one suite that will need its figures refreshed) | 20 |
 | `phone-test.cjs` | Phone layout: bottom tab bar, folded filters, rows, drawers | 38 |
+
+## Probes (read-only by construction)
+
+`write-payload-probe.cjs` and `status-contract-probe.cjs` capture what the browser *would* send and abort every mutating request (`/rest/v1/*` non-GET, mutating `/api/*`) at the network layer, so they can run against production. They default to `http://localhost:3000`; `PROBE_BASE=https://timely-payment.vercel.app` points them at the deployed site. Expected results are recorded in `docs/product-audit/11-SECURITY-RELIABILITY.md` and `16-CHANGELOG.md`.

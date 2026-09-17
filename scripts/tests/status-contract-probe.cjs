@@ -27,6 +27,8 @@ const { signIn } = require(path.join(process.cwd(), 'scripts', 'signin.cjs'));
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const [OUT, COMPANY, COMPANY_B] = [process.argv[2], process.argv[3], process.argv[4] || process.argv[3]];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The app under probe: a local dev server by default, or the deployed site (PROBE_BASE=https://…) — safe either way, every write is aborted. */
+const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, '');
 
 (async () => {
     const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] });
@@ -47,11 +49,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
         req.continue();
     });
 
-    await page.goto('http://localhost:3000/', { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2', timeout: 60000 });
     await page.evaluate(() => localStorage.setItem('timely_theme', 'light'));
     await signIn(page);
     await wait(1500);
-    await page.goto('http://localhost:3000/#customers', { waitUntil: 'networkidle2' });
+    await page.goto(BASE + '/#customers', { waitUntil: 'networkidle2' });
     await wait(1500);
 
     // Tomorrow arrives inside the tab.
