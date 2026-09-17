@@ -3,22 +3,14 @@ import * as XLSX from 'xlsx';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, followUpStatusOf, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing, isBadDebt } from '../types';
 import StatusBadge from './StatusBadge';
 import AiReportModal from './AiReportModal';
-import { 
-    ClockIcon, 
-    ExclamationTriangleIcon, 
-    WhatsAppIcon, 
-    FireIcon, 
-    UsersIcon, 
-    DownloadIcon,
-    ChequeIcon,
-    SparklesIcon
-} from './icons/Icons';
-import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
+import { WhatsAppIcon, FireIcon, DownloadIcon, ChequeIcon, SparklesIcon } from './icons/Icons';
+import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button } from './ui/Primitives';
+import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
-export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent' | 'bad_debt';
+/** `unattended` = overdue or no follow-up planned — the team table's "Unattended" column, drilled into. */
+export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent' | 'unattended' | 'bad_debt';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
 
 interface ReportsViewProps {
@@ -39,8 +31,12 @@ interface ReportsViewProps {
     onBulkSetFollowUp?: (customerIds: string[], isoDate: string) => void;
     initialCrmFilter?: string;
     initialCategoryFilter?: FollowUpCategoryFilter;
+    initialAgeingFilter?: AgeingReportFilter;
     pdcCheques?: PdcCheque[];
     onOpenPdcForCustomer?: (customerId: string) => void;
+    /** The one customer search, shared with the app bar and the book. */
+    globalSearch?: string;
+    onGlobalSearch?: (value: string) => void;
 }
 
 export const ReportsView = ({
@@ -55,10 +51,16 @@ export const ReportsView = ({
     onBulkSetFollowUp,
     initialCrmFilter = 'ALL',
     initialCategoryFilter = 'all',
+    initialAgeingFilter = 'all',
     pdcCheques = [],
     onOpenPdcForCustomer,
+    globalSearch = '',
+    onGlobalSearch,
 }: ReportsViewProps) => {
     const [selectedCrm, setSelectedCrm] = useState<string>(initialCrmFilter);
+    // A drill-down from the team table carries the person with it, the same
+    // way a dashboard card carries the category.
+    useEffect(() => { setSelectedCrm(initialCrmFilter); }, [initialCrmFilter]);
     const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>(initialCategoryFilter);
 
     // Arriving from a dashboard card carries the category with it. Following the
@@ -67,8 +69,11 @@ export const ReportsView = ({
     useEffect(() => {
         setCategoryFilter(initialCategoryFilter);
     }, [initialCategoryFilter]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [ageingFilter, setAgeingFilter] = useState<AgeingReportFilter>('all');
+    // One search, not two: the box here and the app bar's edit the same term.
+    const searchTerm = globalSearch;
+    const setSearchTerm = (value: string) => onGlobalSearch?.(value);
+    const [ageingFilter, setAgeingFilter] = useState<AgeingReportFilter>(initialAgeingFilter);
+    useEffect(() => { setAgeingFilter(initialAgeingFilter); }, [initialAgeingFilter]);
     const [isAiReportOpen, setIsAiReportOpen] = useState<boolean>(false);
 
     const today = useMemo(() => {
@@ -192,6 +197,8 @@ export const ReportsView = ({
         let ageing1_45Amount = 0;
         let badDebtCount = 0;
         let badDebtAmount = 0;
+        // What the "needs attention" banner counts: flagged urgent, or overdue.
+        let urgentCount = 0;
 
         workScopedData.forEach(item => {
             totalAmount += item.total || 0;
@@ -217,6 +224,8 @@ export const ReportsView = ({
                 badDebtAmount += item.total || 0;
                 return;
             }
+
+            if (item.isUrgent || isOverdueFollowUp(item)) urgentCount++;
 
             if (isTodayFollowUp(item)) {
                 todayCount++;
@@ -269,6 +278,7 @@ export const ReportsView = ({
             ageing1_45Amount,
             badDebtCount,
             badDebtAmount,
+            urgentCount,
         };
     }, [workScopedData, today]);
 
@@ -289,6 +299,7 @@ export const ReportsView = ({
             // that only the personal dashboard rendered, so pressing it on the
             // company dashboard dismissed the banner and did nothing else.
             if (categoryFilter === 'urgent' && (isBadDebt(item) || !(item.isUrgent || isOverdueFollowUp(item)))) return false;
+            if (categoryFilter === 'unattended' && !(isOverdueFollowUp(item) || isNoFollowUp(item))) return false;
             if (categoryFilter === 'over90' && itemOver90 <= 0) return false;
             if (categoryFilter === 'over135' && a4 <= 0) return false;
 
@@ -333,6 +344,10 @@ export const ReportsView = ({
     const PHONE_PAGE = 50;
     const [phoneVisible, setPhoneVisible] = useState(PHONE_PAGE);
     useEffect(() => { setPhoneVisible(PHONE_PAGE); }, [selectedCrm, categoryFilter, ageingFilter, searchTerm, settlementFilter]);
+    /** Six hundred rows at once made the page fifty screens long; fifty at a time, and more on request. */
+    const PAGE = 50;
+    const [visibleCount, setVisibleCount] = useState(PAGE);
+    useEffect(() => { setVisibleCount(PAGE); }, [selectedCrm, categoryFilter, ageingFilter, searchTerm, settlementFilter]);
 
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
@@ -410,35 +425,30 @@ export const ReportsView = ({
 
     return (
         <div className="space-y-5">
-            {/* Top Controls: CRM Filter, Search, AI & Excel Export */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 sm:p-5">
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-                    {/* CRM Selector */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
-                        <label htmlFor="crmSelect" className="text-sm font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap flex items-center gap-1.5">
-                            <UsersIcon />
-                            <span>Select CRM Owner:</span>
-                        </label>
+            {/* Who and which half of the book — the same controls, in the same
+                order and words, as the customer book. */}
+            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col xl:flex-row xl:items-end justify-between gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)] gap-2 items-end flex-1">
+                    <div>
+                        <label htmlFor="crmSelect" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">CRM owner</label>
                         <select
                             aria-label="Filter by CRM owner"
                             id="crmSelect"
                             value={selectedCrm}
-                            onChange={(e) => {
-                                setSelectedCrm(e.target.value);
-                            }}
-                            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-accent focus:outline-none min-w-[200px]"
+                            onChange={(e) => setSelectedCrm(e.target.value)}
+                            className="w-full h-9 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white"
                         >
-                            <option value="ALL">All CRMs (Company Overview)</option>
+                            <option value="ALL">All CRMs ({data.length.toLocaleString('en-IN')})</option>
                             {crmOwners.map(crm => (
                                 <option key={crm} value={crm}>
-                                    {getUserDisplayName(crm)} ({data.filter(d => (d.crmOwnerId || '').toUpperCase() === crm).length} accounts)
+                                    {getUserDisplayName(crm)} ({data.filter(d => (d.crmOwnerId || '').toUpperCase() === crm).length})
                                 </option>
                             ))}
-                            <option value="UNASSIGNED">Unassigned Accounts ({data.filter(d => !d.crmOwnerId || d.crmOwnerId.toUpperCase() === 'UNASSIGNED').length})</option>
+                            <option value="UNASSIGNED">Unassigned ({data.filter(d => !d.crmOwnerId || d.crmOwnerId.toUpperCase() === 'UNASSIGNED').length})</option>
                         </select>
-                        {/* Which half of the book this report is of. Settled
-                            accounts keep everything; they are simply not what a
-                            collections report is asking about. */}
+                    </div>
+                    <div>
+                        <span className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Accounts</span>
                         <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1" role="group" aria-label="Report on accounts with dues, settled accounts, or all">
                             {(['withDues', 'settled', 'all'] as SettlementFilter[]).map(key => (
                                 <button
@@ -446,7 +456,7 @@ export const ReportsView = ({
                                     type="button"
                                     onClick={() => setSettlementFilter(key)}
                                     aria-pressed={settlementFilter === key}
-                                    className={`h-8 px-3 rounded-lg text-[12.5px] font-bold whitespace-nowrap transition-colors ${
+                                    className={`h-7 px-3 rounded-lg text-[12.5px] font-bold whitespace-nowrap transition-colors ${
                                         settlementFilter === key
                                             ? 'bg-accent text-on-accent shadow-e1'
                                             : 'text-label-2 hover:bg-hover hover:text-label'
@@ -460,407 +470,160 @@ export const ReportsView = ({
                             ))}
                         </div>
                     </div>
-
-                    {/* Customer Search Filter & Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-3 flex-1 xl:justify-end">
-                        <div className="relative flex-1 min-w-[220px] xl:max-w-[300px]">
+                    <div>
+                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Search</label>
+                        <div className="relative">
                             <input
                                 type="text"
-                                placeholder="Search by customer, phone, email, CRM..."
+                                placeholder="Search by name, contact, mobile, note…"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-8 py-2 border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                                className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/40"
                             />
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                            </div>
+                            <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
                             {searchTerm && (
-                                <button
-                                    onClick={() => setSearchTerm('')}
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                                >
-                                    ✕
-                                </button>
+                                <button type="button" onClick={() => setSearchTerm('')} className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 text-sm font-bold" aria-label="Clear search">✕</button>
                             )}
                         </div>
-
-                        {canExport && (
-                        <button
-                            onClick={() => setIsAiReportOpen(true)}
-                            className="flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 bg-accent hover:bg-accent-press text-on-accent rounded-lg text-xs font-bold shadow-sm transition-all whitespace-nowrap"
-                            title="Generate AI Financial & Credit Days Reduction Report"
-                        >
-                            <SparklesIcon className="w-4 h-4 text-yellow-300 animate-pulse" />
-                            <span>AI Credit Report</span>
-                        </button>
-                        )}
-
-                        {canDownloadExcel && (
-                        <button
-                            onClick={exportToExcel}
-                            className="flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors whitespace-nowrap"
-                            title="Export Filtered Report to Excel with 1-45d, 46-90d, 91-135d, >135d breakdown"
-                        >
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 flex-none">
+                    {canExport && (
+                        <Button size="sm" variant="secondary" onClick={() => setIsAiReportOpen(true)} title="An AI-written credit summary of the accounts in this report">
+                            <SparklesIcon className="w-4 h-4" />
+                            AI summary
+                        </Button>
+                    )}
+                    {canDownloadExcel && (
+                        <Button size="sm" variant="quiet" onClick={exportToExcel} title="Download this report as Excel, with the four ageing buckets">
                             <DownloadIcon />
-                            <span>Excel</span>
-                        </button>
-                        )}
-                    </div>
+                            Excel
+                        </Button>
+                    )}
                 </div>
             </div>
 
-            {/* INSTANT HIGH-PRIORITY REPORT CARDS (Including >90 Days and >135 Days Instant Focus) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                {/* 1. >90 Days Overdue Instant Report Card */}
-                <div
-                    onClick={() => {
-                        setCategoryFilter(categoryFilter === 'over90' ? 'all' : 'over90');
-                        setAgeingFilter('all');
-                    }}
-                    className={`cursor-pointer rounded-xl p-4.5 border transition-all duration-200 transform hover:scale-[1.02] shadow-sm relative overflow-hidden ${
-                        categoryFilter === 'over90'
-                            ? 'bg-red-50 dark:bg-red-950/50 border-red-500 ring-2 ring-red-500 shadow-md'
-                            : 'bg-white dark:bg-gray-900 border-red-200/70 dark:border-red-900/40 hover:border-red-400'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-dang flex items-center gap-1">
-                            <span>&gt;90 Days Overdue</span>
-                        </span>
-                        <div className="p-2 bg-red-100 dark:bg-red-900/60 rounded-lg text-red-600 dark:text-red-300">
-                            <ClockIcon />
-                        </div>
-                    </div>
-                    <div className="mt-2.5">
-                        <div className="text-3xl font-black text-dang">
-                            {boxMetrics.over90Count} <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">customers</span>
-                        </div>
-                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
-                            {formatCurrency(boxMetrics.over90Amount)} <span className="font-normal text-label-3">(91-135d + &gt;135d)</span>
-                        </p>
-                    </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-dang">
-                        <span>{categoryFilter === 'over90' ? '✓ Showing >90d Customers' : 'Instant Report of >90d'}</span>
-                        <span>→</span>
-                    </div>
+            {/* What needs attention, and how old the money is. Every tile is the
+                filter it describes: press it and the list below is that list. The
+                four red cards and the six tiles this replaces said the same
+                numbers twice, in a colour language nothing else in the app uses. */}
+            <div className="space-y-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Stat label="Overdue" tone="dang" active={categoryFilter === 'overdue'} onClick={() => setCategoryFilter(categoryFilter === 'overdue' ? 'all' : 'overdue')}
+                        value={boxMetrics.overdueCount} sub={<><span className="num font-semibold text-label-2">{formatCompact(boxMetrics.overdueAmount)}</span> past the promised date</>} />
+                    <Stat label="Due today" tone="brand" active={categoryFilter === 'today'} onClick={() => setCategoryFilter(categoryFilter === 'today' ? 'all' : 'today')}
+                        value={boxMetrics.todayCount} sub={<><span className="num font-semibold text-label-2">{formatCompact(boxMetrics.todayAmount)}</span> to chase today</>} />
+                    <Stat label="No follow-up" tone="warn" active={categoryFilter === 'no_follow_up'} onClick={() => setCategoryFilter(categoryFilter === 'no_follow_up' ? 'all' : 'no_follow_up')}
+                        value={boxMetrics.noFollowUpCount} sub={<><span className="num font-semibold text-label-2">{formatCompact(boxMetrics.noFollowUpAmount)}</span> with nothing planned</>} />
+                    <Stat label="Bad debt" tone="dang" active={categoryFilter === 'bad_debt'} onClick={() => setCategoryFilter(categoryFilter === 'bad_debt' ? 'all' : 'bad_debt')}
+                        value={boxMetrics.badDebtCount} sub={<><span className="num font-semibold text-label-2">{formatCompact(boxMetrics.badDebtAmount)}</span> on the recovery list</>} />
                 </div>
-
-                {/* 2. >135 Days Critical Dues Instant Report Card */}
-                <div
-                    onClick={() => {
-                        setCategoryFilter(categoryFilter === 'over135' ? 'all' : 'over135');
-                        setAgeingFilter('all');
-                    }}
-                    className={`cursor-pointer rounded-xl p-4.5 border transition-all duration-200 transform hover:scale-[1.02] shadow-sm relative overflow-hidden ${
-                        categoryFilter === 'over135'
-                            ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-600 ring-2 ring-rose-500 shadow-md'
-                            : 'bg-white dark:bg-gray-900 border-rose-200/70 dark:border-rose-900/40 hover:border-rose-400'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-dang flex items-center gap-1">
-                            <span>&gt;135 Days Critical</span>
-                        </span>
-                        <div className="p-2 bg-rose-100 dark:bg-rose-900/60 rounded-lg text-dang">
-                            <ExclamationTriangleIcon className="w-5 h-5" />
+                {/* How old the money is: the bar for shape, the four bands as the
+                    filters. One short card rather than five tiles, so the list is
+                    still on screen at 1024 px. */}
+                <div className="bg-card rounded-[16px] shadow-e1 px-5 pt-3.5 pb-3">
+                    <AgeingBar parts={{ a1: boxMetrics.ageing1_45Amount, a2: boxMetrics.ageing46_90Amount, a3: boxMetrics.ageing91_135Amount, a4: boxMetrics.over135Amount }} height={8} />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start">
+                        <div className="px-2 py-1.5 min-w-0">
+                            <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">Outstanding</span>
+                            <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5" title={formatINR(boxMetrics.totalAmount)}>{formatCompact(boxMetrics.totalAmount)}</span>
+                            <span className="block text-[12px] text-label-3 mt-0.5 truncate" title="Share of accounts with dues that are completed, due today or upcoming">
+                                {boxMetrics.totalCount.toLocaleString('en-IN')} accounts · timely score <span className="num font-semibold text-label-2">{boxMetrics.performanceScore}%</span>
+                            </span>
                         </div>
-                    </div>
-                    <div className="mt-2.5">
-                        <div className="text-3xl font-black text-dang">
-                            {boxMetrics.over135Count} <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">customers</span>
-                        </div>
-                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
-                            {formatCurrency(boxMetrics.over135Amount)} <span className="font-normal text-dang">Critical late</span>
-                        </p>
-                    </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-bold text-dang">
-                        <span>{categoryFilter === 'over135' ? '✓ Showing >135d Customers' : 'Instant Report of >135d'}</span>
-                        <span>→</span>
-                    </div>
-                </div>
-
-                {/* 3. Today Follow up */}
-                <div
-                    onClick={() => {
-                        setCategoryFilter(categoryFilter === 'today' ? 'all' : 'today');
-                        setAgeingFilter('all');
-                    }}
-                    className={`cursor-pointer rounded-xl p-4.5 border transition-all duration-200 transform hover:scale-[1.02] shadow-sm ${
-                        categoryFilter === 'today'
-                            ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-500 ring-2 ring-blue-500 shadow-md'
-                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-blue-300'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-accent">Today Follow up</span>
-                        <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-accent">
-                            <ClockIcon />
-                        </div>
-                    </div>
-                    <div className="mt-2.5">
-                        <div className="text-3xl font-extrabold text-gray-900 dark:text-white">
-                            {boxMetrics.todayCount}
-                        </div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">
-                            {formatCurrency(boxMetrics.todayAmount)}
-                        </p>
-                    </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-accent">
-                        <span>{categoryFilter === 'today' ? '✓ Showing Today' : 'Click to view report'}</span>
-                        <span>→</span>
-                    </div>
-                </div>
-
-                {/* 4. No Follow up Scheduled */}
-                <div
-                    onClick={() => {
-                        setCategoryFilter(categoryFilter === 'no_follow_up' ? 'all' : 'no_follow_up');
-                        setAgeingFilter('all');
-                    }}
-                    className={`cursor-pointer rounded-xl p-4.5 border transition-all duration-200 transform hover:scale-[1.02] shadow-sm ${
-                        categoryFilter === 'no_follow_up'
-                            ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-500 ring-2 ring-amber-500 shadow-md'
-                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-amber-300'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-warn">No Follow-up Set</span>
-                        <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-warn">
-                            <ExclamationTriangleIcon className="w-5 h-5" />
-                        </div>
-                    </div>
-                    <div className="mt-2.5">
-                        <div className="text-3xl font-extrabold text-gray-900 dark:text-white">
-                            {boxMetrics.noFollowUpCount}
-                        </div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mt-1">
-                            {formatCurrency(boxMetrics.noFollowUpAmount)}
-                        </p>
-                    </div>
-                    <div className="mt-2.5 flex items-center justify-between text-xs font-semibold text-warn">
-                        <span>{categoryFilter === 'no_follow_up' ? '✓ Showing No Follow-up' : 'Click to view report'}</span>
-                        <span>→</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* PERFORMANCE SUMMARY & LIVE AGEING BUCKETS BAR */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 sm:p-5">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-800 pb-3.5">
-                    <div>
-                        <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <span>Portfolio Overview & Ageing Summary:</span>
-                            <span className="text-pos">{selectedCrm === 'ALL' ? 'Company Total' : getUserDisplayName(selectedCrm)}</span>
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Live bucket monitoring for 1-45d, 46-90d, 91-135d, and critical &gt;135d.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div className="text-right">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">Timely Follow-up Score:</span>
-                            <div className="text-lg font-extrabold text-gray-900 dark:text-white">
-                                {boxMetrics.performanceScore}%
-                            </div>
-                        </div>
-                        <div className="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                            <div
-                                className={`h-3 rounded-full ${boxMetrics.performanceScore >= 75 ? 'bg-emerald-500' : boxMetrics.performanceScore >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                style={{ width: `${boxMetrics.performanceScore}%` }}
-                            ></div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* 6 Live Metric Tiles with Ageing Focus */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-3.5 text-center">
-                    <div className="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg">
-                        <p className="text-[12.5px] text-gray-500 dark:text-gray-400 font-medium uppercase">Total Accounts</p>
-                        <p className="text-base font-extrabold text-gray-900 dark:text-white mt-0.5">{boxMetrics.totalCount}</p>
-                        <p className="text-[11.5px] text-label-3">{formatCurrency(boxMetrics.totalAmount)}</p>
-                    </div>
-                    <div className="p-2.5 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-lg">
-                        <p className="text-[12.5px] text-emerald-800 dark:text-emerald-300 font-medium uppercase">1-45 Days (Current)</p>
-                        <p className="text-base font-extrabold text-pos mt-0.5">{formatCurrency(boxMetrics.ageing1_45Amount)}</p>
-                        <p className="text-[11.5px] text-pos">{boxMetrics.ageing1_45Count} accounts</p>
-                    </div>
-                    <div className="p-2.5 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40 rounded-lg">
-                        <p className="text-[12.5px] text-amber-800 dark:text-amber-300 font-medium uppercase">46-90 Days</p>
-                        <p className="text-base font-extrabold text-warn mt-0.5">{formatCurrency(boxMetrics.ageing46_90Amount)}</p>
-                        <p className="text-[11.5px] text-warn">{boxMetrics.ageing46_90Count} accounts</p>
-                    </div>
-                    <div className="p-2.5 bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 rounded-lg">
-                        <p className="text-[12.5px] text-orange-900 dark:text-orange-300 font-bold uppercase">91-135 Days</p>
-                        <p className="text-base font-extrabold text-age-3-ink mt-0.5">{formatCurrency(boxMetrics.ageing91_135Amount)}</p>
-                        <p className="text-[11.5px] text-age-3-ink">{boxMetrics.ageing91_135Count} accounts</p>
-                    </div>
-                    <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 rounded-lg">
-                        <p className="text-[12.5px] text-rose-900 dark:text-rose-200 font-extrabold uppercase">&gt;135 Days Critical</p>
-                        <p className="text-base font-black text-dang mt-0.5">{formatCurrency(boxMetrics.over135Amount)}</p>
-                        <p className="text-[11.5px] text-dang font-semibold">{boxMetrics.over135Count} accounts</p>
-                    </div>
-                    <div className="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded-lg">
-                        <p className="text-[12.5px] text-red-900 dark:text-red-200 font-extrabold uppercase">Total &gt;90d Overdue</p>
-                        <p className="text-base font-black text-red-700 dark:text-red-400 mt-0.5">{formatCurrency(boxMetrics.over90Amount)}</p>
-                        <p className="text-[11.5px] text-red-600 dark:text-red-300 font-semibold">{boxMetrics.over90Count} accounts</p>
+                        {([
+                            ['1-45', AGE_BANDS[0], boxMetrics.ageing1_45Amount, boxMetrics.ageing1_45Count],
+                            ['46-90', AGE_BANDS[1], boxMetrics.ageing46_90Amount, boxMetrics.ageing46_90Count],
+                            ['91-135', AGE_BANDS[2], boxMetrics.ageing91_135Amount, boxMetrics.ageing91_135Count],
+                            ['over135', AGE_BANDS[3], boxMetrics.over135Amount, boxMetrics.over135Count],
+                        ] as const).map(([key, band, amount, count]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setAgeingFilter(ageingFilter === key ? 'all' : key)}
+                                aria-pressed={ageingFilter === key}
+                                title={`${band.label} overdue — ${formatINR(amount)} across ${count} accounts. Press to list them.`}
+                                className={`text-left rounded-[12px] px-2 py-1.5 min-w-0 transition-colors ${ageingFilter === key ? 'bg-accent-tint ring-2 ring-accent' : 'hover:bg-hover'}`}
+                            >
+                                <span className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wider text-label-3">
+                                    <span className="w-2 h-2 rounded-full flex-none" style={{ background: band.varName }} aria-hidden="true" />
+                                    {band.label}
+                                </span>
+                                <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5">{formatCompact(amount)}</span>
+                                <span className="block text-[12px] text-label-3 mt-0.5 truncate">
+                                    {boxMetrics.totalAmount > 0 ? Math.round((amount / boxMetrics.totalAmount) * 100) : 0}% of the book · {count} accounts
+                                </span>
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>
 
             {/* CUSTOMER REPORT LIST TABLE */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
-                {/* Table Header Controls & Filter Tabs */}
-                <div className="p-4 sm:p-5 border-b border-gray-200 dark:border-gray-800 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 max-md:flex-wrap">
-                            <h4 className="text-base font-bold text-gray-900 dark:text-white">
-                                Customer Report List
-                            </h4>
-                            <span className="px-2.5 py-0.5 bg-green-100 dark:bg-green-950/60 text-green-800 dark:text-green-300 text-xs font-bold rounded-full">
-                                {filteredReportData.length} Records
-                            </span>
-                            <AgeingLegend className="gap-3 ml-1" />
-                        </div>
-
-                        {/* Category Filter Tabs */}
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
-                            <button
-                                onClick={() => setCategoryFilter('all')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'all'
-                                        ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-bold'
-                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
-                                }`}
-                            >
-                                All ({boxMetrics.totalCount})
+            <div className="bg-card rounded-[16px] shadow-e1 overflow-hidden">
+                {/* The list's own filters — follow-up state and ageing — in the
+                    same words the customer book uses. */}
+                <div className="px-3.5 py-2.5 bg-card-2 border-b border-separator flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-gray-800 dark:text-gray-200">
+                            {filteredReportData.length.toLocaleString('en-IN')} account{filteredReportData.length === 1 ? '' : 's'}
+                        </span>
+                        <AgeingLegend className="gap-3" />
+                        {(categoryFilter !== 'all' || ageingFilter !== 'all' || searchTerm) && (
+                            <button type="button" onClick={() => { setCategoryFilter('all'); setAgeingFilter('all'); setSearchTerm(''); }} className="text-[12.5px] text-dang font-bold hover:underline px-1">
+                                Reset
                             </button>
-                            <button
-                                onClick={() => setCategoryFilter('over90')}
-                                className={`h-8 px-3 rounded-full transition-colors font-semibold ${
-                                    categoryFilter === 'over90'
-                                        ? 'bg-red-600 text-white ring-2 ring-red-400'
-                                        : 'bg-red-50 dark:bg-red-950/40 text-dang hover:bg-red-100 border border-red-200 dark:border-red-800'
-                                }`}
-                            >
-                                &gt;90d Report ({boxMetrics.over90Count})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('over135')}
-                                className={`h-8 px-3 rounded-full transition-colors font-semibold ${
-                                    categoryFilter === 'over135'
-                                        ? 'bg-rose-700 text-white ring-2 ring-rose-400'
-                                        : 'bg-rose-50 dark:bg-rose-950/40 text-dang hover:bg-rose-100 border border-rose-200 dark:border-rose-800'
-                                }`}
-                            >
-                                &gt;135d Report ({boxMetrics.over135Count})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('today')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'today'
-                                        ? 'bg-blue-600 text-white font-bold'
-                                        : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100'
-                                }`}
-                            >
-                                Today ({boxMetrics.todayCount})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('no_follow_up')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'no_follow_up'
-                                        ? 'bg-amber-600 text-white font-bold'
-                                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
-                                }`}
-                            >
-                                No Date ({boxMetrics.noFollowUpCount})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('overdue')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'overdue'
-                                        ? 'bg-red-600 text-white font-bold'
-                                        : 'bg-red-50 dark:bg-red-950/40 text-dang hover:bg-red-100'
-                                }`}
-                            >
-                                Overdue ({boxMetrics.overdueCount})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('future')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'future'
-                                        ? 'bg-emerald-600 text-white font-bold'
-                                        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
-                                }`}
-                            >
-                                Future ({boxMetrics.futureCount})
-                            </button>
-                            <button
-                                onClick={() => setCategoryFilter('completed')}
-                                className={`h-8 px-3 rounded-full transition-colors ${
-                                    categoryFilter === 'completed'
-                                        ? 'bg-green-700 text-white font-bold'
-                                        : 'bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300 hover:bg-green-100'
-                                }`}
-                            >
-                                Completed ({boxMetrics.completedCount})
-                            </button>
-                            {/* The recovery list — the defaulters the four
-                                follow-up chips leave out. */}
-                            <button
-                                onClick={() => setCategoryFilter('bad_debt')}
-                                className={`h-8 px-3 rounded-full transition-colors font-semibold ${
-                                    categoryFilter === 'bad_debt'
-                                        ? 'bg-dang text-white ring-2 ring-rose-400'
-                                        : 'bg-dang-bg text-dang hover:brightness-95 border border-rose-200 dark:border-rose-800'
-                                }`}
-                            >
-                                Bad debt ({boxMetrics.badDebtCount})
-                            </button>
-                        </div>
+                        )}
                     </div>
-
-                    {/* Secondary Ageing Breakdown Quick-Filter Bar */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs bg-slate-50 dark:bg-gray-800/60 p-2 rounded-lg border border-slate-200 dark:border-gray-700">
-                        <span className="text-gray-500 dark:text-gray-400 font-bold uppercase text-[11.5px] mr-1">Filter by Ageing Bucket:</span>
-                        <button
-                            onClick={() => setAgeingFilter('all')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === 'all' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                        >
-                            All Ageing
-                        </button>
-                        <button
-                            onClick={() => setAgeingFilter('1-45')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '1-45' ? 'bg-emerald-600 text-white' : 'text-pos hover:bg-emerald-100 dark:hover:bg-emerald-950/40'}`}
-                        >
-                            1-45d ({boxMetrics.ageing1_45Count})
-                        </button>
-                        <button
-                            onClick={() => setAgeingFilter('46-90')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold transition-colors ${ageingFilter === '46-90' ? 'bg-amber-600 text-white' : 'text-warn hover:bg-amber-100 dark:hover:bg-amber-950/40'}`}
-                        >
-                            46-90d ({boxMetrics.ageing46_90Count})
-                        </button>
-                        <button
-                            onClick={() => setAgeingFilter('91-135')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === '91-135' ? 'bg-orange-600 text-white' : 'text-age-3-ink hover:bg-orange-100 dark:hover:bg-orange-950/40'}`}
-                        >
-                            91-135d ({boxMetrics.ageing91_135Count})
-                        </button>
-                        <button
-                            onClick={() => setAgeingFilter('over135')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === 'over135' ? 'bg-rose-700 text-white' : 'text-dang hover:bg-rose-100 dark:hover:bg-rose-950/40'}`}
-                        >
-                            &gt;135d ({boxMetrics.over135Count})
-                        </button>
-                        <button
-                            onClick={() => setAgeingFilter('over90')}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-bold transition-colors ${ageingFilter === 'over90' ? 'bg-red-600 text-white' : 'text-dang hover:bg-red-100 dark:hover:bg-red-950/40'}`}
-                        >
-                            &gt;90d Total ({boxMetrics.over90Count})
-                        </button>
+                    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Follow-up state">
+                        {([
+                            ['all', 'All', boxMetrics.totalCount],
+                            ['overdue', 'Overdue', boxMetrics.overdueCount],
+                            ['today', 'Due today', boxMetrics.todayCount],
+                            ['future', 'Upcoming', boxMetrics.futureCount],
+                            ['no_follow_up', 'No follow-up', boxMetrics.noFollowUpCount],
+                            ['unattended', 'Unattended', boxMetrics.overdueCount + boxMetrics.noFollowUpCount],
+                            ['completed', 'Completed', boxMetrics.completedCount],
+                            ['bad_debt', 'Bad debt', boxMetrics.badDebtCount],
+                            ['urgent', 'Needs attention', boxMetrics.urgentCount],
+                        ] as const).filter(([key]) => key !== 'urgent' || categoryFilter === 'urgent').map(([key, label, count]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setCategoryFilter(key)}
+                                aria-pressed={categoryFilter === key}
+                                className={`h-8 px-3 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
+                                    categoryFilter === key ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator-strong hover:bg-hover hover:text-label'
+                                }`}
+                            >
+                                {label} <span className="num opacity-80">({count})</span>
+                            </button>
+                        ))}
                     </div>
+                </div>
+                <div className="px-3.5 py-2 border-b border-separator flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Ageing">
+                    <span className="text-[11.5px] font-bold text-gray-500 dark:text-gray-400 mr-1">Ageing:</span>
+                    {([
+                        ['all', 'All ageing', boxMetrics.totalCount, 'bg-gray-900 text-white dark:bg-white dark:text-gray-900', 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200', 'Every account in this report'],
+                        ['1-45', '1–45d', boxMetrics.ageing1_45Count, 'bg-emerald-600 text-white', 'bg-emerald-50 dark:bg-emerald-950/40 text-pos border border-emerald-200 dark:border-emerald-800', 'Has money 1–45 days overdue'],
+                        ['46-90', '46–90d', boxMetrics.ageing46_90Count, 'bg-amber-600 text-white', 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800', 'Has money 46–90 days overdue'],
+                        ['91-135', '91–135d', boxMetrics.ageing91_135Count, 'bg-orange-600 text-white', 'bg-orange-50 dark:bg-orange-950/40 text-age-3-ink border border-orange-200 dark:border-orange-800', 'Has money 91–135 days overdue'],
+                        ['over135', '>135d', boxMetrics.over135Count, 'bg-red-600 text-white', 'bg-red-50 dark:bg-red-950/40 text-dang border border-red-200 dark:border-red-800', 'Has money more than 135 days overdue'],
+                        ['over90', '>90d total', boxMetrics.over90Count, 'bg-orange-600 text-white', 'bg-orange-50 dark:bg-orange-950/40 text-age-3-ink border border-orange-200 dark:border-orange-800', 'Has money more than 90 days overdue (91–135 and >135 together)'],
+                    ] as const).map(([key, label, count, on, off, title]) => (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => setAgeingFilter(key)}
+                            aria-pressed={ageingFilter === key}
+                            title={title}
+                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-all ${ageingFilter === key ? on : off}`}
+                        >
+                            {label} <span className="num opacity-80">({count})</span>
+                        </button>
+                    ))}
                 </div>
 
                 {selectable && selected.length > 0 && (
@@ -1001,8 +764,8 @@ export const ReportsView = ({
                         )}
                         {filteredReportData.length === 0 ? (
                             <div className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
-                                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No customer records match the selected report criteria.</p>
-                                <p className="text-[12.5px] text-gray-400 mt-1">Try switching to "All" or choosing another ageing bucket.</p>
+                                <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No accounts match this report.</p>
+                                <p className="text-[12.5px] text-gray-400 mt-1">Choose another follow-up state or ageing, or press Reset above.</p>
                             </div>
                         ) : (
                             <div className="divide-y divide-gray-200 dark:divide-gray-800">
@@ -1065,19 +828,18 @@ export const ReportsView = ({
                                         </label>
                                     </th>
                                 )}
-                                <th className="px-3 py-2.5 text-left min-w-[180px]">Company / Contact</th>
-                                <th className="px-2.5 py-2.5 text-right">Total Due</th>
+                                <th className="px-3 py-2.5 text-left min-w-[200px]">Customer</th>
+                                <th className="px-2.5 py-2.5 text-right">Balance</th>
                                 
                                 {/* The four buckets, as one column - same as the customer ledger */}
-                                <th className="px-2.5 py-2.5 text-left w-[204px] min-w-[204px]">Ageing</th>
+                                <th className="px-2.5 py-2.5 text-left w-[110px] min-w-[110px] xl:w-[204px] xl:min-w-[204px]">Ageing</th>
                                 <th className="px-2.5 py-2.5 text-right text-dang">
-                                    &gt;90d Total
+                                    Over 90 days
                                 </th>
 
-                                <th className="px-2.5 py-2.5 text-center">Status</th>
-                                <th className="px-2.5 py-2.5 text-left">Follow-up</th>
+                                <th className="px-2.5 py-2.5 text-center">Follow-up / Status</th>
                                 <th className="px-2.5 py-2.5 text-left">CRM Owner</th>
-                                <th className="px-2.5 py-2.5 text-left hidden lg:table-cell">Last Note</th>
+                                <th className="px-2.5 py-2.5 text-left hidden xl:table-cell">Last note</th>
                                 <th className="px-2.5 py-2.5 text-right">Actions</th>
                             </tr>
                         </thead>
@@ -1085,12 +847,12 @@ export const ReportsView = ({
                             {filteredReportData.length === 0 ? (
                                 <tr>
                                     <td colSpan={selectable ? 12 : 11} className="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
-                                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No customer records match the selected report criteria.</p>
-                                        <p className="text-[12.5px] text-gray-400 mt-1">Try switching to"All" or choosing another ageing bucket.</p>
+                                        <p className="text-xs font-bold text-gray-700 dark:text-gray-300">No accounts match this report.</p>
+                                        <p className="text-[12.5px] text-gray-400 mt-1">Choose another follow-up state or ageing, or press Reset above.</p>
                                     </td>
                                 </tr>
                             ) : (
-                                filteredReportData.map((item) => {
+                                filteredReportData.slice(0, visibleCount).map((item) => {
                                     const { a1, a2, a3, a4, over90: over90Total } = overdueAgeing(item);
                                     const hasOver90Dues = over90Total > 0;
                                     
@@ -1150,8 +912,8 @@ export const ReportsView = ({
                                                         </span>
                                                     )}
                                                     {hasOver90Dues && (
-                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-extrabold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200 border border-red-200 dark:border-red-800" title="Overdue > 90 Days late payment focus">
-                                                            &gt;90d
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11.5px] font-extrabold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200 border border-red-200 dark:border-red-800" title="Has money more than 90 days overdue">
+                                                            &gt;90 days
                                                         </span>
                                                     )}
                                                     {activePdcs.length > 0 && (
@@ -1200,24 +962,16 @@ export const ReportsView = ({
                                             {/* Ageing - bar for shape, then every bucket in full rupees keyed to
                                                 its colour. Four number columns cost ~650px here, which is what
                                                 pushed Status, Follow-up, CRM and Actions off the screen. */}
-                                            <td className="px-2.5 py-2 align-middle">
+                                            <td className="px-2.5 py-2 align-middle" title={AGE_BANDS.map((band, i) => `${band.label}: ${formatINR([a1, a2, a3, a4][i])}`).join(' · ')}>
                                                 <AgeingBar parts={{ a1, a2, a3, a4 }} height={6} />
-                                                <div className="mt-1.5 grid grid-cols-2 gap-x-2.5 gap-y-0.5 text-[11px] leading-[1.35]">
+                                                <div className="mt-1.5 flex items-center gap-2 text-[11px] leading-none whitespace-nowrap max-xl:hidden">
                                                     {AGE_BANDS.map((band, i) => {
                                                         const v = [a1, a2, a3, a4][i];
                                                         return (
-                                                            <span
-                                                                key={band.key}
-                                                                className="inline-flex items-center gap-1 whitespace-nowrap"
-                                                                title={`${band.label}: ${formatINR(v)}`}
-                                                            >
-                                                                <span
-                                                                    className="w-1.5 h-1.5 rounded-full flex-none"
-                                                                    style={{ background: band.varName, opacity: v > 0 ? 1 : 0.3 }}
-                                                                    aria-hidden="true"
-                                                                />
-                                                                <span className={v > 0 ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>
-                                                                    {v > 0 ? formatINR(v) : '—'}
+                                                            <span key={band.key} className="inline-flex items-center gap-1" title={`${band.label}: ${formatINR(v)}`}>
+                                                                <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: band.varName, opacity: v > 0 ? 1 : 0.3 }} aria-hidden="true" />
+                                                                <span className={`num ${v > 0 ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}`}>
+                                                                    {v > 0 ? formatCompact(v) : '—'}
                                                                 </span>
                                                             </span>
                                                         );
@@ -1232,44 +986,18 @@ export const ReportsView = ({
                                                 </span>
                                             </td>
 
-                                            {/* Status Badge */}
-                                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                                                {isTodayFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300">
-                                                        Today
-                                                    </span>
-                                                ) : isNoFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
-                                                        No Date
-                                                    </span>
-                                                ) : isOverdueFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-300">
-                                                        Overdue
-                                                    </span>
-                                                ) : isFutureFollowUp(item) ? (
-                                                    <span className="px-2 py-0.5 rounded-full text-[12.5px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                                                        Future
-                                                    </span>
-                                                ) : (
+                                            {/* Follow-up / Status — the same badge and the same words as the book */}
+                                            <td className="px-2.5 py-2 text-center">
+                                                <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 max-w-[210px] mx-auto">
                                                     <StatusBadge status={followUpStatusOf(item, today)} />
-                                                )}
-                                            </td>
-
-                                            {/* Follow-up Date & Expected Amount */}
-                                            <td className="px-2.5 py-2.5 whitespace-nowrap">
-                                                <div className="flex flex-col gap-0.5">
-                                                    {item.followUpDate ? (
-                                                        <span className={`text-xs font-semibold ${isTodayFollowUp(item) ? 'text-accent font-bold' : isOverdueFollowUp(item) ? 'text-dang font-bold' : 'text-label-2'}`}>
-                                                            {formatDate(item.followUpDate)}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-xs text-warn font-medium italic">
-                                                            Not Set
-                                                        </span>
-                                                    )}
+                                                    <span className={`text-[11.5px] font-bold whitespace-nowrap ${
+                                                        isOverdueFollowUp(item) ? 'text-dang' : isTodayFollowUp(item) ? 'text-accent font-extrabold' : isFutureFollowUp(item) ? 'text-pos font-semibold' : 'text-gray-600 dark:text-gray-400'
+                                                    }`} title={item.followUpDate ? formatDate(item.followUpDate) : undefined}>
+                                                        {followUpWhen(item, today)}
+                                                    </span>
                                                     {item.forecastAmount !== undefined && item.forecastAmount > 0 && (
-                                                        <span className="inline-flex items-center gap-0.5 text-[11.5px] font-bold text-pos">
-                                                            {formatCurrency(item.forecastAmount)}
+                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 num whitespace-nowrap" title="Amount the customer promised">
+                                                            {formatCurrency(item.forecastAmount)} expected
                                                         </span>
                                                     )}
                                                 </div>
@@ -1281,7 +1009,7 @@ export const ReportsView = ({
                                             </td>
 
                                             {/* Last Note */}
-                                            <td className="px-2.5 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate hidden lg:table-cell" title={item.notes?.[item.notes.length - 1] || ''}>
+                                            <td className="px-2.5 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate hidden xl:table-cell" title={item.notes?.[item.notes.length - 1] || ''}>
                                                 {item.notes && item.notes.length > 0 ? item.notes[item.notes.length - 1] : '—'}
                                             </td>
 
@@ -1289,17 +1017,19 @@ export const ReportsView = ({
                                             <td className="px-2.5 py-2.5 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     <button
-                                                        onClick={() => onFollowUp(item)}
-                                                        className="h-8 px-3.5 bg-green-600 hover:bg-green-700 text-white rounded-full text-xs font-semibold transition-colors"
-                                                    >
-                                                        Update
-                                                    </button>
-                                                    <button
                                                         onClick={() => onWhatsApp(item)}
-                                                        className="w-8 h-8 grid place-items-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-full transition-colors"
-                                                        title="Send WhatsApp reminder"
+                                                        className="w-8 h-8 grid place-items-center text-pos hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-full transition-colors"
+                                                        title="Open a WhatsApp reminder"
+                                                        aria-label={`WhatsApp ${item.company}`}
                                                     >
                                                         <WhatsAppIcon className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onFollowUp(item)}
+                                                        className="h-8 px-3 bg-accent hover:bg-accent-press text-on-accent rounded-full text-[12.5px] font-semibold transition-colors shadow-2xs"
+                                                        title="Open this account: log the call, set the next date"
+                                                    >
+                                                        Follow up
                                                     </button>
                                                 </div>
                                             </td>
@@ -1309,6 +1039,17 @@ export const ReportsView = ({
                             )}
                         </tbody>
                     </table>
+                    {visibleCount < filteredReportData.length && (
+                        <div className="p-3 border-t border-separator flex justify-center">
+                            <button
+                                type="button"
+                                onClick={() => setVisibleCount(c => c + PAGE * 2)}
+                                className="h-9 px-5 rounded-xl bg-card-2 hover:bg-hover text-[13px] font-semibold text-label-2"
+                            >
+                                Show more &mdash; {(filteredReportData.length - visibleCount).toLocaleString('en-IN')} left
+                            </button>
+                        </div>
+                    )}
                 </div>
                 )}
             </div>

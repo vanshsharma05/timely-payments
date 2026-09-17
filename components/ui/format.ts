@@ -1,3 +1,5 @@
+import { Outstanding, FollowUpStatus } from '../../types';
+
 /**
  * Money formatting for an Indian receivables book.
  *
@@ -107,3 +109,18 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/** "3d overdue", "Today", "in 5d · 22 Sept", "No date": what the follow-up column says. */
+export const followUpWhen = (item: Outstanding, today: Date): string => {
+    if (!item.followUpDate) return 'No date';
+    const d = new Date(item.followUpDate);
+    if (isNaN(d.getTime())) return 'No date';
+    const day = new Date(d); day.setHours(0, 0, 0, 0);
+    const t = new Date(today); t.setHours(0, 0, 0, 0);
+    const diff = Math.round((day.getTime() - t.getTime()) / 86_400_000);
+    const short = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    if (item.status === FollowUpStatus.Completed) return short;
+    if (diff === 0) return 'Today';
+    if (diff < 0) return `${-diff}d overdue · ${short}`;
+    if (diff === 1) return `Tomorrow · ${short}`;
+    return diff <= 14 ? `in ${diff}d · ${short}` : short;
+};

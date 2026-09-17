@@ -5,6 +5,7 @@ import * as repo from './services/repository';
 import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
 import { SaveStatus, combineStatus } from './components/SaveStatus';
 import { mergeServerRows, replaceOrAdd } from './services/refresh';
+import { searchScopeFor } from './services/search';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
@@ -36,7 +37,7 @@ import UserModal from './components/UserModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import TemplateModal from './components/TemplateModal';
 import NotificationBanner from './components/NotificationBanner';
-import ReportsView, { FollowUpCategoryFilter } from './components/ReportsView';
+import ReportsView, { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
 import SyncReconciliationModal from './components/SyncReconciliationModal';
 import ResetConfirmModal from './components/ResetConfirmModal';
 import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
@@ -154,8 +155,14 @@ const App = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    /** Live stock's own term: a customer searched in the book must not empty the stock list (services/search.ts). */
+    const [stockSearch, setStockSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<FollowUpStatus | null>(null);
     const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>('all');
+    // What Reports opens on when a manager arrives from Today: a person (the
+    // team table) and an ageing band (the portfolio card). 'ALL' / 'all' = no filter.
+    const [reportCrm, setReportCrm] = useState<string>('ALL');
+    const [reportAgeing, setReportAgeing] = useState<AgeingReportFilter>('all');
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<Outstanding | null>(null);
@@ -775,7 +782,25 @@ const App = () => {
         setCategoryFilter('all');
         setPriorityFilter(false);
         setUnattendedFilter(false);
+        setReportCrm('ALL');
+        setReportAgeing('all');
         setSearchTerm('');
+    };
+
+    /**
+     * From a number on Today to the accounts behind it. Reports opens on the
+     * same person, the same follow-up state and the same ageing band the number
+     * was counting — nothing else carried over, so a stale filter from an
+     * earlier visit cannot hide part of the list.
+     */
+    const openReport = (opts: { crm?: string; category?: FollowUpCategoryFilter; ageing?: AgeingReportFilter }) => {
+        setPriorityFilter(false);
+        setUnattendedFilter(false);
+        setStatusFilter(null);
+        setReportCrm(opts.crm ?? 'ALL');
+        setCategoryFilter(opts.category ?? 'all');
+        setReportAgeing(opts.ageing ?? 'all');
+        setAdminTab('reports');
     };
 
     /**
@@ -792,9 +817,7 @@ const App = () => {
         setShowNotificationBanner(false);
 
         if (seesWholeBook(currentUser)) {
-            setPriorityFilter(false);
-            setCategoryFilter('urgent');
-            setAdminTab('reports');
+            openReport({ category: 'urgent' });
         } else {
             setCategoryFilter('all');
             setPriorityFilter(true);
@@ -1667,6 +1690,8 @@ const App = () => {
             crmId: string; crmName: string; totalAssigned: number; followUpDone: number;
             todayFollowUp: number; overdue: number; unattended: number; timelyCount: number;
             noDues: number; badDebt: number;
+            /** Reports filters by CRM owner, so only a CRM's row (or the unassigned row) opens there. */
+            drillable?: boolean;
         };
         const statsMap = new Map<string, Stat>();
 
@@ -1680,10 +1705,10 @@ const App = () => {
         // appears rather than silently dropping off the table.
         users.filter(u => u.role === UserRole.CRM || u.role === UserRole.Collector).forEach(u => {
             const k = ownerKey(u.id);
-            if (k) statsMap.set(k, blank(u.id, u.name));
+            if (k) statsMap.set(k, { ...blank(u.id, u.name), drillable: u.role === UserRole.CRM });
         });
 
-        statsMap.set('UNASSIGNED', blank('Unassigned', 'No CRM Assigned'));
+        statsMap.set('UNASSIGNED', { ...blank('UNASSIGNED', 'No CRM Assigned'), drillable: true });
 
         /**
          * The one bucket this owner belongs in.
@@ -1700,7 +1725,7 @@ const App = () => {
             const bucketKey = known ? ownerKey(known.id) : key;
             if (!statsMap.has(bucketKey)) {
                 const label = (raw || '').trim();
-                statsMap.set(bucketKey, blank(known?.id || label, known?.name || label));
+                statsMap.set(bucketKey, { ...blank(known?.id || label, known?.name || label), drillable: !known || known.role === UserRole.CRM });
             }
             return statsMap.get(bucketKey)!;
         };
@@ -1910,45 +1935,45 @@ const App = () => {
                 <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
                     <div>
                         <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">Worklist</h2>
-                        <p className="text-[13.5px] text-label-3 mt-1">Tap a card to open it in the customer book.</p>
+                        <p className="text-[13.5px] text-label-3 mt-1">The whole company's follow-ups. Press a card to see those accounts in Reports.</p>
                     </div>
-                    {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
+                    {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter || reportCrm !== 'ALL' || reportAgeing !== 'all') && (
                         <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
                     )}
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
                     <Stat
-                        label="Due today"
-                        tone="brand"
-                        active={categoryFilter === 'today'}
-                        onClick={() => { handleCategoryBoxClick('today'); setAdminTab('reports'); }}
-                        value={fourBoxesSummary.todayCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase</>}
-                    />
-                    <Stat
                         label="Overdue"
                         tone="dang"
                         active={categoryFilter === 'overdue'}
-                        onClick={() => { handleCategoryBoxClick('overdue'); setAdminTab('reports'); }}
+                        onClick={() => openReport({ category: 'overdue' })}
                         value={fourBoxesSummary.overdueCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past promised date</>}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past the promised date</>}
+                    />
+                    <Stat
+                        label="Due today"
+                        tone="brand"
+                        active={categoryFilter === 'today'}
+                        onClick={() => openReport({ category: 'today' })}
+                        value={fourBoxesSummary.todayCount}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase today</>}
                     />
                     <Stat
                         label="No follow-up"
                         tone="warn"
                         active={categoryFilter === 'no_follow_up'}
-                        onClick={() => { handleCategoryBoxClick('no_follow_up'); setAdminTab('reports'); }}
+                        onClick={() => openReport({ category: 'no_follow_up' })}
                         value={fourBoxesSummary.noFollowUpCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> unattended</>}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> with nothing planned</>}
                     />
                     <Stat
-                        label="Scheduled"
+                        label="Upcoming"
                         tone="pos"
                         active={categoryFilter === 'future'}
-                        onClick={() => { handleCategoryBoxClick('future'); setAdminTab('reports'); }}
+                        onClick={() => openReport({ category: 'future' })}
                         value={fourBoxesSummary.futureCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> committed</>}
+                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> promised for a later date</>}
                     />
                 </div>
                 <BadDebtStrip
@@ -1956,15 +1981,23 @@ const App = () => {
                     count={fourBoxesSummary.badDebtCount}
                     amount={fourBoxesSummary.badDebtAmount}
                     active={categoryFilter === 'bad_debt'}
-                    onClick={() => { handleCategoryBoxClick('bad_debt'); setAdminTab('reports'); }}
+                    onClick={() => openReport({ category: 'bad_debt' })}
                 />
             </section>
+
+            {/* ---------- team: who is on top of their book, and who is not ---------- */}
+            {rights.runsTheTeam && (
+                <CrmPerformanceTable
+                    stats={crmPerformanceStats}
+                    onSelectCrm={(crmId, category) => openReport({ crm: crmId.toUpperCase(), category: category ?? 'all' })}
+                />
+            )}
 
             {/* ---------- portfolio ageing ---------- */}
             <Card className="p-6">
                 <SectionHeader
                     title="Portfolio ageing"
-                    subtitle="How much of the book is still healthy, and how much has gone cold."
+                    subtitle="How much of the book is still healthy, and how much has gone cold. Press a band to see its accounts in Reports."
                     actions={<AgeingLegend />}
                 />
 
@@ -1976,20 +2009,20 @@ const App = () => {
                         </p>
                         <p className="text-[13px] text-label-3 mt-2.5">{formatINR(portfolioAgeing.total)}</p>
                     </div>
-                    <div>
+                    <button type="button" className="text-left rounded-[12px] -m-2 p-2 hover:bg-hover transition-colors" onClick={() => openReport({ ageing: 'dueOver45' })} title="Accounts with money more than 45 days overdue — open in Reports">
                         <p className="label">Past 45 days</p>
                         <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
                             {formatCompact(portfolioAgeing.over45)}
                         </p>
                         <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct45}% of the book</p>
-                    </div>
-                    <div>
+                    </button>
+                    <button type="button" className="text-left rounded-[12px] -m-2 p-2 hover:bg-hover transition-colors" onClick={() => openReport({ ageing: 'over90' })} title="Accounts with money more than 90 days overdue — open in Reports">
                         <p className="label">Past 90 days</p>
                         <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
                             {formatCompact(portfolioAgeing.over90)}
                         </p>
                         <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct90}% of the book</p>
-                    </div>
+                    </button>
                 </div>
 
                 <AgeingBar parts={portfolioAgeing} height={12} className="mt-7" />
@@ -1998,15 +2031,16 @@ const App = () => {
                     {AGE_BANDS.map(band => {
                         const amount = portfolioAgeing[band.key];
                         const pct = portfolioAgeing.total > 0 ? Math.round((amount / portfolioAgeing.total) * 100) : 0;
+                        const reportBand = ({ a1: '1-45', a2: '46-90', a3: '91-135', a4: 'over135' } as const)[band.key];
                         return (
-                            <div key={band.key} className="bg-card-2 rounded-[14px] px-4 py-3.5">
+                            <button key={band.key} type="button" onClick={() => openReport({ ageing: reportBand })} title={`Accounts with money ${band.label} overdue — open in Reports`} className="bg-card-2 rounded-[14px] px-4 py-3.5 text-left hover:bg-hover transition-colors">
                                 <span className="flex items-center gap-2">
                                     <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: band.varName }} aria-hidden="true" />
                                     <span className="text-[13px] font-medium text-label-2">{band.label}</span>
                                 </span>
                                 <p className="num text-[19px] font-semibold text-label mt-2">{formatCompact(amount)}</p>
                                 <p className="text-[12.5px] text-label-3 mt-1">{pct}% of book</p>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
@@ -2085,8 +2119,6 @@ const App = () => {
                 </Card>
             </div>
 
-            {/* ---------- team: a management view, for the people who manage ---------- */}
-            {rights.runsTheTeam && <CrmPerformanceTable stats={crmPerformanceStats} />}
         </div>
     );
 
@@ -2127,7 +2159,7 @@ const App = () => {
             onRefresh={liveStock.refresh}
             currentUser={currentUser}
             showPrices={showStockPrices}
-            globalSearch={searchTerm}
+            globalSearch={stockSearch}
         />
     );
 
@@ -2413,8 +2445,11 @@ const App = () => {
                         data={appData}
                         users={users}
                         currentUser={currentUser!}
-                        initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : 'ALL'}
+                        initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : reportCrm}
                         initialCategoryFilter={categoryFilter}
+                        initialAgeingFilter={reportAgeing}
+                        globalSearch={searchTerm}
+                        onGlobalSearch={setSearchTerm}
                         onFollowUp={handleOpenFollowUp}
                         onWhatsApp={handleSendWhatsApp}
                         onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
@@ -2751,7 +2786,11 @@ const App = () => {
                                 users={users}
                                 currentUser={currentUser!}
                                 companyProfile={companyProfile}
+                                initialCrmFilter={reportCrm}
                                 initialCategoryFilter={categoryFilter}
+                                initialAgeingFilter={reportAgeing}
+                                globalSearch={searchTerm}
+                                onGlobalSearch={setSearchTerm}
                                 onFollowUp={handleOpenFollowUp}
                                 onWhatsApp={handleSendWhatsApp}
                                 onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
@@ -3346,8 +3385,8 @@ const App = () => {
                 </span>
                 )
             }
-            searchTerm={searchTerm}
-            onSearch={setSearchTerm}
+            searchTerm={searchScopeFor(safeKey) === 'stock' ? stockSearch : searchTerm}
+            onSearch={searchScopeFor(safeKey) === 'stock' ? setStockSearch : setSearchTerm}
             searchPlaceholder={safeKey === 'stock' ? 'Search stock by item, brand, category' : undefined}
             searchPlaceholderShort={safeKey === 'stock' ? 'Search stock' : undefined}
             onSync={rights.canSyncSheets ? () => handleGoogleSync() : undefined}

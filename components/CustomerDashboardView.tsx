@@ -4,7 +4,7 @@ import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatCompact, formatINR, formatDate as formatDay, localIsoDate } from './ui/format';
+import { formatCompact, formatINR, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
@@ -56,22 +56,6 @@ interface CustomerDashboardViewProps {
  * and it was not. The bucket values are kept for the links that use them.
  */
 export type AgeingCategoryFilter = 'all' | 'current' | 'dueOver45' | 'over90' | 'over135' | '1-45' | '46-90' | '91-135';
-
-/** "3d overdue", "Today", "in 5d · 22 Sept", "No date": what the follow-up column says. */
-export const followUpWhen = (item: Outstanding, today: Date): string => {
-    if (!item.followUpDate) return 'No date';
-    const d = new Date(item.followUpDate);
-    if (isNaN(d.getTime())) return 'No date';
-    const day = new Date(d); day.setHours(0, 0, 0, 0);
-    const t = new Date(today); t.setHours(0, 0, 0, 0);
-    const diff = Math.round((day.getTime() - t.getTime()) / 86_400_000);
-    const short = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-    if (item.status === FollowUpStatus.Completed) return short;
-    if (diff === 0) return 'Today';
-    if (diff < 0) return `${-diff}d overdue · ${short}`;
-    if (diff === 1) return `Tomorrow · ${short}`;
-    return diff <= 14 ? `in ${diff}d · ${short}` : short;
-};
 
 export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     data,
@@ -942,7 +926,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
                             }`}
                         >
-                            All Ageing ({counts.ageing.all})
+                            All ageing ({counts.ageing.all})
                         </button>
                         <button
                             onClick={() => setAgeingFilter(ageingFilter === 'current' ? 'all' : 'current')}

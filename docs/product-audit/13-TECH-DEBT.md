@@ -97,5 +97,7 @@ Added in the CRM-workflow session (2026-09-17, twelfth):
 | # | Item | Evidence | Prio | Confidence |
 |---|---|---|---|---|
 | T48 | The follow-up dialog still carries its own WhatsApp recipient picker + template beside `WhatsAppReminderModal` — two copies of one flow (now folded, still duplicated) | `FollowUpModal.tsx` WhatsApp section | P3 | HIGH |
-| T49 | ~~Two search boxes act on the book~~ — **fixed 2026-09-17**: one term, edited from either box | `CustomerDashboardView.tsx` | done | HIGH |
+| T49 | ~~Two search boxes act on the book~~ — **fixed 2026-09-17**: one term, edited from either box; Live stock has its own term (`services/search.ts` `searchScopeFor`) so a customer search never filters stock; Reports shares the customer term | `CustomerDashboardView.tsx`, `App.tsx`, `ReportsView.tsx` | done | HIGH |
+| T50 | Reports filters by CRM *owner* only; the team table counts accounts handed to a collector for the collector too, so a collector's row cannot drill into Reports (its numbers are plain text). A collector filter on Reports would close it | `ReportsView.tsx` `crmScopedData`, `CrmPerformanceTable.tsx` `drillable` | P4 | HIGH |
+| T51 | The team table's "Accounts with dues" excludes bad debt (+n shown beneath); Reports' *With dues* includes it — the name-drill lists n more rows than the count, each badged. Same definition in both, or a "without bad debt" toggle, would close it | `App.tsx` `crmPerformanceStats`, `ReportsView.tsx` `settlementCounts` | P4 | HIGH |
 | T50 | `FollowUpModal.tsx` (≈1,180 lines) and `CustomerDashboardView.tsx` (≈1,760) still use the old `gray-*` Tailwind dialect inside a token-based shell; the polish reused tokens where it touched, the rest is Phase 4 work | both files | P3 | HIGH |
