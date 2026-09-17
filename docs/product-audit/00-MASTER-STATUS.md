@@ -5,11 +5,11 @@ The authoritative continuation file. Read this first in every session; update it
 PROJECT: Timely Payment — Shori Chemicals' receivables follow-up app (customer book, follow-up queue, PDC cheques, reports, live stock).
 STACK: React 18 + TypeScript 5 + Vite 5 + Tailwind v4 (browser) · Express 5 dev server / Vercel serverless functions `api/*.ts` (server) · Supabase (Postgres + Auth + RLS) · Google Sheets CSV as the source of balances and stock · Nodemailer/Resend for the daily email · Google Gemini for the AI report · Vercel hosting. See 01-REPOSITORY-MAP.md.
 
-CURRENT PHASE: Engineering batch 6 (reliability of daily use: honest saves + fresh tabs + retry idempotency) **DEPLOYED 2026-09-17 15:33 IST**. Batches 2–6 live. Phases 0–3 done; Phase 4 (UX) not started; R1-B waits on Q15.
+CURRENT PHASE: Phase 4 (UX) started — batch 1, the CRM daily workflow, committed locally and NOT deployed (awaiting the owner's visual review). Batches 2–6 live.
 CURRENT SUBPHASE: —
-LAST COMPLETED TASK: Reliability session 2026-09-17 (eleventh; retry-idempotency check added the same day — client ids for activity entries, new cheques and new customers, so a retry after a lost answer never doubles a record): `useCollectionSync` gained `flush()` (per-row verdict), automatic retry with backoff and on focus/online, `onStatus`, `accept`/`forget`; the follow-up, edit and cheque dialogs wait for the verdict and stay open with everything typed on a refusal; success messages only after acceptance; bulk actions report "saved N of M"; a persistent refused-write banner and a `SaveStatus` header line on every page; the book is re-read on return to the tab / every 5 min / reconnect / Refresh button with a pending-aware merge (`services/refresh.ts`) and paused while a dialog is open. 18 new tests (167). Browser probe with every write aborted confirmed the whole path. Production untouched.
+LAST COMPLETED TASK: CRM-workflow session 2026-09-17 (twelfth): live UI inspected at 1366×768; nine usability problems recorded (06 W1–W9); the follow-up dialog restructured (context header, outcome first, four folded sections, prev/next through the list, Esc, "Save follow-up"); the book decluttered (toolbar, foldable overview by role, uniform two-line rows, plain follow-up wording, hover-only delete, empty-state reset); Esc on every workflow dialog. New `Disclosure` and `useEscape` primitives. 16 new tests (190). No rule, permission, schema or backend change.
 CURRENT TASK: None in progress.
-NEXT TASK: Owner answers Q15 (conflict policy). Then R1-B per 11 §2.2. See RECOMMENDED NEXT SESSION START.
+NEXT TASK: Owner reviews the CRM workflow visually (`npm run dev`, or approve a deploy) and answers the three UX questions in 06 (default outcome on a collected account; one search box or two; WhatsApp trace). Then Phase 4 batch 2 (Today for Managers, Reports) or R1-B after Q15. See RECOMMENDED NEXT SESSION START.
 
 BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run typecheck` (tsc --noEmit, strict): PASS, 0 errors.
@@ -17,12 +17,12 @@ BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run check:classes`: 2 pre-existing findings (`grid-frame` in AppLogo.tsx, `stroke-based` in Icons.tsx — harmless false positives).
 - `npm run check:empty`: clean.
 - Lint: NO linter configured. Type-check is the only static gate.
-- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 174 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
+- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 190 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
 - `npm audit --omit=dev`: nodemailer 9.0.6 HIGH (fix available), qs 6.15.3 MODERATE via express (fix available). Dev-only: `tar` critical and `undici` under the `vercel` CLI.
 - Runtime: Node v24.15.0, npm 11.12.1. No `engines` field. Two lockfiles (`package-lock.json` AND `bun.lock`) — kept for now by owner's instruction (D5).
-CURRENT BUILD STATUS: tsc clean; `npm run build` clean (same chunk warning); `check:classes` 2 pre-existing; `check:empty` clean — after the reliability batch. No dependency change.
+CURRENT BUILD STATUS: tsc clean; `npm run build` clean (same chunk warning); `check:classes` 2 pre-existing; `check:empty` clean — after the CRM-workflow batch. No dependency change.
 BASELINE TEST STATUS: browser suites were green at de60fc7 (see 12-TEST-STRATEGY.md). Classified for production safety in Phase 1: 7 READ ONLY, 2 CONTROLLED MUTATION WITH CLEANUP, 1 READ ONLY-but-fragile (`phone-test.cjs`), 0 UNSAFE. None executed this session.
-CURRENT TEST STATUS: unit 174/174 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 15, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7). Local browser probe (every write aborted) on the reliability batch: refused save → dialog open with the reason, typed values kept; header "1 change not saved · Retry now"; persistent banner with countdown; one write attempt; automatic retry at +5.2 s; Refresh re-reads 5 pages and keeps the unsaved row; Retry now. Production re-read unchanged (4,027 / 144; newest write 12:29 IST). Live-site probes unchanged since the fresh-start deploy.
+CURRENT TEST STATUS: unit 190/190 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 15, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7, `crmWorkflow` 16). Live-site probes unchanged since the reliability deploy. Local screenshots of the reworked screens taken with every write aborted.
 
 CRITICAL ISSUES (P0): none confirmed.
 IMPORTANT ISSUES:
@@ -36,18 +36,18 @@ IMPORTANT ISSUES:
 - P2 · Production dependency advisories (nodemailer, qs). Docs drift (`ARCHITECTURE.md` §9.1–9.2). Bundle size (xlsx for everyone).
 - P3 · Dead right `canEditFinancials`; dead column `customers.updated_by`; legacy enum values; stray root files.
 
-CURRENT DESIGN WORK: none. UX findings U1–U23 classified in 06 (17 CONFIRMED BY CODE, 3 CONFIRMED BY RUNNING UI, 3 BUSINESS-DEPENDENT/HYPOTHESIS); journeys J1–J16 in 05.
-CURRENT ENGINEERING WORK: nothing in flight. DEPLOYMENT STATE (2026-09-17 15:40 IST): production = `dpl_GfxvXMy7gxHCRTbHSBLJeAkxQn1o` = commit `7e1136a` (bundles byte-identical); `origin/restore-and-fix` = `origin/main` = `7e1136a` (+ this docs commit). Previous deployment `dpl_7mKQWQGhHHNKGnLcDe7Y13EgvHKq` (`3fbe7f7`) remains promotable. Post-deploy: smoke 12/12, both probes identical to the recorded results, production unchanged.
-FILES REVIEWED: 31 Full + 22 Partial of 107 (18-FILE-AUDIT-LEDGER.md). This session: `useSupabaseSync.ts` rewritten (Full); `PdcModal.tsx` submit path (Partial); new Full: `services/refresh.ts`, `components/SaveStatus.tsx`, two test files.
+CURRENT DESIGN WORK: Phase 4 batch 1 done (06 "Phase 4, batch 1"); batch 2 not started. UX findings U1–U24 in 06; journeys J1–J16 in 05.
+CURRENT ENGINEERING WORK: the CRM-workflow batch is **committed locally on `restore-and-fix`, not pushed, not deployed**. DEPLOYMENT STATE: production = `dpl_GfxvXMy7gxHCRTbHSBLJeAkxQn1o` = `7e1136a` (+ docs `81fb5b4` on the branches). When approved: gate + push + deploy per 17, then the smoke test and both probes (the probes' "Follow Up" button is now "Follow up" — `write-payload-probe.cjs` matches case-insensitively).
+FILES REVIEWED: 34 Full + 22 Partial of 110 (18-FILE-AUDIT-LEDGER.md). This session: `FollowUpModal.tsx` restructured (Partial → read end to end for the layout; logic untouched), `CustomerDashboardView.tsx` toolbar/rows re-read; new Full: `Disclosure.tsx`, `useEscape.ts`, `tests/crmWorkflow.dom.test.tsx`.
 FILES REMAINING: 54 not yet opened at audit depth; 22 partials to complete in Phase 8.
-CHANGES NOT YET VERIFIED: none by tooling — the reliability batch is live and verified by 25 unit tests, byte comparison of the deployed bundles, the read-only smoke test and both interception probes; not yet exercised by a human on the live build.
+CHANGES NOT YET VERIFIED: the CRM-workflow batch is verified by 16 unit tests, typecheck, build and local screenshots at laptop size, but not deployed, not seen by the owner, and not yet used by a CRM.
 OPEN QUESTIONS: Q1–Q14 in 19-OPEN-QUESTIONS.md, now as decision briefs for Q7, Q8, Q9, Q11, Q12, Q13, Q14. Blocking nothing; Q6 (staging), Q8 (reset) and Q14 (isolation) shape the fix batches.
 DECISIONS REQUIRED: none to continue Phase 4. Before the reset fix: Q8. Before RLS tightening: Q14. Before destructive tests: Q6. D7 records the recommended R1 remediation.
-REGRESSION RISKS (reliability batch): dialogs now wait ~0–1 s for the server before closing (a "Saving…" state); a slow network shows that wait where it used to close instantly. A refused write is now loud (banner stays until saved) — expected. The refresh replaces rows the tab has not changed; a dialog open on a row pauses it (T46). `handleUpdateOutstanding` / `handleSaveCustomer` / `handleSavePdc` return promises — any new caller that ignores the outcome still gets the old fire-and-forget behaviour. Standing: any change to `App.tsx`, `types.ts`, `googleSheetService.ts`, `useSupabaseSync.ts`, `repository.ts`, the dialogs or `supabase/*.sql` without the unit layer.
+REGRESSION RISKS (CRM workflow): the follow-up dialog's sections are the same markup in a new order inside folds — every field, id and handler is unchanged (pinned: statusContract, saveFailures, retryIdempotency all still pass) — but a fold that is closed hides its fields until opened, so anything that relied on scrolling to "Assign Collector" now opens *Account settings* first; the book rows truncate long contact lines (full text in the tooltip); the delete button is hidden until hover/focus (still there for the roles that had it). Standing: any change to `App.tsx`, `types.ts`, `googleSheetService.ts`, `useSupabaseSync.ts`, `repository.ts`, the dialogs or `supabase/*.sql` without the unit layer.
 RECOMMENDED NEXT SESSION START:
-1. Read this file, then 11-SECURITY-RELIABILITY.md (Part 3b the reliability batch; §2.2 the concurrency brief) and 19 Q15. Run `npm run test:run` (expect 174/174) and `npm run typecheck`.
-2. Confirm `npx vercel ls --prod` still shows `dpl_GfxvXMy7gxHCRTbHSBLJeAkxQn1o`. Remember the probes abort writes, so the dialogs now stay open on them — `write-payload-probe.cjs` closes them itself.
-3. Session 12 — R1-B per 11 §2.2, only after Q15 is answered (field-aware compare-and-set on the baseline; conflict shown through the same `SaveOutcome` path the dialogs now have).
-4. Then T44 (refresh cheques/templates the same way); then Phase 4 UX audit, continuing the ledger (U24, T36, T37, T40, T45, T46 are on the list).
+1. Read this file, then 06-UX-AUDIT.md ("Phase 4, batch 1") and 11 §2.2 / 19 Q15. Run `npm run test:run` (expect 190/190) and `npm run typecheck`.
+2. If the owner approved the batch after seeing it: deploy per 17-RELEASE-CHECKLIST.md (no SQL step), then the smoke test and both probes.
+3. Apply the owner's answers to the three UX questions in 06 (default outcome on a collected account; one search box; WhatsApp trace) — each is small.
+4. Phase 4 batch 2: the Manager's Today (U3, U13), Reports (U1, U12), the Data source tab (U14); or R1-B after Q15 — the owner's order.
 5. Update this file.
-LAST UPDATED: 2026-09-17 (reliability batch deployed and verified, twelfth).
+LAST UPDATED: 2026-09-17 (CRM-workflow session, twelfth).

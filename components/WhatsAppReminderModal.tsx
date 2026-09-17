@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useEscape } from './ui/useEscape';
 import { Outstanding, Template } from '../types';
 import { WhatsAppIcon } from './icons/Icons';
 import { renderTemplate } from '../services/messageTemplate';
@@ -10,6 +11,7 @@ interface WhatsAppReminderModalProps {
 }
 
 export const WhatsAppReminderModal = ({ customer, templates, onClose }: WhatsAppReminderModalProps) => {
+    useEscape(onClose);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
     const [recipientType, setRecipientType] = useState<'primary' | string>('primary');
     const [customRecipientNumber, setCustomRecipientNumber] = useState('');

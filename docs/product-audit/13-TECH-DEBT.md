@@ -91,3 +91,11 @@ Added in the reliability session (2026-09-17, eleventh):
 | T45 | The refused-write reason still names the account by id (`Could not save the changes to out_86_…`) — T32 restated; the dialog shows which account, the header/banner do not | `repository.ts` `updateCustomerColumns` | P4 | HIGH |
 | T46 | A refresh while the follow-up dialog is open is skipped rather than merged; a very long dialog (minutes) means the tab is as stale as the dialog is old | `App.tsx` `dialogOpenRef` | P4 | HIGH |
 | T47 | Two creates are not idempotent but are also never retried automatically: `addActivities` (the bulk date tool's system notes — a re-run of the tool skips accounts already on the date, so no double) and `reset_book` (a second press after a lost answer is refused when the plan added accounts, and otherwise runs an identical reset with one more snapshot row). A client id on both would close it | `repository.ts`, `supabase/reset.sql` | P4 | HIGH |
+
+Added in the CRM-workflow session (2026-09-17, twelfth):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T48 | The follow-up dialog still carries its own WhatsApp recipient picker + template beside `WhatsAppReminderModal` — two copies of one flow (now folded, still duplicated) | `FollowUpModal.tsx` WhatsApp section | P3 | HIGH |
+| T49 | Two search boxes act on the book (app bar `globalSearch`, the book's `searchTerm`) and combine; one should win or they should be one | `CustomerDashboardView.tsx` filter memo | P3 | HIGH |
+| T50 | `FollowUpModal.tsx` (≈1,180 lines) and `CustomerDashboardView.tsx` (≈1,760) still use the old `gray-*` Tailwind dialect inside a token-based shell; the polish reused tokens where it touched, the rest is Phase 4 work | both files | P3 | HIGH |

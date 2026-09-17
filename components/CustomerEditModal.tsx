@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { SaveOutcome } from '../services/useSupabaseSync';
+import { useEscape } from './ui/useEscape';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
@@ -65,6 +66,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     /** Waiting for the server to accept the save; the reason if it did not. */
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    useEscape(onClose, !saving);
     const [isUrgent, setIsUrgent] = useState(false);
 
     /**

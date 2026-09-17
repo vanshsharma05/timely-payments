@@ -1,12 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner, overdueAgeing } from '../types';
 import * as repo from '../services/repository';
 import type { SaveOutcome } from '../services/useSupabaseSync';
-import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
+import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
 import CustomerActivityPanel from './CustomerActivityPanel';
 import { useIsPhone } from './ui/usePhone';
+import { Disclosure } from './ui/Disclosure';
+import StatusBadge from './StatusBadge';
+import { followUpStatusOf } from '../types';
 
 interface FollowUpModalProps {
     customer: Outstanding;
@@ -23,6 +26,13 @@ interface FollowUpModalProps {
     onAddPdc?: (customerId: string) => void;
     onUpdatePdcStatus?: (chequeId: string, status: PdcStatus) => void;
     onEditCustomer?: (customer: Outstanding) => void;
+    /**
+     * Where this account sits in the list it was opened from, and how to step
+     * to its neighbours without closing — the morning is worked account by
+     * account, and closing and re-finding each one was the slowest part of it.
+     */
+    position?: { index: number; total: number };
+    onNavigate?: (direction: -1 | 1) => void;
 }
 
 const FollowUpModal = ({ 
@@ -35,7 +45,9 @@ const FollowUpModal = ({
     pdcCheques = [],
     onAddPdc,
     onUpdatePdcStatus,
-    onEditCustomer
+    onEditCustomer,
+    position,
+    onNavigate,
 }: FollowUpModalProps) => {
     const [nextFollowUpDate, setNextFollowUpDate] = useState(() => {
         if (customer.followUpDate) {
@@ -108,6 +120,13 @@ const FollowUpModal = ({
     const [customRecipientName, setCustomRecipientName] = useState('');
 
     const collectors = users.filter(u => u.role === UserRole.Collector);
+    /** Cheques still to be presented for this account — the Cheques section's one-line summary. */
+    const pdcInHand = pdcCheques.filter(p => p.customerId === customer.id && p.status !== PdcStatus.Cleared && p.status !== PdcStatus.Bounced);
+    const lastFollowUpText = (() => {
+        if (!customer.lastFollowUpOn) return 'No follow-up recorded yet';
+        const days = Math.round((Date.now() - new Date(customer.lastFollowUpOn).getTime()) / 86_400_000);
+        return days <= 0 ? 'Last follow-up today' : days === 1 ? 'Last follow-up yesterday' : `Last follow-up ${days} days ago`;
+    })();
     const crmUsers = users.filter(u => u.role === UserRole.CRM);
 
     /**
@@ -249,6 +268,18 @@ const FollowUpModal = ({
         });
     };
 
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && !saving) { e.preventDefault(); onClose(); return; }
+            if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && onNavigate && !saving) {
+                e.preventDefault();
+                onNavigate(e.key === 'ArrowRight' ? 1 : -1);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose, onNavigate, saving]);
+
     const handleSave = async () => {
         if (saving) return;
         let updatedCustomer: Outstanding = { ...customer };
@@ -376,27 +407,41 @@ const FollowUpModal = ({
                                 {customer.company}
                             </h2>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            <span>CRM Owner: <strong className="text-gray-800 dark:text-gray-200">{customer.crmOwnerId || 'Unassigned'}</strong></span>
-                            {customer.email && <span>{customer.email}</span>}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                            <StatusBadge status={followUpStatusOf(customer)} />
+                            {customer.followUpDate && (
+                                <span>Next <strong className="text-gray-800 dark:text-gray-200">{new Date(customer.followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</strong>{customer.forecastAmount ? <> · <strong className="text-gray-800 dark:text-gray-200">{formatCurrencyValue(customer.forecastAmount)}</strong> expected</> : null}</span>
+                            )}
+                            <span>{lastFollowUpText}</span>
+                            <span>Owner <strong className="text-gray-800 dark:text-gray-200">{findOwner(users, customer.crmOwnerId)?.name || customer.crmOwnerId || 'Unassigned'}</strong></span>
+                            {customer.email && customer.email.includes('@') && <span>{customer.email}</span>}
                             {onEditCustomer && (
                                 <button
                                     type="button"
                                     onClick={() => onEditCustomer(customer)}
                                     className="text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline flex items-center gap-1"
                                 >
-                                    Edit Details
+                                    Edit details
                                 </button>
                             )}
                         </div>
                     </div>
-                    <button 
-                        onClick={onClose} 
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                        title="Close"
-                     aria-label="Close">
-                        &times;
-                    </button>
+                    <div className="flex items-center gap-1 flex-none">
+                        {position && onNavigate && position.total > 1 && (
+                            <div className="hidden sm:flex items-center gap-1 mr-2 text-[12.5px] text-label-3" aria-label="Move through the list">
+                                <button type="button" onClick={() => onNavigate(-1)} disabled={saving || position.index <= 0} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Previous account (Alt+←)" aria-label="Previous account">‹</button>
+                                <span className="num tabular-nums">{position.index + 1} / {position.total}</span>
+                                <button type="button" onClick={() => onNavigate(1)} disabled={saving || position.index >= position.total - 1} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Next account (Alt+→)" aria-label="Next account">›</button>
+                            </div>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Close (Esc)"
+                            aria-label="Close">
+                            &times;
+                        </button>
+                    </div>
                 </div>
 
                 {isPhone && (
@@ -489,6 +534,157 @@ const FollowUpModal = ({
                         </div>
                     </div>
 
+                    {/* The one thing a call ends with: what happened next. First, not
+                        last — it used to sit under contacts, the WhatsApp picker and
+                        the cheques, a screen and a half down. */}
+                    <section className="rounded-xl border border-accent/30 bg-card p-4 space-y-4" aria-labelledby="this-follow-up">
+                        <div className="flex items-baseline justify-between gap-3">
+                            <h3 id="this-follow-up" className="text-[13.5px] font-bold text-label">This follow-up</h3>
+                            <span className="text-[12px] text-label-3 lg:hidden">What happened on the call goes in Activity.</span>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">What next?</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    outcome === 'follow_up' ? 'bg-green-50 dark:bg-green-950/40 border-green-500 font-bold text-green-900 dark:text-green-200 ring-2 ring-green-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                                }`}>
+                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} className="mr-2 text-green-600 dark:text-green-400"/>
+                                    <span>Follow up again</span>
+                                </label>
+                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    outcome === 'collected' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 font-bold text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                                }`}>
+                                    <input type="radio" name="outcome" value="collected" checked={outcome === 'collected'} onChange={() => setOutcome('collected')} className="mr-2 text-emerald-600 dark:text-emerald-400"/>
+                                    <span>Payment collected</span>
+                                </label>
+                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    outcome === 'no_follow_up' ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                                }`}>
+                                    <input type="radio" name="outcome" value="no_follow_up" checked={outcome === 'no_follow_up'} onChange={() => setOutcome('no_follow_up')} className="mr-2"/>
+                                    <span>No follow-up needed</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Forecast and Next Follow-up Date (Directly in Follow-up Outcome block) */}
+                        {outcome === 'follow_up' && (
+                            <div className="space-y-3 animate-in fade-in duration-150">
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label htmlFor="followUpDate" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                            Next follow-up date
+                                        </label>
+                                        <input aria-label="Next Follow-up Date"
+                                            type="date"
+                                            id="followUpDate"
+                                            value={nextFollowUpDate}
+                                            onChange={(e) => {
+                                                setNextFollowUpDate(e.target.value);
+                                                if (!forecastDate) setForecastDate(e.target.value);
+                                            }}
+                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
+                                            Amount expected (₹)
+                                        </label>
+                                        <div className="relative">
+                                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center font-bold text-gray-500 text-sm">₹</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="1000"
+                                                value={forecastAmount}
+                                                onChange={e => setForecastAmount(e.target.value)}
+                                                placeholder="e.g. 500000"
+                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-accent shadow-2xs"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Quick Presets for Amount */}
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                    <span className="text-[11.5px] font-bold text-gray-500 dark:text-gray-400 uppercase mr-1">Quick Presets:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSetPresetForecast(customer.total)}
+                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
+                                    >
+                                        Full Due (₹{formatCurrency(customer.total)})
+                                    </button>
+                                    {over90Due > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSetPresetForecast(over90Due)}
+                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 transition-colors"
+                                            title="Everything past 90 days: the 91-135 and >135 day buckets together"
+                                        >
+                                            &gt;90d Due (₹{formatCurrency(over90Due)})
+                                        </button>
+                                    )}
+                                    {customer.total > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSetPresetForecast(Math.round(customer.total / 2))}
+                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
+                                        >
+                                            50% Due (₹{formatCurrency(Math.round(customer.total / 2))})
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSetPresetForecast(100000)}
+                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
+                                    >
+                                        ₹1 Lakh
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSetPresetForecast(500000)}
+                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
+                                    >
+                                        ₹5 Lakh
+                                    </button>
+                                    {forecastAmount && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setForecastAmount('')}
+                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {canAssignCollector && (
+                                <div className="flex items-center pt-1">
+                                    <label htmlFor="isUrgent" className="flex items-center cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            id="isUrgent" 
+                                            checked={isUrgent} 
+                                            onChange={() => setIsUrgent(!isUrgent)}
+                                            className="rounded text-red-600 dark:text-red-400 focus:ring-dang w-4 h-4 mr-2"
+                                        />
+                                        <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                                            Urgent — keep this account at the top
+                                        </span>
+                                    </label>
+                                </div>
+                        )}
+                    </section>
+
+                    <Disclosure
+                        title="Contacts"
+                        summary={`${1 + additionalContacts.length} ${1 + additionalContacts.length === 1 ? 'person' : 'people'} · ${customer.contactPerson || 'no name'}${customer.contactNumber ? ' · ' + customer.contactNumber : ''}`}
+                        icon={<UserPlusIcon className="w-4 h-4" />}
+                    >
                     {/* REQUIREMENT 3: Company Contacts & Additional Persons Section */}
                     <div className="p-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-200 dark:border-blue-800/60 space-y-3">
                         <div className="flex items-center justify-between">
@@ -633,7 +829,13 @@ const FollowUpModal = ({
                             </form>
                         )}
                     </div>
+                    </Disclosure>
 
+                    <Disclosure
+                        title="WhatsApp reminder"
+                        summary={`to ${activeRecipient.name}${activeRecipient.number ? ' · ' + activeRecipient.number : ' · no number'}`}
+                        icon={<WhatsAppIcon className="w-4 h-4 text-pos" />}
+                    >
                     {/* REQUIREMENT 1: WhatsApp Reminder with option to send to Other / Additional Numbers */}
                     <div className="p-4 bg-green-50/60 dark:bg-green-950/20 rounded-xl border border-green-200 dark:border-green-800/60 space-y-3">
                         <div className="flex items-center justify-between">
@@ -770,7 +972,18 @@ const FollowUpModal = ({
                             </a>
                         </div>
                     </div>
+                    </Disclosure>
 
+                    <Disclosure
+                        title="Cheques"
+                        summary={pdcInHand.length ? `${pdcInHand.length} in hand · ${formatCurrencyValue(pdcInHand.reduce((s, q) => s + q.amount, 0))}` : 'none in hand'}
+                        icon={<ChequeIcon className="w-4 h-4" />}
+                        action={onAddPdc && (
+                            <button type="button" onClick={() => onAddPdc(customer.id)} className="h-8 px-3 rounded-full bg-accent-tint text-accent text-[12.5px] font-bold hover:bg-accent-tint-2">
+                                + Add cheque
+                            </button>
+                        )}
+                    >
                     {/* Post Dated Cheques (PDC) Section */}
                     {(() => {
                         const customerPdcs = pdcCheques.filter(p => p.customerId === customer.id);
@@ -858,153 +1071,19 @@ const FollowUpModal = ({
                             </div>
                         );
                     })()}
+                    </Disclosure>
 
-                    {/* Follow-up Notes & Outcome Section */}
-                    <div className="space-y-4 pt-1">
-                        {/* What happened goes in the shared record, not in a box
-                            only this form can see. One place, one history. */}
-                        <p className="text-[12.5px] text-label-3 bg-card-2 border border-separator rounded-lg px-3 py-2 leading-relaxed">
-                            Recording what happened on the call? Use <strong className="text-label-2">Account activity</strong> —
-                            <span className="lg:inline hidden"> the panel on the right.</span>
-                            <span className="lg:hidden"> the panel below.</span>{' '}
-                            It stamps the time and your name, and the whole team can see it.
-                        </p>
-
-                        <div>
-                            <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">Follow-up Outcome & Next Action</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                    outcome === 'follow_up' ? 'bg-green-50 dark:bg-green-950/40 border-green-500 font-bold text-green-900 dark:text-green-200 ring-2 ring-green-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                                }`}>
-                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} className="mr-2 text-green-600 dark:text-green-400"/>
-                                    <span>Requires Follow-up</span>
-                                </label>
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                    outcome === 'collected' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 font-bold text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                                }`}>
-                                    <input type="radio" name="outcome" value="collected" checked={outcome === 'collected'} onChange={() => setOutcome('collected')} className="mr-2 text-emerald-600 dark:text-emerald-400"/>
-                                    <span>Payment Collected</span>
-                                </label>
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                    outcome === 'no_follow_up' ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                                }`}>
-                                    <input type="radio" name="outcome" value="no_follow_up" checked={outcome === 'no_follow_up'} onChange={() => setOutcome('no_follow_up')} className="mr-2"/>
-                                    <span>Close Follow-up</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        {/* Forecast and Next Follow-up Date (Directly in Follow-up Outcome block) */}
-                        {outcome === 'follow_up' && (
-                            <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-300 dark:border-emerald-700 space-y-3 animate-in fade-in duration-150">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-900 dark:text-emerald-300 uppercase tracking-wide">
-                                        <SparklesIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                        <span>Expected Amount & Follow-Up Date (Cash Flow Forecast)</span>
-                                    </div>
-                                    {forecastAmount && parseFloat(forecastAmount) > 0 && (
-                                        <span className="px-2 py-0.5 rounded-full text-[12.5px] font-extrabold bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200">
-                                            Expected: ₹{formatCurrency(parseFloat(forecastAmount))}
-                                        </span>
-                                    )}
-                                </div>
-
-                                <p className="text-[12.5px] text-emerald-800 dark:text-emerald-300">
-                                    Enter the <strong>Follow-up date</strong> and <strong>Amount expected</strong> from this follow-up interaction. This feeds directly into the Future Dates Follow-up List and Cash Flow Forecast Report.
-                                </p>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label htmlFor="followUpDate" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                            Next Follow-up Date *
-                                        </label>
-                                        <input aria-label="Next Follow-up Date"
-                                            type="date"
-                                            id="followUpDate"
-                                            value={nextFollowUpDate}
-                                            onChange={(e) => {
-                                                setNextFollowUpDate(e.target.value);
-                                                if (!forecastDate) setForecastDate(e.target.value);
-                                            }}
-                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
-                                            required
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
-                                            Amount Expected (₹)
-                                        </label>
-                                        <div className="relative">
-                                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center font-bold text-gray-500 text-sm">₹</span>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                step="1000"
-                                                value={forecastAmount}
-                                                onChange={e => setForecastAmount(e.target.value)}
-                                                placeholder="e.g. 500000"
-                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-accent shadow-2xs"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Quick Presets for Amount */}
-                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                    <span className="text-[11.5px] font-bold text-gray-500 dark:text-gray-400 uppercase mr-1">Quick Presets:</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSetPresetForecast(customer.total)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
-                                    >
-                                        Full Due (₹{formatCurrency(customer.total)})
-                                    </button>
-                                    {over90Due > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSetPresetForecast(over90Due)}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 transition-colors"
-                                            title="Everything past 90 days: the 91-135 and >135 day buckets together"
-                                        >
-                                            &gt;90d Due (₹{formatCurrency(over90Due)})
-                                        </button>
-                                    )}
-                                    {customer.total > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSetPresetForecast(Math.round(customer.total / 2))}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
-                                        >
-                                            50% Due (₹{formatCurrency(Math.round(customer.total / 2))})
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSetPresetForecast(100000)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
-                                    >
-                                        ₹1 Lakh
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSetPresetForecast(500000)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
-                                    >
-                                        ₹5 Lakh
-                                    </button>
-                                    {forecastAmount && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setForecastAmount('')}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                        >
-                                            Clear
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                       
+                    {(canEditCustomer || canReassignCrm || mayClaimForSelf || canAssignCollector) && (
+                        <Disclosure
+                            title="Account settings"
+                            summary={[
+                                paymentRank ? PAYMENT_RANK_LABELS[paymentRank] : 'rank automatic',
+                                category || 'no category',
+                                findOwner(users, assignedCrmOwnerId)?.name || assignedCrmOwnerId || 'unassigned',
+                                assignedCollectorId ? (collectors.find(c => c.id === assignedCollectorId)?.name || assignedCollectorId) : 'no collector',
+                            ].join(' · ')}
+                        >
+                            <div className="space-y-4">
                         {canEditCustomer && (
                             <div className="relative">
                                 <label htmlFor="paymentRank" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
@@ -1068,8 +1147,7 @@ const FollowUpModal = ({
                             </div>
                         )}
 
-                        {canAssignCollector && (
-                            <>
+                                {canAssignCollector && (
                                 <div className="relative">
                                     <label htmlFor="assignCollector" className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Assign Collector (Optional)</label>
                                     <select aria-label="Assign Collector (Optional)"
@@ -1084,23 +1162,10 @@ const FollowUpModal = ({
                                         ))}
                                     </select>
                                 </div>
-                                <div className="flex items-center pt-1">
-                                    <label htmlFor="isUrgent" className="flex items-center cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            id="isUrgent" 
-                                            checked={isUrgent} 
-                                            onChange={() => setIsUrgent(!isUrgent)}
-                                            className="rounded text-red-600 dark:text-red-400 focus:ring-dang w-4 h-4 mr-2"
-                                        />
-                                        <span className="text-xs font-bold text-red-600 dark:text-red-400">
-                                            Mark as High Priority / Urgent Account
-                                        </span>
-                                    </label>
-                                </div>
-                            </>
-                        )}
-                    </div>
+                                )}
+                            </div>
+                        </Disclosure>
+                    )}
                 </div>
 
                 {saveError && (
@@ -1124,7 +1189,7 @@ const FollowUpModal = ({
                         title={canEditFollowUp ? 'Save this follow-up' : 'Your role can read follow-ups but not record them'}
                         className="px-5 py-2 text-xs font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        {saving ? 'Saving…' : 'Save Follow-up & Contacts'}
+                        {saving ? 'Saving…' : 'Save follow-up'}
                     </button>
                 </div>
                   </div>

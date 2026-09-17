@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 107 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 110 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -122,8 +122,12 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `tests/saveFailures.dom.test.tsx` | 267 | Refused saves: the hook's retry/status/flush/accept, the three dialogs, the status line. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 13 tests | | | | |
 | `tests/refreshMerge.test.ts` | 54 | mergeServerRows. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 5 tests | | | | |
 
+| `components/ui/Disclosure.tsx` | 48 | A section that is one summary line until opened. | Full | ok | ok | ok | ok | ok | ok | – | 1 test | Written this session | | | |
+| `components/ui/useEscape.ts` | 14 | Esc closes a dialog unless a save is in flight. | Full | ok | ok | n/a | ok | n/a | n/a | n/a | 4 tests | Written this session | | | |
+| `tests/crmWorkflow.dom.test.tsx` | 141 | The CRM workflow after the polish: dialog hierarchy, folds, prev/next, Esc, follow-up wording. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 16 tests | | | | |
+
 ## Coverage
 
-- Reviewed at audit depth (Full): **31 / 107**; Partial (read for a workflow, not line by line): **22 / 107** — after the reliability session of 2026-09-17 (107 = 103 + four new files).
+- Reviewed at audit depth (Full): **34 / 110**; Partial (read for a workflow, not line by line): **22 / 110** — after the CRM-workflow session of 2026-09-17 (110 = 107 + three new files).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

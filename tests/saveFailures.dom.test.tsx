@@ -164,24 +164,24 @@ describe('the follow-up dialog on a refused save', () => {
         const onClose = vi.fn();
         render(<FollowUpModal customer={mixedAccount()} currentUser={crmUser()} onClose={onClose} onUpdate={onUpdate} users={[adminUser(), crmUser(), collectorUser()]} templates={[]} />);
         fireEvent.click(document.querySelector('#isUrgent')!);
-        fireEvent.click(screen.getByRole('button', { name: /save follow-up & contacts/i }));
+        fireEvent.click(screen.getByRole('button', { name: /save follow-up/i }));
         await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Not saved: permission denied/));
         expect(onUpdate).toHaveBeenCalledTimes(1);
         expect((onUpdate.mock.calls[0] as any)[0].isUrgent).toBe(true);
         expect(onClose).not.toHaveBeenCalled();
         expect((document.querySelector('#isUrgent') as HTMLInputElement).checked).toBe(true);   // still as typed
-        expect((screen.getByRole('button', { name: /save follow-up & contacts/i }) as HTMLButtonElement).disabled).toBe(false); // can try again
+        expect((screen.getByRole('button', { name: /save follow-up/i }) as HTMLButtonElement).disabled).toBe(false); // can try again
     });
 
     it('closes when the server accepts, and when the caller answers nothing (older callers)', async () => {
         const onClose = vi.fn();
         render(<FollowUpModal customer={mixedAccount()} currentUser={crmUser()} onClose={onClose} onUpdate={vi.fn(async () => ({ ok: true as const }))} users={[adminUser()]} templates={[]} />);
-        fireEvent.click(screen.getByRole('button', { name: /save follow-up & contacts/i }));
+        fireEvent.click(screen.getByRole('button', { name: /save follow-up/i }));
         await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
         cleanup();
         const onClose2 = vi.fn();
         render(<FollowUpModal customer={mixedAccount()} currentUser={crmUser()} onClose={onClose2} onUpdate={vi.fn()} users={[adminUser()]} templates={[]} />);
-        fireEvent.click(screen.getByRole('button', { name: /save follow-up & contacts/i }));
+        fireEvent.click(screen.getByRole('button', { name: /save follow-up/i }));
         await waitFor(() => expect(onClose2).toHaveBeenCalledTimes(1));
     });
 });

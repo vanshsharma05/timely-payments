@@ -45,7 +45,7 @@ function saveFollowUp(customer: Outstanding, edit?: () => void): Outstanding {
     const onUpdate = vi.fn();
     render(<FollowUpModal customer={customer} currentUser={crmUser()} onClose={() => {}} onUpdate={onUpdate} users={[adminUser(), crmUser(), collectorUser()]} templates={[]} />);
     edit?.();
-    fireEvent.click(screen.getByRole('button', { name: /save follow-up & contacts/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save follow-up/i }));
     expect(onUpdate).toHaveBeenCalledTimes(1);
     return processStatuses([onUpdate.mock.calls[0][0] as Outstanding])[0];
 }

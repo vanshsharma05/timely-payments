@@ -711,10 +711,31 @@ const App = () => {
         setUserTab('overview');
     };
 
+    /**
+     * The list an account was opened from, so the dialog can step to the next
+     * one without closing: the book's rows in their current order when it is
+     * open, otherwise the Today list's.
+     */
+    const bookVisibleIds = useRef<string[]>([]);
+    const onBookRowsChange = useCallback((ids: string[]) => { bookVisibleIds.current = ids; }, []);
+    const [followUpList, setFollowUpList] = useState<string[]>([]);
     const handleOpenFollowUp = (customer: Outstanding) => {
+        const source = safeKey === 'customers' ? bookVisibleIds.current : filteredData.map(c => c.id);
+        setFollowUpList(source.includes(customer.id) ? source : [customer.id]);
         setSelectedCustomer(customer);
         setIsModalOpen(true);
     };
+    const followUpPosition = useMemo(() => {
+        if (!selectedCustomer) return undefined;
+        const index = followUpList.indexOf(selectedCustomer.id);
+        return index >= 0 ? { index, total: followUpList.length } : undefined;
+    }, [selectedCustomer, followUpList]);
+    const handleNavigateFollowUp = useCallback((direction: -1 | 1) => {
+        if (!selectedCustomer) return;
+        const index = followUpList.indexOf(selectedCustomer.id);
+        const next = appData.find(c => c.id === followUpList[index + direction]);
+        if (next) setSelectedCustomer(next);
+    }, [selectedCustomer, followUpList, appData]);
 
     /**
      * The follow-up dialog stays open while entries are logged against the
@@ -2078,6 +2099,7 @@ const App = () => {
             onAddCustomer={handleOpenAddCustomer}
             onEditCustomer={handleOpenEditCustomer}
             onDeleteCustomer={handleDeleteCustomer}
+            onVisibleRowsChange={onBookRowsChange}
             onFollowUp={handleOpenFollowUp}
             onWhatsApp={handleSendWhatsApp}
             onOpenPdcForCustomer={handleOpenPdcForCustomer}
@@ -3377,6 +3399,8 @@ const App = () => {
                     onAddPdc={handleOpenAddPdc}
                     onUpdatePdcStatus={handleUpdatePdcStatus}
                     onEditCustomer={handleOpenEditCustomer}
+                    position={followUpPosition}
+                    onNavigate={handleNavigateFollowUp}
                 />
             )}
             {isPasswordModalOpen && (
