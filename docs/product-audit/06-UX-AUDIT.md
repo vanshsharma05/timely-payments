@@ -63,7 +63,7 @@ Scope: customer book · finding an account · who needs attention · opening an 
 
 **Visual QA (local, every write aborted) at 1366×768, 1440×900, 1024×768 and 390×844:** no page overflow; every dialog inside the viewport; the outcome radios and Save visible without scrolling in all four; four folds present; ‹ n / N › steps with Alt+arrows; Esc closes; a refused save shows inside the dialog and in the header; the hover-only delete is fully visible when focused by keyboard. Fixed on the way: at 1024 the book table no longer scrolls sideways (below `xl` the Due >45 column folds into the ageing bar, the four ageing figures move to the bar's tooltip, the owner select and paddings tighten); refusal reasons are now full sentences ("no connection to the server. Everything you entered…"); the *This follow-up* heading no longer wraps on a phone. The WhatsApp dialog and the dialog's WhatsApp fold remain two copies (T48).
 
-## Phase 4, batch 2 — the Manager's Today and Reports (2026-09-17)
+## Phase 4, batch 2 — the Manager's Today and Reports (2026-09-17, deployed 22:21 IST)
 
 Scope: the company dashboard (Today for Manager/Admin), Reports, the team table, the ageing view, the drill from a number to its accounts. No financial formula, business rule, permission, schema or backend change; every count and amount is computed by the same code as before (`boxMetrics`, `crmPerformanceStats`, `portfolioAgeing`, `overdueAgeing`).
 
