@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 89 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 93 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -11,7 +11,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `.env.example` | 25 | Documents every environment variable and which side (browser/server) reads it. | No | – | – | – | – | – | – | – | – | | | | |
 | `.gitignore` | 30 | Ignores node_modules, dist, env files, smoke shots, .deploy.local, .vercel. | No | – | – | – | – | – | – | – | – | | | | |
 | `ARCHITECTURE.md` | 1862 | Engineering handbook (1,862 lines): data model, security, domain rules, data flow, screens, API, email, design system. §9.1–9.2 stale. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | §5.2 documents read-all SELECT and role-only UPDATE as deliberate; §9.1–9.2 stale | | | |
-| `App.tsx` | 3302 | The whole app: hash routing, session restore, data loading/scoping, ~48 state slices, every handler, Today/Reports/book/stock page renderers. | Partial | issue | ok | ok | issue | – | issue | – | none | Handlers, state, sync wiring, rights, reset, Data source tab, edit/follow-up plumbing read (09 §A, 11 Parts 1–3); page renderers still not line by line; SEC3, R1 | | | |
+| `App.tsx` | 3302 | The whole app: hash routing, session restore, data loading/scoping, ~48 state slices, every handler, Today/Reports/book/stock page renderers. | Partial | issue | ok | ok | issue | – | issue | – | none | Handlers, state, sync wiring (now `partial: customerColumns`), rights, reset, Data source tab read (09 §A, §C); page renderers still not line by line; SEC3 | | | |
 | `DEPLOYMENT.md` | 217 | Phase-1 deployment guide: Supabase project, tables, first login, keys, Vercel, cron. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | "falls back to a plain sign-up" is stale — no signUp in code | | | |
 | `README.md` | 113 | Run locally, roles, daily email, sign-in, checks, deploy. | Partial | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | "Who can do what" promises a CRM sees own accounts — read-all RLS behind it (Q14); reset not mentioned | | | |
 | `SETUP.md` | 161 | From-scratch setup for a non-technical owner (accounts, tokens, hand-off). | No | – | – | – | – | – | – | – | – | | | | |
@@ -81,9 +81,9 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `services/googleSheetService.ts` | 874 | Sheet CSV parsing, header mapping, balance sync, customer master import, reconciliation, netRollUp. | Partial | ok | ok | ok | n/a | ok | n/a | n/a | none | Import/merge/settle and processStatuses read in full (11 Part 2); master import and Excel mapping only skimmed | | | |
 | `services/liveStock.ts` | 405 | Stock CSV parser, availability/critical rules, cache, 60s polling hook. | No | – | – | – | – | – | – | – | – | | | | |
 | `services/messageTemplate.ts` | 139 | Template rendering for WhatsApp messages. | Partial | – | ok | – | n/a | – | – | – | none | Placeholders and roll-up copy (D6) | | | |
-| `services/repository.ts` | 770 | Supabase data access: loads, writes, activity, auth headers. | Full | ok | ok | ok | ok | ok | n/a | n/a | none | Whole-row `updateCustomers` (R1); paged reads; ~20 `any` in mappers by design | | | |
+| `services/repository.ts` | 800 | Supabase data access: loads, writes, activity, auth headers. | Full | ok | ok | ok | ok | ok | n/a | n/a | 5 + mapper tests | `CustomerRow` typed; `customerRowDiff`; `updateCustomerColumns`; whole-row `updateCustomers` removed | Option A | done | tsc, build, tests |
 | `services/supabaseClient.ts` | 38 | Anon Supabase client, isSupabaseConfigured. | No | – | – | – | – | – | – | – | – | | | | |
-| `services/useSupabaseSync.ts` | 137 | useCollectionSync / useValueSync hooks. | Full | issue | ok | issue | n/a | ok | n/a | n/a | none | R1 last-writer-wins, R2 retry-on-next-change, R3 delete-by-diff | | | |
+| `services/useSupabaseSync.ts` | 205 | useCollectionSync / useValueSync hooks. | Full | ok | ok | ok | n/a | ok | n/a | n/a | 12 tests | R1-A fixed (per-row baseline, column diff); R1-B open | Option A | done | tsc, build, 77 tests, probe |
 | `styles/theme.css` | 413 | Design tokens, palette remap, dark theme, motion, native control theming. | No | – | – | – | – | – | – | – | – | | | | |
 | `supabase/schema.sql` | 492 | Tables, triggers, RLS policies for profiles, customers, pdc_cheques, templates, company_profile, app_settings, alert_settings, alert_log, customer_activity. | Full | issue | ok | n/a | issue | ok | n/a | n/a | none | SEC1 read-all policies; SEC2 role-only update; SEC4 trigger trusts metadata; no migrations; `updated_by` unused | | | |
 | `tsconfig.json` | 20 | Strict TS, bundler resolution, includes api and scripts. | No | – | – | – | – | – | – | – | – | | | | |
@@ -92,15 +92,20 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `vercel.json` | 15 | Build, rewrites, function duration, cron. | No | – | – | – | – | – | – | – | – | | | | |
 | `vite-env.d.ts` | 15 | Vite env typing (GEMINI deliberately absent). | No | – | – | – | – | – | – | – | – | | | | |
 | `vite.config.ts` | 22 | React + Tailwind plugins, manual vendor chunks. | No | – | – | – | – | – | – | – | – | | | | |
-| `scripts/tests/write-payload-probe.cjs` | 88 | Read-only probe: captures customer save payloads with every mutating request aborted. | Full | ok | ok | ok | ok | n/a | n/a | n/a | n/a | New this session: aborts every mutating request; evidence for 11 Part 1 | | | |
+| `scripts/tests/write-payload-probe.cjs` | 118 | Read-only probe: five scenarios (no-change, contact, owner, urgent, balance sync) with every mutating request aborted. | Full | ok | ok | ok | ok | n/a | n/a | n/a | n/a | | | | |
 
 | `vitest.config.ts` | 19 | Vitest config: node env, `tests/**`, React plugin. | Full | ok | n/a | n/a | n/a | n/a | n/a | n/a | n/a | | | | |
 | `tests/fixtures.ts` | 96 | Synthetic accounts/users for the unit tests (mixed Dr/Cr, collector, roll-ups, settlement). | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | n/a | | | | |
 | `tests/money.test.ts` | 190 | Characterisation of the money rules M1–M8, merge, statuses, cheque state, row mappers. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 23 tests | | | | |
 | `tests/customerEditModal.dom.test.tsx` | 203 | C1 regression against the real dialog (jsdom). | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 13 tests | | | | |
 
+| `tests/customerRowDiff.test.ts` | 88 | The column diff contract (cases A–E, J and more). | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 11 tests | | | | |
+| `tests/updateCustomerColumns.test.ts` | 56 | The partial write against a fake Supabase client. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 5 tests | | | | |
+| `tests/useCollectionSync.dom.test.tsx` | 168 | The real hook with fake timers: baseline, retries, per-row success, two customers. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 12 tests | | | | |
+| `tests/syncFlows.test.ts` | 136 | Column payloads of the real caller flows incl. balance sync and processStatuses. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 13 tests | | | | |
+
 ## Coverage
 
-- Reviewed at audit depth (Full): **13 / 89**; Partial (read for a workflow, not line by line): **20 / 89** — after the C1 session of 2026-09-17 (89 = 85 + `vitest.config.ts` + three test files; `CustomerEditModal.tsx` moved Partial → Full).
+- Reviewed at audit depth (Full): **17 / 93**; Partial (read for a workflow, not line by line): **20 / 93** — after the Option A session of 2026-09-17 (93 = 89 + four test files).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

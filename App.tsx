@@ -477,17 +477,28 @@ const App = () => {
 
     // Stable adapters. These tables are small, so a sequential loop is fine.
     /**
-     * Edits go out as updates and genuinely new accounts as an upsert, so the
-     * database can ask for the "add customer" right only when one is being
-     * added. An id we have not seen may still exist server-side (someone else
-     * created it since this tab loaded), which is why that path upserts.
+     * Genuinely new accounts go out as an upsert, so the database can ask for
+     * the "add customer" right only when one is being added. An id we have not
+     * seen may still exist server-side (someone else created it since this tab
+     * loaded), which is why that path upserts. Edits to accounts the server
+     * already has never come here: the sync hook writes them column by column
+     * through `customerColumns` below.
      */
     const saveCustomerRows = useCallback(async (rows: Outstanding[], created: Set<string>) => {
         const fresh = rows.filter(r => created.has(r.id));
-        const edited = rows.filter(r => !created.has(r.id));
-        if (edited.length) await repo.updateCustomers(edited);
         if (fresh.length) await repo.upsertCustomers(fresh);
     }, []);
+    /**
+     * An edit writes only the columns that changed since this tab last saved
+     * the row. It used to write the whole row from this tab's copy of the
+     * book, so two people working one account overwrote each other's
+     * unrelated fields — see customerRowDiff() in the repository.
+     */
+    const customerColumns = useMemo(() => ({
+        toRow: repo.outstandingToRow,
+        diff: repo.customerRowDiff,
+        update: (id: string, changes: Partial<repo.CustomerRow>) => repo.updateCustomerColumns(id, changes),
+    }), []);
 
     const upsertPdcRows = useCallback(async (rows: PdcCheque[]) => {
         for (const r of rows) await repo.upsertPdcCheque(r);
@@ -498,10 +509,11 @@ const App = () => {
     const customerSignature = useCallback((c: Outstanding) => JSON.stringify(repo.outstandingToRow(c)), []);
     const jsonSignature = useCallback((r: unknown) => JSON.stringify(r), []);
 
-    useCollectionSync({
+    useCollectionSync<Outstanding, repo.CustomerRow>({
         rows: appData, enabled: syncEnabled, label: 'customers',
         toSignature: customerSignature,
         upsert: saveCustomerRows, remove: repo.deleteCustomer,
+        partial: customerColumns,
         onError: reportSyncError,
     });
     useCollectionSync({

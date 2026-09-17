@@ -37,8 +37,8 @@ Added in the validation session (2026-09-17):
 | # | Item | Evidence | Prio | Confidence |
 |---|---|---|---|---|
 | T23 | ~~**C1** `CustomerEditModal.handleSave` rebuilds the row from form state~~ — **fixed 2026-09-17**, regression tests in `tests/customerEditModal.dom.test.tsx` | 11 §1.4 | done | HIGH |
-| T24 | Whole-row PATCH on every customer write (`updateCustomers` sends 36 columns; no version predicate) — the mechanism behind R1 | 11 §1.1 | **P1** | HIGH |
-| T25 | `processStatuses` persists a derived field for every row in the snapshot on every follow-up save | 11 Part 2 | **P1** | HIGH |
+| T24 | ~~Whole-row PATCH on every customer write~~ — **fixed 2026-09-17 (Option A)**: column diff + `updateCustomerColumns`; the missing version predicate is R1-B, still open | 11 R1 table | done (R1-A) | HIGH |
+| T25 | `processStatuses` persists a derived field for every date-crossed row on every follow-up save — now one column per row (172 rows today), still redundant | 11 R1-C | P2 (was P1) | HIGH |
 | T26 | The reset re-ids 672 legacy `out_*` accounts (delete + re-create) because it merges into `[]` | 11 Part 3 | P1 (as part of SEC3) | HIGH |
 | T27 | Four password minimums (6/6/8/8) across dialog, server, repository, Supabase | U20 | P3 | HIGH |
 | T28 | Reset clears cheques/templates/profile in memory *before* the sheet fetch that can fail | `App.tsx:753–757` | P2 | HIGH |
@@ -49,3 +49,11 @@ Added in the C1 session (2026-09-17):
 |---|---|---|---|---|
 | T29 | The edit dialog's date field is seeded with `toISOString().split('T')[0]` (UTC), so near midnight IST it shows the previous day; a changed date is parsed as UTC midnight | `CustomerEditModal.tsx` seed effect | P3 | HIGH |
 | T30 | `tsconfig.json` includes `tests/**` (via `./**/*.ts(x)`) — fine, but `tests/` should be excluded from any future emit | `tsconfig.json` | P4 | HIGH |
+
+Added in the Option A session (2026-09-17):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T31 | Roll-up netting produces floating-point noise (`due_over45: 80.60000000000036` seen in a sync payload); stored as `numeric` | probe scenario 5 | P4 | HIGH |
+| T32 | The sync error banner names the account by id ("Could not save the changes to out_86_…") since the per-row write; the company name would read better | `useSupabaseSync.ts` onError | P4 | HIGH |
+| T33 | Cheques and templates still write whole rows through `upsert` (small tables, low risk) | `App.tsx` adapters | P4 | HIGH |

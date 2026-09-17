@@ -51,3 +51,58 @@ Session restore; hydrate on sign-in (`loadAll`); five sync hooks; `updateViewDat
 - Route duplication: 8 API routes in both `api/*.ts` and `server.ts`.
 - Dead column (LIKELY): `customers.updated_by` is never written by `outstandingToRow`.
 - Dead right (CONFIRMED): `canEditFinancials` gates no screen.
+
+## C. Customer persistence map (Option A, 2026-09-17)
+
+Every customer write in the app takes one route; nothing bypasses it (grep for `updateCustomer*`, `upsertCustomers`, `deleteCustomer`, `from('customers')` — the only callers are the adapters below and the repository itself; activity entries are a different table).
+
+```
+handler in App.tsx                setAppData(rows)          — spreads the in-memory row, changes the intended fields
+        │
+useCollectionSync (services/useSupabaseSync.ts)   800 ms debounce, per row:
+        │   signature = JSON.stringify(outstandingToRow(row))   compared with `synced` (last state the server accepted)
+        │   baseline  = outstandingToRow(lastAcceptedRow)        kept per id, only for the customers hook (`partial`)
+        ├── id never seen  ──► upsert(freshRows)  ──► repo.upsertCustomers  ──► POST /rest/v1/customers (whole rows, chunked 500)
+        ├── id known       ──► changes = customerRowDiff(baseline, outstandingToRow(row))
+        │                       └─ empty → accepted without a request
+        │                       └─ else  → repo.updateCustomerColumns(id, changes) ──► PATCH /rest/v1/customers?id=eq.<id>  { only those columns }
+        └── id gone        ──► repo.deleteCustomer(id) ──► DELETE
+        on success: synced[id] = signature, baseline[id] = row       on failure: untouched → the next tick retries the difference
+```
+
+| Fact | Before | Now |
+|---|---|---|
+| Object the hook receives | `Outstanding[]` (`appData`) | same |
+| Baseline | `Map<id, signature>` seeded at sign-in, advanced to *the whole current map* only when the *entire* batch succeeded | `Map<id, signature>` + `Map<id, CustomerRow>`, seeded from the loaded data, **advanced per row on that row's success**, untouched on that row's failure |
+| What is sent for a known row | `outstandingToRow(row)` minus `id` — 36 columns | `customerRowDiff(baseline, row)` — the columns whose value differs; a cleared column as `null` |
+| `undefined` / `null` | `outstandingToRow` maps every absent app value to `null`; `undefined` never reaches a row | same; so at the row level "absent from the diff" = unchanged, "present as null" = clear |
+| camelCase → snake_case | `outstandingToRow` (37 columns), typed `Record<string, any>` | same mapper, now typed `CustomerRow`; `CustomerColumnChanges = Partial<Omit<CustomerRow, 'id'>>` |
+| Object-valued columns (`ageing`, `ageing_types`, `additional_contacts`, `notes`) | compared as part of the whole-row signature | compared with a key-order-stable serialisation (`stable()`), so jsonb's key order never reads as a change; arrays keep their order |
+| Repository return | `void` | `void` (unchanged; no updated row is read back) |
+| Concurrency of writes | 8 in flight inside `updateCustomers` | 8 in flight inside the hook (`partial.concurrency`, default 8) |
+| Error surfaced | "Could not save customer <company>: …" | "Could not save customers: Could not save the changes to <id>: … (and n more)" |
+| Cheques / templates | whole-row upsert | unchanged (no `partial` configured) |
+
+Invariant (documented in the hook): **the baseline is the last state this tab successfully saved, row by row.** It is seeded from the load, advanced for a row only after the server accepted that row, and never advanced by a React state change alone.
+
+Field map for the partial write (every column `useCollectionSync` can now emit):
+
+| App field | Column | Transform | When cleared | Owner |
+|---|---|---|---|---|
+| company | company | as is | never null (required) | app |
+| contactPerson / contactNumber | contact_person / contact_number | `?? ''` | `''` | app |
+| contactPost, email, city, state, address, gstin, pan | same, snake_case | `?? null` | `null` | app (pan unused) |
+| additionalContacts | additional_contacts | array as is | `[]` | app |
+| creditLimit, paymentTermsDays | credit_limit, payment_terms_days | `?? null` | `null` | app (seeded) |
+| paymentRank, category | payment_rank, category | `?? null` | `null` | app |
+| total, totalType | total, total_type | `?? 0`, `?? null` | — | **sheet** |
+| ageing, ageingTypes | ageing, ageing_types | object; `?? {}` for types | `{}` on settlement | **sheet** |
+| over90(+Type), dueOver45(+Type) | over90, over90_type, due_over45, due_over45_type | `?? null` | `null` / `'Dr'` on settlement | **sheet** |
+| crmOwnerId | crm_owner_id | `?? ''` | `''` = unassigned | app |
+| assignedCollectorId | assigned_collector_id | `?? null` | `null` | app |
+| followUpDate, forecastDate, creationDate, lastFollowUpOn | *_date / last_follow_up_on | `toIso()` → ISO string | `null` | app |
+| forecastAmount | forecast_amount | `?? null` | `null` | app |
+| status | status | as is (`?? Pending`) | — | app (derived; see R1-C) |
+| notes | notes | array as is | `[]` | app (mirror of the thread) |
+| isUrgent, isNewCustomer | is_urgent, is_new_customer | `!!` | `false` | app (urgency seeded by import) |
+| addedAt, settledAt | added_at, settled_at | `?? null` | `null` | app (settlement stamped by sync) |

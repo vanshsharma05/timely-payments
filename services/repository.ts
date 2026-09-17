@@ -15,6 +15,8 @@ import {
     CompanyProfile,
     FollowUpStatus,
     BalanceType,
+    PaymentRank,
+    AdditionalContact,
     DEFAULT_ROLE_PERMISSIONS,
 } from '../types';
 
@@ -139,7 +141,57 @@ export function rowToOutstanding(r: any): Outstanding {
     };
 }
 
-export function outstandingToRow(c: Outstanding): Record<string, any> {
+/**
+ * A `customers` row as PostgREST sees it: every column, snake_case, and
+ * `null` where the app has nothing — never `undefined`, which PostgREST would
+ * drop from the body and so leave the column as it was. That is the contract
+ * the column diff below relies on: a key that is present with `null` means
+ * "clear this", a key that is absent means "not touched".
+ */
+export interface CustomerRow {
+    id: string;
+    company: string;
+    contact_person: string;
+    contact_number: string;
+    contact_post: string | null;
+    additional_contacts: AdditionalContact[];
+    email: string | null;
+    city: string | null;
+    state: string | null;
+    address: string | null;
+    gstin: string | null;
+    pan: string | null;
+    credit_limit: number | null;
+    payment_terms_days: number | null;
+    payment_rank: PaymentRank | null;
+    category: string | null;
+    total: number;
+    total_type: BalanceType | null;
+    ageing: Outstanding['ageing'];
+    ageing_types: NonNullable<Outstanding['ageingTypes']>;
+    over90: number | null;
+    over90_type: BalanceType | null;
+    due_over45: number | null;
+    due_over45_type: BalanceType | null;
+    crm_owner_id: string;
+    assigned_collector_id: string | null;
+    follow_up_date: string | null;
+    forecast_amount: number | null;
+    forecast_date: string | null;
+    status: FollowUpStatus;
+    notes: string[];
+    is_urgent: boolean;
+    is_new_customer: boolean;
+    added_at: string | null;
+    settled_at: string | null;
+    creation_date: string;
+    last_follow_up_on: string | null;
+}
+
+/** The columns a partial update may carry. The id is not one of them. */
+export type CustomerColumnChanges = Partial<Omit<CustomerRow, 'id'>>;
+
+export function outstandingToRow(c: Outstanding): CustomerRow {
     return {
         id: c.id,
         company: c.company,
@@ -181,6 +233,37 @@ export function outstandingToRow(c: Outstanding): Record<string, any> {
     };
 }
 
+/**
+ * A value as text, with object keys in one order, so that two rows holding
+ * the same ageing types read as equal whether they came from Postgres (which
+ * orders jsonb keys its own way) or from the sheet parser.
+ */
+const stable = (v: unknown): string => JSON.stringify(v, (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.keys(value).sort().reduce((acc: Record<string, unknown>, k) => { acc[k] = (value as Record<string, unknown>)[k]; return acc; }, {})
+        : value,
+);
+
+/**
+ * The columns that differ between two rows — what a write must carry, and
+ * nothing more.
+ *
+ * Every customer write used to send the whole row from the tab's copy of the
+ * book, so two people on one account overwrote each other's unrelated fields
+ * (docs/product-audit/11-SECURITY-RELIABILITY.md, R1). A write now carries
+ * only the columns whose value changed since this tab last saved the row. A
+ * column cleared by the app is present here as `null`, which PostgREST writes;
+ * a column the app did not touch is absent, which PostgREST leaves alone.
+ */
+export function customerRowDiff(before: CustomerRow, after: CustomerRow): CustomerColumnChanges {
+    const changes: Record<string, unknown> = {};
+    for (const key of Object.keys(after) as (keyof CustomerRow)[]) {
+        if (key === 'id') continue;
+        if (stable(before[key]) !== stable(after[key])) changes[key] = after[key];
+    }
+    return changes as CustomerColumnChanges;
+}
+
 export async function fetchCustomers(): Promise<Outstanding[]> {
     const rows = await fetchAllRows('customers', 'Could not load customers');
     return rows
@@ -199,55 +282,19 @@ export async function upsertCustomers(list: Outstanding[]): Promise<void> {
 }
 
 /**
- * How many row updates are in flight at once.
+ * Saves the changed columns of one customer that already exists.
  *
- * PostgREST has no multi-row update, so a sync that touches 700 accounts is 700
- * requests whatever we do. Sending them one after another made that a minutes-
- * long wait during which the book was only half written — which is what
- * "customer data is not syncing" looked like from the outside. Browsers cap
- * connections per host anyway, so this is about keeping the pipe full, not
- * about flooding the database.
+ * An update rather than an upsert: upserting asks the database for insert
+ * rights too, and creating an account is a separate permission from recording
+ * a note on one. Only the columns handed in are written — see
+ * customerRowDiff() for why nothing else may be — and the id cannot be among
+ * them; a stray one is dropped before the request rather than trusted.
  */
-const UPDATE_CONCURRENCY = 8;
-
-/**
- * Saves edits to customers that already exist.
- *
- * Deliberately an update rather than an upsert: upserting asks the database for
- * insert rights too, and creating an account is a separate permission from
- * recording a note on one.
- *
- * One row failing no longer abandons the rest. The old loop threw on the first
- * error, so a single rejected row left every account after it in the list
- * unwritten — and since the sync hook only advances its baseline when the whole
- * batch resolves, the failure was invisible except as data that never arrived.
- * Now every row is attempted, and the error raised afterwards still tells the
- * hook to retry the batch: an update is idempotent, so re-running it is safe.
- */
-export async function updateCustomers(list: Outstanding[]): Promise<void> {
-    const db = requireSupabase();
-    const queue = [...list];
-    const failures: string[] = [];
-
-    const worker = async (): Promise<void> => {
-        for (;;) {
-            const c = queue.shift();
-            if (!c) return;
-            const row = outstandingToRow(c);
-            delete row.id;
-            const { error } = await db.from('customers').update(row).eq('id', c.id);
-            if (error) failures.push(`${c.company}: ${error.message}`);
-        }
-    };
-
-    await Promise.all(
-        Array.from({ length: Math.min(UPDATE_CONCURRENCY, queue.length) }, worker)
-    );
-
-    if (failures.length) {
-        const more = failures.length > 1 ? ` (and ${failures.length - 1} more)` : '';
-        throw new Error(`Could not save customer ${failures[0]}${more}`);
-    }
+export async function updateCustomerColumns(id: string, changes: CustomerColumnChanges): Promise<void> {
+    const { id: _never, ...columns } = changes as CustomerColumnChanges & { id?: unknown };
+    if (!Object.keys(columns).length) return;
+    const { error } = await requireSupabase().from('customers').update(columns).eq('id', id);
+    fail(`Could not save the changes to ${id}`, error);
 }
 
 export async function deleteCustomer(id: string): Promise<void> {

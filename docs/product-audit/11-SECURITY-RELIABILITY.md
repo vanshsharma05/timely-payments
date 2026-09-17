@@ -1,12 +1,26 @@
 # 11 — SECURITY & RELIABILITY
 
-Status: Phase 1 findings **validated with evidence on 2026-09-17** (third session). **C1 fixed** in the fourth session (see §1.4); R1, SEC3 and the rest are still open. Phases 11–12 (the remaining fixes) not started.
+Status: Phase 1 findings **validated with evidence on 2026-09-17** (third session). **C1 fixed** (fourth session, §1.4). **R1-A fixed by Option A** (fifth session, table below); R1-B, R1-C, SEC3 and the rest are still open. Phases 11–12 (the remaining fixes) not started.
 
 Evidence used: code paths cited by file:line; two read-only queries of the production database (counts only); one browser probe (`scripts/tests/write-payload-probe.cjs`) that signs in as Admin and **aborts every mutating request at the network layer** before it leaves the browser, so the captured PATCH bodies are what the app *would* send — the two rows involved were re-read afterwards and are unchanged (`updated_at` 2026-09-14).
 
 ---
 
-## Part 1 — R1 lost updates: VALIDATED (CONFIRMED)
+## R1 — status after Option A (2026-09-17, fifth session)
+
+R1 is split into three, because Option A settles one of them and not the others:
+
+| # | What | State | Evidence |
+|---|---|---|---|
+| **R1-A** | **Unrelated-field lost update**: a write carried the tab's stale copy of every column, so saving X reverted somebody else's Y | **EXPECTED FIXED** — a write now carries only the columns that changed since this tab last saved the row (`customerRowDiff` → `updateCustomerColumns`); a no-change Save sends nothing | 77/77 unit tests (`tests/customerRowDiff.test.ts`, `useCollectionSync.dom.test.tsx`, `syncFlows.test.ts`, `updateCustomerColumns.test.ts`); interception probe: `[contact_number]`, `[crm_owner_id]`, `[is_urgent,last_follow_up_on]`, 0 requests for a no-change Save, balance sync 10 money-only PATCHes for 684 reviewed rows |
+| **R1-B** | **Same-field conflict**: two people change the *same* column; the later write wins and nobody is told | **OPEN** — unchanged by Option A; needs optimistic concurrency (Option C: `updated_at` predicate + conflict handling) or realtime | by design |
+| **R1-C** | **Derived status persisted**: `processStatuses` still writes `status` for every date-crossed row on any follow-up save | **OBSERVED, REDUCED** — each such row is now a one-column `{status}` PATCH (was 36 columns of stale data); the unrelated columns are protected, but the write volume and the stored/derived drift remain | unit test "a status flip … is one column"; production count 2026-09-17 00:45 IST: **172** rows whose stored status already differs from the date (126 Today→Overdue + 46 Upcoming→Today) → the first edit in any tab today issues 172 one-column PATCHes. Option B removes them (Session 6). |
+
+Option A also does not: detect a conflict (a stale tab still overwrites the *same* column silently), refresh other tabs (no realtime/polling), or change what a failed write looks like on screen (U18 stands: the row looks saved; the baseline is left unsynced so the next change retries — as before, now per row).
+
+Performance (measured with the probe, writes aborted): a customer PATCH is now ~10–120 bytes instead of ~960; the balance sync over **684** reviewed rows produced **10** PATCHes totalling 1,202 bytes (avg 120) instead of ~684 × 960 ≈ 657 kB in ~684 requests; a status flip is 1 column instead of 36.
+
+## Part 1 — R1 lost updates: VALIDATED (CONFIRMED) — the state before Option A
 
 ### 1.1 The write path, end to end
 
@@ -158,7 +172,7 @@ Options (technical, any of which can be combined with any answer to Q8): keep as
 | SEC5 | Customer data to Gemini | **PRIVACY / POLICY DECISION** | See Part 5. Technically sound (server-side key, session required). |
 | SEC3 | Reset | **ACTUAL DATA-LOSS RISK (technical) + BUSINESS PERMISSION DECISION** | Part 3. |
 | C1 | Edit dialog rebuilds the row | **ACTUAL DEFECT** (data corruption) — **RESOLVED 2026-09-17**, regression tests in place | Part 1.4. |
-| R1 | Whole-row last-writer-wins | **ACTUAL DEFECT** (lost updates) — **OPEN**; next batch (Options A+B) | Parts 1–2. |
+| R1 | Whole-row last-writer-wins | **ACTUAL DEFECT** — split: **R1-A fixed** (Option A, 2026-09-17), **R1-B open** (same-field), **R1-C reduced** (status-only writes; Option B pending) | R1 status table above; Parts 1–2 describe the state before. |
 
 ## Part 5 — Exactly what is sent to Gemini (SEC5 / Q9)
 
