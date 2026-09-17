@@ -72,7 +72,7 @@ Added in the status-contract session (2026-09-17, seventh):
 | T36 | An account whose sheet email is `#REF!` (or any non-address) cannot be saved from the edit dialog: the browser's form validation blocks Save with "Please include an '@'" — the sheet garbage should be treated as blank on import, or the field should not be `type=email`-validated against imported values | probe on 3 BROTHERS ( THUKRAL HOSIERY ): 0 requests, `form :invalid` = email `#REF!` | P2 | HIGH |
 | T37 | Both dialogs pre-fill the follow-up date with `toISOString().split('T')[0]` — the UTC day — so a date stored at local midnight IST shows as the previous day and, if saved untouched, moves the follow-up back a day | `FollowUpModal.tsx:35–44`, `CustomerEditModal.tsx:99` | P2 | HIGH (by reading; not yet reproduced on a stored local-midnight date — the app stores what the date input gives, UTC midnight, so today's rows are unaffected) |
 | T38 | `customers.updated_by` exists and is never set (0 of 4,027 rows) — a conflict message cannot say who | read-only query | P3 | HIGH |
-| T39 | The book is loaded once at sign-in and never refreshed (no polling, focus refetch or realtime for customers); live stock has all three | `App.tsx:453`, `services/liveStock.ts:385–392` | P2 | HIGH |
+| T39 | ~~The book is loaded once at sign-in and never refreshed~~ — **fixed 2026-09-17 (reliability batch)**: focus/visibility, 5-min interval, reconnect and a Refresh button, with a pending-aware merge; cheques and templates are still not refreshed (T44) | `App.tsx` `refreshBook`, `services/refresh.ts` | done | HIGH |
 
 Added in the fresh-start session (2026-09-17, ninth):
 
@@ -82,3 +82,11 @@ Added in the fresh-start session (2026-09-17, ninth):
 | T41 | `book_backups` rows are ~4 MB each and nothing prunes them; a dozen resets is fine, a habit is not | schema | P4 | HIGH |
 | T42 | A write from another open tab landing right after a reset overwrites that one row's cleared follow-up (last-writer-wins, R1-B territory); the tab that ran the reset reloads, others do not until they refresh (T39) | 11 §3.0 | P3 | HIGH |
 | T43 | `customer_activity` is not in the snapshot because the reset does not touch it; if Q8 ever says threads should be cleared, add them to the snapshot first | 19 Q8 | P4 | HIGH |
+
+Added in the reliability session (2026-09-17, eleventh):
+
+| # | Item | Evidence | Prio | Confidence |
+|---|---|---|---|---|
+| T44 | Only the customer book is refreshed on focus; cheques and templates keep the sign-in snapshot until reload (the same `accept`/`forget` path would serve them) | `App.tsx` `refreshBook` | P3 | HIGH |
+| T45 | The refused-write reason still names the account by id (`Could not save the changes to out_86_…`) — T32 restated; the dialog shows which account, the header/banner do not | `repository.ts` `updateCustomerColumns` | P4 | HIGH |
+| T46 | A refresh while the follow-up dialog is open is skipped rather than merged; a very long dialog (minutes) means the tab is as stale as the dialog is old | `App.tsx` `dialogOpenRef` | P4 | HIGH |

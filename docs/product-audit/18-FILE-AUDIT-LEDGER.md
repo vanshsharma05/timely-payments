@@ -2,7 +2,7 @@
 
 Proof of coverage. A file counts as **Reviewed** only when its logic has been read and understood at audit depth (Phase 8), not when it was touched during feature work. Phase 0 filled `Purpose` and `Lines` only.
 
-Scope: 103 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
+Scope: 107 first-party files (every tracked file except the two lockfiles). Excluded as third-party/generated: `node_modules/`, `dist/`, `.vercel/`, `.smoke-shots/`, `package-lock.json`, `bun.lock` (lockfiles are reviewed as a pair under 13-TECH-DEBT.md, not line by line).
 
 Columns: Arch = architecture · Logic · Err = error handling · Sec = security · Perf = performance · UX = UX relevance · A11y = accessibility relevance · Tests = test coverage. Each is `–` until reviewed, then `ok` / `issue` / `n/a`.
 
@@ -47,7 +47,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `components/LoginScreen.tsx` | 535 | Sign-in screen. | Partial | – | ok | ok | ok | – | – | – | none | Sign-in, reset, recovery event; readable errors | | | |
 | `components/NotificationBanner.tsx` | 77 | Attention banner (urgent/overdue counts). | No | – | – | – | – | – | – | – | – | | | | |
 | `components/PdcChequesView.tsx` | 1135 | PDC cheque register: tiles, filters, table/phone rows, bulk status. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/PdcModal.tsx` | 388 | Add/edit a cheque. | Partial | – | ok | ok | – | – | – | – | none | Validation read; cheque number format not enforced | | | |
+| `components/PdcModal.tsx` | 408 | Add/edit a cheque. | Partial | – | ok | ok | – | – | – | – | none | Submit path read (waits for the verdict; stays open on a refusal); 2 tests | | | |
 | `components/ReportsView.tsx` | 1331 | Reports: CRM scope, category chips (incl. Bad debt), ageing boxes, table, bulk tools, AI report, export. | Partial | – | – | – | – | – | – | – | – | Filters, chips, bulk bar, AI button, badge (now derived) read; table body not line by line | | |
 | `components/StatusBadge.tsx` | 26 | Follow-up status pill. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/SyncReconciliationModal.tsx` | 338 | Preview of a balance sync before it is applied. | Partial | – | ok | – | n/a | – | – | – | none | Confirms via mergeWithExistingFollowUps; analysis not reviewed | | | |
@@ -56,7 +56,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `components/WhatsAppReminderModal.tsx` | 257 | Pick recipient + template, open WhatsApp link. | Partial | – | ok | – | ok | – | issue | – | none | wa.me link; writes nothing (U21) | | | |
 | `components/icons/AppLogo.tsx` | 115 | Logo component. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/icons/Icons.tsx` | 188 | Icon set. | No | – | – | – | – | – | – | – | – | | | | |
-| `components/shell/AppShell.tsx` | 745 | App bar, tabs, phone bottom bar, settings sheet, theme toggle, user menu. | No | – | – | – | – | – | – | – | – | | | | |
+| `components/shell/AppShell.tsx` | 752 | App bar, tabs, phone bottom bar, settings sheet, theme toggle, user menu. | No | – | – | – | – | – | – | – | – | |; `saveStatus` slot in the subtitle strip | | |
 | `components/shell/NavIcons.tsx` | 145 | Navigation icons. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/ui/BadDebtStrip.tsx` | 48 | The recovery-list strip under the worklist cards. | No | – | – | – | – | – | – | – | – | | | | |
 | `components/ui/PhoneAccountRow.tsx` | 139 | One account as a phone row. | No | – | – | – | – | – | – | – | – | | | | |
@@ -83,7 +83,7 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `services/messageTemplate.ts` | 139 | Template rendering for WhatsApp messages. | Partial | – | ok | – | n/a | – | – | – | none | Placeholders and roll-up copy (D6) | | | |
 | `services/repository.ts` | 800 | Supabase data access: loads, writes, activity, auth headers. | Full | ok | ok | ok | ok | ok | n/a | n/a | 5 + mapper tests | `CustomerRow` typed; `customerRowDiff`; `updateCustomerColumns`; whole-row `updateCustomers` removed | Option A | done | tsc, build, tests |
 | `services/supabaseClient.ts` | 38 | Anon Supabase client, isSupabaseConfigured. | No | – | – | – | – | – | – | – | – | | | | |
-| `services/useSupabaseSync.ts` | 205 | useCollectionSync / useValueSync hooks. | Full | ok | ok | ok | n/a | ok | n/a | n/a | 12 tests | R1-A fixed (per-row baseline, column diff); R1-B open | Option A | done | tsc, build, 77 tests, probe |
+| `services/useSupabaseSync.ts` | 459 | useCollectionSync / useValueSync hooks. | Full | ok | ok | ok | n/a | ok | n/a | n/a | 12 tests | Option A baseline; flush/retry/status/accept/forget (reliability batch); 25 tests | Option A | done | tsc, build, 77 tests, probe |
 | `styles/theme.css` | 413 | Design tokens, palette remap, dark theme, motion, native control theming. | No | – | – | – | – | – | – | – | – | | | | |
 | `supabase/schema.sql` | 492 | Tables, triggers, RLS policies for profiles, customers, pdc_cheques, templates, company_profile, app_settings, alert_settings, alert_log, customer_activity. | Full | issue | ok | n/a | issue | ok | n/a | n/a | none | SEC1 read-all policies; SEC2 role-only update; SEC4 trigger trusts metadata; no migrations; `updated_by` unused | | | |
 | `tsconfig.json` | 20 | Strict TS, bundler resolution, includes api and scripts. | No | – | – | – | – | – | – | – | – | | | | |
@@ -117,8 +117,13 @@ Columns: Arch = architecture · Logic · Err = error handling · Sec = security 
 | `tests/resetSql.test.ts` | 254 | `reset_book` / `restore_book_backup` against the real schema with a synthetic book. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 21 tests | | | | |
 | `tests/resetConfirmModal.dom.test.tsx` | 86 | The confirmation dialog's gating and messages. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 6 tests | | | | |
 
+| `services/refresh.ts` | 28 | Pending-aware merge of a server read into the tab's book. | Full | ok | ok | n/a | ok | n/a | n/a | n/a | 5 tests | Written this session | | | |
+| `components/SaveStatus.tsx` | 89 | Header line: saved / saving / not saved + Retry; book freshness + Refresh. | Full | ok | ok | ok | ok | ok | ok | – | 4 tests | Written this session | | | |
+| `tests/saveFailures.dom.test.tsx` | 267 | Refused saves: the hook's retry/status/flush/accept, the three dialogs, the status line. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 13 tests | | | | |
+| `tests/refreshMerge.test.ts` | 54 | mergeServerRows. | Full | ok | ok | n/a | n/a | n/a | n/a | n/a | 5 tests | | | | |
+
 ## Coverage
 
-- Reviewed at audit depth (Full): **27 / 103**; Partial (read for a workflow, not line by line): **22 / 103** — after the fresh-start session of 2026-09-17 (103 = 96 + seven new files).
+- Reviewed at audit depth (Full): **31 / 107**; Partial (read for a workflow, not line by line): **22 / 107** — after the reliability session of 2026-09-17 (107 = 103 + four new files).
 - `Reviewed` values: Full = read and understood at audit depth · Partial = the parts needed for a workflow · No = not yet.
 - Total first-party lines (excluding binaries): see `Lines` column; 26,489 lines in total (incl. docs); the ten largest source files hold ~13,800.

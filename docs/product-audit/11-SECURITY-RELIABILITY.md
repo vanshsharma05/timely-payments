@@ -192,7 +192,7 @@ Not a collision any more: unrelated columns (Option A), date passage (Option B).
 * Cost: `updateCustomerColumns(id, changes, expected)` ≈ 30 lines; hook ≈ 15 lines to pass the baseline and surface a conflict; plus the UX below. One rule to maintain: *a write may only replace what it saw*.
 * Verdict: **the right mechanism for ~18 people on one book** — detects S1–S7, never rejects an unrelated-field edit.
 
-#### Option C3 — realtime / refetch
+#### Option C3 — realtime / refetch — **C3-lite implemented 2026-09-17 (reliability batch)**: focus/visibility + 5-minute interval + reconnect refetch of the customer book with `mergeServerRows` (server wins except rows pending in this tab; refresh paused while a dialog is open; `accept`/`forget` keep the sync baseline honest). No Realtime. The analysis below stands.
 
 * Today the book is loaded once at sign-in (`repo.loadAll()`, `App.tsx:453`); no polling, no focus refresh, no realtime for customers. (Live stock already refreshes on interval + focus/visibility — `services/liveStock.ts:385–392` — a pattern in the codebase.)
 * Supabase Realtime needs the publication enabled on `customers` (a production configuration change) and a channel; event volume is trivial at this scale. A focus/visibility refetch of 4,027 rows is cheap. Either needs a merge rule for a row with an unsaved local edit (apply the server row to `appData` **and** to the baseline, keeping the locally changed column), which is the delicate part.
@@ -294,6 +294,25 @@ Probe on the local build against the real book (every write aborted): the dialog
 Options (technical, any of which can be combined with any answer to Q8): keep as is · stronger confirmation only (T5) · Admin-only enforcement in client **and** in a server route · server-side transactional reset with backup and audit (T2–T4) · remove the feature.
 
 ---
+
+## Part 3b — Failed saves and stale tabs: FIXED (eleventh session, 2026-09-17; committed locally, not deployed)
+
+**Before.** Every dialog closed and said "saved" the moment it handed its record to the app; the write happened 800 ms later in `useCollectionSync`, and if the server refused it the only sign was a red banner that vanished after twelve seconds and carried a "Retry official sheet" button (a sheet sync, nothing to do with the save). The change stayed in the tab, unsaved, and was retried only when *something else* happened to change. Bulk actions said "Successfully reassigned…" before anything was written. The book was read once at sign-in and never again.
+
+**After.**
+
+| | Mechanism |
+|---|---|
+| A dialog waits for the verdict | `useCollectionSync.flush()` runs the pass at once and reports per row; `handleUpdateOutstanding`, `handleSaveCustomer`, `handleSavePdc` return a `SaveOutcome`; FollowUpModal / CustomerEditModal / PdcModal show "Saving…", and on a refusal stay open with the reason and everything typed (Save re-enabled). Older callers that answer nothing still close the dialog. |
+| Nothing looks saved that is not | "Customer updated" / "Reassigned N" / "Marked N cheques" are said only after the pass; a partial refusal says "Saved — but N of M could not be saved (reason); kept in this tab and retried". |
+| Refused writes stay pending and retry | the hook keeps `failed` (id → reason), retries with backoff 5 s → 15 s → 45 s → 90 s, and again on `focus` / `visibilitychange` / `online`; "Retry now" runs all collections at once. A failed row never advances the baseline (Option A invariant kept). |
+| It is visible everywhere | `SaveStatus` in the header of every page: "All changes saved" / "Saving…" / "N changes not saved · Retry now", plus "Book refreshed x min ago · Refresh". While anything is refused, the banner stays (not dismissable) with the reason and the countdown to the next retry. The sheet sync's own error keeps its "Retry official sheet" action; nothing else shows it. |
+| Long-open tabs | `refreshBook()`: waits for any pass to finish, re-reads the customers, `mergeServerRows(local, server, pendingIds)` — server rows win, rows pending here are kept exactly, rows gone from the server are dropped (no delete issued: `forget`), the baseline moves to the accepted rows (`accept`) so the refresh is never mistaken for local edits. Triggers: return to the tab (≥ 60 s since the last read), every 5 min while visible, reconnect (≥ 10 s), the Refresh button. Paused while any dialog (follow-up, edit, cheque, reset, sync review) is open. Customers only; cheques/templates unchanged. |
+| Activity / promises | already awaited directly with an inline error and the composer kept (`CustomerActivityPanel`); the notes-mirror write behind it now reports through the header like every other write. |
+
+**Proved** (`tests/saveFailures.dom.test.tsx` 13, `tests/refreshMerge.test.ts` 5; local browser probe with every write aborted): a refused save → dialog open with "Not saved: … no connection to the server", urgent still ticked; header "1 change not saved · Retry now"; banner after closing with "tried again in 3s"; exactly one write attempt, automatic retry at +5.2 s; Refresh → 5 pages read, "Book refreshed just now", the unsaved urgency still on the row; Retry now → another attempt. Production untouched.
+
+**Still open:** same-field conflicts (R1-B, Q15); cheques and templates are not refreshed on focus; the refused-write reason names the account by id (T32).
 
 ## Part 4 — Reclassification of the other findings
 

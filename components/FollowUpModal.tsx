@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Outstanding, FollowUpStatus, User, UserRole, Template, PdcCheque, PdcStatus, AdditionalContact, can, ActivityEntry, ACTIVITY_LABELS, PaymentRank, PAYMENT_RANK_LABELS, getCustomerPaymentRank, CUSTOMER_CATEGORIES, normaliseCategory, findOwner, overdueAgeing } from '../types';
 import * as repo from '../services/repository';
+import type { SaveOutcome } from '../services/useSupabaseSync';
 import { WhatsAppIcon, UserPlusIcon, ChequeIcon, TrashIcon, BuildingOfficeIcon, SparklesIcon } from './icons/Icons';
 import { BalanceAmount, formatCurrencyValue } from './BalanceAmount';
 import { renderTemplate } from '../services/messageTemplate';
@@ -11,7 +12,11 @@ interface FollowUpModalProps {
     customer: Outstanding;
     currentUser: User;
     onClose: () => void;
-    onUpdate: (customer: Outstanding) => void;
+    /**
+     * Saves the account. May answer with the server's verdict: on a refusal
+     * the dialog stays open, says why, and keeps everything typed.
+     */
+    onUpdate: (customer: Outstanding) => void | SaveOutcome | Promise<void | SaveOutcome>;
     users: User[];
     templates: Template[];
     pdcCheques?: PdcCheque[];
@@ -55,6 +60,9 @@ const FollowUpModal = ({
     const [outcome, setOutcome] = useState<'follow_up' | 'collected' | 'no_follow_up'>('follow_up');
     const [isUrgent, setIsUrgent] = useState(customer.isUrgent || false);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
+    /** Waiting for the server to accept the save; the reason if it did not. */
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     // Cash Flow Forecast state
     const [forecastAmount, setForecastAmount] = useState<string>(
@@ -241,7 +249,8 @@ const FollowUpModal = ({
         });
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        if (saving) return;
         let updatedCustomer: Outstanding = { ...customer };
         updatedCustomer.isUrgent = isUrgent;
         updatedCustomer.lastFollowUpOn = new Date();
@@ -320,7 +329,22 @@ const FollowUpModal = ({
         }
 
 
-        onUpdate(updatedCustomer);
+        setSaving(true);
+        setSaveError(null);
+        try {
+            const verdict = await onUpdate(updatedCustomer);
+            if (verdict && verdict.ok === false) {
+                // Not saved. The change is kept in this tab and retried; the
+                // person sees it here and can try again or come back later.
+                setSaveError(verdict.message);
+                return;
+            }
+        } catch (e: any) {
+            setSaveError(e?.message || 'The save was not accepted. Nothing has been lost; try again.');
+            return;
+        } finally {
+            setSaving(false);
+        }
         onClose();
     };
 
@@ -1079,6 +1103,11 @@ const FollowUpModal = ({
                     </div>
                 </div>
 
+                {saveError && (
+                    <div role="alert" className="mx-6 mb-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
+                        Not saved: {saveError} Everything you entered is still here — try again, or close and it will be retried from this tab.
+                    </div>
+                )}
                 {/* Modal Footer */}
                 <div className="bg-gray-50 dark:bg-gray-800/80 px-6 py-3.5 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-800 rounded-b-2xl max-md:px-4 max-md:py-3 max-md:rounded-none max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:h-11 max-md:[&>button]:text-[14px]">
                     <button 
@@ -1091,11 +1120,11 @@ const FollowUpModal = ({
                     <button
                         onClick={handleSave}
                         type="button"
-                        disabled={!canEditFollowUp}
+                        disabled={!canEditFollowUp || saving}
                         title={canEditFollowUp ? 'Save this follow-up' : 'Your role can read follow-ups but not record them'}
                         className="px-5 py-2 text-xs font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        Save Follow-up & Contacts
+                        {saving ? 'Saving…' : 'Save Follow-up & Contacts'}
                     </button>
                 </div>
                   </div>

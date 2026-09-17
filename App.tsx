@@ -1,9 +1,10 @@
-
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
-import { useCollectionSync, useValueSync } from './services/useSupabaseSync';
+import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
+import { SaveStatus, combineStatus } from './components/SaveStatus';
+import { mergeServerRows } from './services/refresh';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
@@ -190,7 +191,7 @@ const App = () => {
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
     
-    const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string, action?: { label: string; run: () => void } } | null>(null);
 
     /** Banner at the top of the shell. Errors linger; confirmations do not. */
     const notify = useCallback((type: 'success' | 'error', text: string) => {
@@ -244,7 +245,14 @@ const App = () => {
         setIsCustomerModalOpen(true);
     };
 
-    const handleSaveCustomer = (savedCustomer: Outstanding) => {
+    /**
+     * The dialog waits for the server's verdict: the record goes into the
+     * book at once (so the tab keeps it and retries if need be), but the
+     * dialog only closes, and "saved" is only said, once the write was
+     * accepted. A refusal goes back to the dialog, which stays open with
+     * everything typed still in it.
+     */
+    const handleSaveCustomer = async (savedCustomer: Outstanding): Promise<SaveOutcome> => {
         const isExisting = appData.some(c => c.id === savedCustomer.id);
         let updated: Outstanding[];
         if (isExisting) {
@@ -254,13 +262,13 @@ const App = () => {
         }
         const processed = processStatuses(updated);
         setAppData(processed);
-        setIsCustomerModalOpen(false);
-        setCustomerToEdit(null);
-        setSyncMessage({
-            type: 'success',
-            text: `Customer"${savedCustomer.company}" ${isExisting ? 'updated' : 'added'} successfully!`
-        });
-        setTimeout(() => setSyncMessage(null), 4000);
+        const outcome = outcomeFor(savedCustomer.id, await customersSync.flush());
+        if (outcome.ok) {
+            setIsCustomerModalOpen(false);
+            setCustomerToEdit(null);
+            notify('success', `Customer "${savedCustomer.company}" ${isExisting ? 'updated' : 'added'}.`);
+        }
+        return outcome;
     };
 
     const handleDeleteCustomer = (customerId: string) => {
@@ -270,11 +278,11 @@ const App = () => {
             const updated = appData.filter(c => c.id !== customerId);
             const processed = processStatuses(updated);
             setAppData(processed);
-            setSyncMessage({
-                type: 'success',
-                text: `Customer"${target.company}" deleted successfully.`
+            void customersSync.flush().then(r => {
+                const failed = r.failed.find(f => f.id === customerId);
+                if (failed) notify('error', `Could not delete "${target.company}": ${failed.message}. It will be tried again.`);
+                else notify('success', `Customer "${target.company}" deleted.`);
             });
-            setTimeout(() => setSyncMessage(null), 4000);
         }
     };
 
@@ -478,7 +486,20 @@ const App = () => {
     }, [isAuthenticated, serverLoaded]);
 
     const syncEnabled = isSupabaseConfigured && isAuthenticated && serverLoaded;
-    const reportSyncError = useCallback((text: string) => setSyncMessage({ type: 'error', text }), []);
+
+    /**
+     * What each collection has saved, is saving, or could not save — folded
+     * into one line in the header (SaveStatus) and a banner while anything is
+     * refused. The hooks retry on their own; "Retry now" runs them at once.
+     */
+    const [syncStatuses, setSyncStatuses] = useState<Record<string, SyncStatus>>({});
+    const statusFor = (key: string) => (status: SyncStatus) => setSyncStatuses(prev => ({ ...prev, [key]: status }));
+    const customersStatus = useCallback(statusFor('customers'), []);
+    const chequesStatus = useCallback(statusFor('cheques'), []);
+    const templatesStatus = useCallback(statusFor('templates'), []);
+    const profileStatus = useCallback(statusFor('profile'), []);
+    const settingsStatus = useCallback(statusFor('settings'), []);
+    const saveStatus = useMemo(() => combineStatus(Object.values(syncStatuses)), [syncStatuses]);
 
     // Stable adapters. These tables are small, so a sequential loop is fine.
     /**
@@ -514,28 +535,28 @@ const App = () => {
     const customerSignature = useCallback((c: Outstanding) => JSON.stringify(repo.outstandingToRow(c)), []);
     const jsonSignature = useCallback((r: unknown) => JSON.stringify(r), []);
 
-    useCollectionSync<Outstanding, repo.CustomerRow>({
+    const customersSync = useCollectionSync<Outstanding, repo.CustomerRow>({
         rows: appData, enabled: syncEnabled, label: 'customers',
         toSignature: customerSignature,
         upsert: saveCustomerRows, remove: repo.deleteCustomer,
         partial: customerColumns,
-        onError: reportSyncError,
+        onStatus: customersStatus,
     });
-    useCollectionSync({
+    const chequesSync = useCollectionSync({
         rows: pdcCheques, enabled: syncEnabled, label: 'PDC cheques',
         toSignature: jsonSignature,
         upsert: upsertPdcRows, remove: repo.deletePdcCheque,
-        onError: reportSyncError,
+        onStatus: chequesStatus,
     });
-    useCollectionSync({
+    const templatesSync = useCollectionSync({
         rows: templates, enabled: syncEnabled, label: 'templates',
         toSignature: jsonSignature,
         upsert: upsertTemplateRows, remove: repo.deleteTemplate,
-        onError: reportSyncError,
+        onStatus: templatesStatus,
     });
     useValueSync({
         value: companyProfile, enabled: syncEnabled, label: 'company profile',
-        save: repo.saveCompanyProfile, onError: reportSyncError,
+        save: repo.saveCompanyProfile, onStatus: profileStatus,
     });
 
     const settingsValue = useMemo(
@@ -544,8 +565,85 @@ const App = () => {
     );
     useValueSync({
         value: settingsValue, enabled: syncEnabled, label: 'settings',
-        save: repo.saveAppSettings, onError: reportSyncError,
+        save: repo.saveAppSettings, onStatus: settingsStatus,
     });
+
+    const retryAllSaves = useCallback(() => {
+        void Promise.all([customersSync.retry(), chequesSync.retry(), templatesSync.retry()]);
+    }, [customersSync, chequesSync, templatesSync]);
+
+    /** "Saved N of M" or the reason, after a bulk change has been given to the server. */
+    const reportBulk = (r: SyncPassResult, ids: string[], done: string) => {
+        const failed = r.failed.filter(f => ids.includes(f.id));
+        if (!failed.length) notify('success', done);
+        else notify('error', `${done} — but ${failed.length} of ${ids.length} could not be saved (${failed[0].message}). They are kept in this tab and will be retried.`);
+    };
+
+    /**
+     * Keeping a long-open tab honest.
+     *
+     * The book was read once at sign-in and never again; a colleague's note
+     * or reassignment from the morning stayed invisible all day, and the
+     * next save from here was compared with that morning's copy. Now the
+     * book is re-read when the person comes back to the tab (and every few
+     * minutes while it is open), and the server's rows replace this tab's —
+     * except any row this tab has changed and not yet saved, which is kept
+     * exactly as it is, and any dialog that is open, which pauses the
+     * refresh so a form is never pulled from under a person mid-edit.
+     */
+    const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const appDataRef = useRef<Outstanding[]>(appData);
+    appDataRef.current = appData;
+    const refreshBook = useCallback(async () => {
+        if (!syncEnabled || refreshing) return;
+        setRefreshing(true);
+        try {
+            await customersSync.idle();
+            const server = processStatuses(await repo.fetchCustomers());
+            const { merged, accepted, dropped } = mergeServerRows(appDataRef.current, server, customersSync.pendingIds());
+            // The baseline moves first, so the new rows are not mistaken for local edits.
+            customersSync.accept(accepted);
+            customersSync.forget(dropped);
+            setAppData(merged);
+            setRefreshedAt(Date.now());
+        } catch {
+            // The book stays as it was; the next return to the tab tries again.
+        } finally {
+            setRefreshing(false);
+        }
+    }, [syncEnabled, refreshing, customersSync]);
+    const refreshRef = useRef(refreshBook);
+    refreshRef.current = refreshBook;
+    const dialogOpen = !!selectedCustomer || isCustomerModalOpen || isPdcModalOpen || !!resetPlan || !!pendingSync;
+    const dialogOpenRef = useRef(dialogOpen);
+    dialogOpenRef.current = dialogOpen;
+    useEffect(() => {
+        if (!syncEnabled) return;
+        setRefreshedAt(Date.now());   // the load itself is a fresh read
+        let last = Date.now();
+        const maybe = (minAgeMs: number) => {
+            if (document.visibilityState !== 'visible' || dialogOpenRef.current) return;
+            if (Date.now() - last < minAgeMs) return;
+            last = Date.now();
+            void refreshRef.current();
+        };
+        const onVisible = () => maybe(60_000);
+        const onOnline = () => maybe(10_000);
+        const every = window.setInterval(() => maybe(5 * 60_000), 60_000);
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onVisible);
+        window.addEventListener('online', onOnline);
+        return () => {
+            window.clearInterval(every);
+            document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+            window.removeEventListener('online', onOnline);
+        };
+    }, [syncEnabled]);
+    // "x min ago" has to move without anything else changing.
+    const [, setClock] = useState(0);
+    useEffect(() => { const t = window.setInterval(() => setClock(n => n + 1), 30_000); return () => window.clearInterval(t); }, []);
 
     // Update the view when Current User changes or Master Data changes
     const updateViewData = useCallback(async () => {
@@ -634,14 +732,13 @@ const App = () => {
         setSelectedCustomer(null);
     };
 
-    const handleUpdateOutstanding = (updatedCustomer: Outstanding) => {
-        // Automatically ensure status reflects the updated followUpDate and forecast
+    /** The follow-up dialog's save: applied at once, then the server's verdict for that one account. */
+    const handleUpdateOutstanding = async (updatedCustomer: Outstanding): Promise<SaveOutcome> => {
         const processedCustomer = processStatuses([updatedCustomer])[0] || updatedCustomer;
-        const updatedList = appData.map(item =>
+        setAppData(current => processStatuses(current.map(item =>
             item.id === processedCustomer.id ? processedCustomer : item
-        );
-        const fullyProcessed = processStatuses(updatedList);
-        setAppData(fullyProcessed);
+        )));
+        return outcomeFor(updatedCustomer.id, await customersSync.flush());
     };
 
 
@@ -869,10 +966,13 @@ const App = () => {
 
     // Reassign single customer to a CRM
     const handleReassignCrm = (customerId: string, newCrmId: string) => {
-        const updated = appData.map(item =>
+        setAppData(current => current.map(item =>
             item.id === customerId ? { ...item, crmOwnerId: newCrmId } : item
-        );
-        setAppData(updated);
+        ));
+        void customersSync.flush().then(r => {
+            const failed = r.failed.find(f => f.id === customerId);
+            if (failed) notify('error', `The owner change could not be saved: ${failed.message}. It is kept in this tab and will be retried.`);
+        });
     };
 
     // Bulk reassign multiple customers to a CRM
@@ -888,28 +988,19 @@ const App = () => {
         setAppData(current => current.map(item =>
             idSet.has(item.id) ? { ...item, paymentRank: rank || undefined } : item
         ));
-        setSyncMessage({
-            type: 'success',
-            text: rank
-                ? `Marked ${customerIds.length} account${customerIds.length === 1 ? '' : 's'} as ${PAYMENT_RANK_LABELS[rank]}.`
-                : `Cleared the rank on ${customerIds.length} account${customerIds.length === 1 ? '' : 's'}; they go back to being worked out from ageing.`,
-        });
-        setTimeout(() => setSyncMessage(null), 4000);
+        void customersSync.flush().then(r => reportBulk(r, customerIds, rank
+            ? `Marked ${customerIds.length} account${customerIds.length === 1 ? '' : 's'} as ${PAYMENT_RANK_LABELS[rank]}.`
+            : `Cleared the rank on ${customerIds.length} account${customerIds.length === 1 ? '' : 's'}; they go back to being worked out from ageing.`));
     };
 
     const handleBulkReassignCrm = (customerIds: string[], newCrmId: string) => {
         const idSet = new Set(customerIds);
-        const updated = appData.map(item =>
+        setAppData(current => current.map(item =>
             idSet.has(item.id) ? { ...item, crmOwnerId: newCrmId } : item
-        );
-        setAppData(updated);
+        ));
         const targetCrmUser = users.find(u => u.id === newCrmId || u.name === newCrmId);
         const targetName = targetCrmUser ? targetCrmUser.name : (newCrmId || 'Unassigned');
-        setSyncMessage({
-            type: 'success',
-            text: `Successfully reassigned ${customerIds.length} customer(s) to ${targetName}.`
-        });
-        setTimeout(() => setSyncMessage(null), 4000);
+        void customersSync.flush().then(r => reportBulk(r, customerIds, `Reassigned ${customerIds.length} customer${customerIds.length === 1 ? '' : 's'} to ${targetName}.`));
     };
 
     /**
@@ -996,8 +1087,7 @@ const App = () => {
         setAppData(processStatuses(updated));
 
         const unchanged = customerIds.length - changed.length;
-        notify(
-            'success',
+        reportBulk(await customersSync.flush(), changed.map(c => c.id),
             `Follow-up set to ${nextLabel} on ${changed.length} account${changed.length === 1 ? '' : 's'}`
             + (unchanged ? ` (${unchanged} already had it)` : '')
             + `. Each one's activity records the move`
@@ -1091,7 +1181,7 @@ const App = () => {
 
         } catch (err) {
             const msg = err instanceof Error ? err.message :"Unknown error during sync";
-            setSyncMessage({ type: 'error', text: msg });
+            setSyncMessage({ type: 'error', text: msg, action: { label: 'Retry official sheet', run: () => handleGoogleSync(OFFICIAL_SHEET_URL) } });
         } finally {
             setIsSyncing(false);
         }
@@ -1698,21 +1788,26 @@ const App = () => {
         setIsPdcModalOpen(true);
     };
 
-    const handleSavePdc = (chequeData: Omit<PdcCheque, 'id'> & { id?: string }) => {
+    /** The cheque dialog waits for the verdict the same way the customer dialogs do. */
+    const handleSavePdc = async (chequeData: Omit<PdcCheque, 'id'> & { id?: string }): Promise<SaveOutcome> => {
+        const id = chequeData.id || `pdc_${Date.now()}`;
         if (chequeData.id) {
             setPdcCheques(prev => prev.map(p => p.id === chequeData.id ? { ...(chequeData as PdcCheque) } : p));
         } else {
-            const newCheque: PdcCheque = {
-                ...(chequeData as Omit<PdcCheque, 'id'>),
-                id: `pdc_${Date.now()}`
-            };
+            const newCheque: PdcCheque = { ...(chequeData as Omit<PdcCheque, 'id'>), id };
             setPdcCheques(prev => [newCheque, ...prev]);
         }
-        setIsPdcModalOpen(false);
+        const outcome = outcomeFor(id, await chequesSync.flush());
+        if (outcome.ok) setIsPdcModalOpen(false);
+        return outcome;
     };
 
     const handleDeletePdc = (chequeId: string) => {
         setPdcCheques(prev => prev.filter(p => p.id !== chequeId));
+        void chequesSync.flush().then(r => {
+            const failed = r.failed.find(f => f.id === chequeId);
+            if (failed) notify('error', `The cheque could not be deleted: ${failed.message}. It will be tried again.`);
+        });
     };
 
     const handleUpdatePdcStatus = (chequeId: string, newStatus: PdcStatus) => {
@@ -1726,6 +1821,10 @@ const App = () => {
             }
             return p;
         }));
+        void chequesSync.flush().then(r => {
+            const failed = r.failed.find(f => f.id === chequeId);
+            if (failed) notify('error', `The cheque's status could not be saved: ${failed.message}. It is kept in this tab and will be retried.`);
+        });
     };
 
     /**
@@ -1742,21 +1841,13 @@ const App = () => {
                 ? { ...p, status: newStatus, clearedDate: newStatus === PdcStatus.Cleared ? new Date() : p.clearedDate }
                 : p
         )));
-        setSyncMessage({
-            type: 'success',
-            text: `Marked ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'} as ${newStatus}.`,
-        });
-        setTimeout(() => setSyncMessage(null), 4000);
+        void chequesSync.flush().then(r => reportBulk(r, chequeIds, `Marked ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'} as ${newStatus}.`));
     };
 
     const handleBulkDeletePdc = (chequeIds: string[]) => {
         const idSet = new Set(chequeIds);
         setPdcCheques(prev => prev.filter(p => !idSet.has(p.id)));
-        setSyncMessage({
-            type: 'success',
-            text: `Deleted ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'}.`,
-        });
-        setTimeout(() => setSyncMessage(null), 4000);
+        void chequesSync.flush().then(r => reportBulk(r, chequeIds, `Deleted ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'}.`));
     };
 
     const handleOpenPdcForCustomer = (customerId: string) => {
@@ -3129,36 +3220,55 @@ const App = () => {
      */
     const showSkeleton = loading || (isSupabaseConfigured && isAuthenticated && !serverLoaded);
 
-    const shellBanner = syncMessage ? (
+    /**
+     * A refused save is not a passing message: it stays in the banner, with
+     * the reason and a way to try again, until the server accepts it. A
+     * transient message (a sync result, a bulk action's outcome) takes the
+     * banner over while it lasts.
+     */
+    const refusedBanner = saveStatus.failed.length && !syncMessage ? {
+        type: 'error' as const,
+        text: `${saveStatus.failed.length} change${saveStatus.failed.length === 1 ? '' : 's'} could not be saved: ${saveStatus.failed[0].message}. `
+            + `${saveStatus.failed.length === 1 ? 'It is' : 'They are'} kept in this tab`
+            + (saveStatus.retryAt ? ` and will be tried again in ${Math.max(1, Math.round((saveStatus.retryAt - Date.now()) / 1000))}s.` : ' and will be tried again.'),
+        action: { label: saveStatus.saving ? 'Retrying…' : 'Retry now', run: retryAllSaves },
+        dismissable: false,
+    } : null;
+    const bannerMessage = syncMessage ? { ...syncMessage, dismissable: true } : refusedBanner;
+    const shellBanner = bannerMessage ? (
         <div className="px-3 sm:px-5 lg:px-7 pt-4">
             <div
-                role="status"
+                role={bannerMessage.type === 'error' ? 'alert' : 'status'}
                 className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${
-                    syncMessage.type === 'success'
+                    bannerMessage.type === 'success'
                         ? 'bg-pos-bg border-pos text-pos'
                         : 'bg-dang-bg border-dang text-dang'
                 }`}
             >
                 <span className="mt-0.5 flex-none">
-                    {syncMessage.type === 'success'
+                    {bannerMessage.type === 'success'
                         ? <CheckCircleIcon className="w-[18px] h-[18px]" />
                         : <ExclamationTriangleIcon className="w-[18px] h-[18px]" />}
                 </span>
-                <p className="text-[14px] font-medium flex-1 leading-snug">{syncMessage.text}</p>
-                {syncMessage.type === 'error' && (
+                <p className="text-[14px] font-medium flex-1 leading-snug">{bannerMessage.text}</p>
+                {bannerMessage.action && (
                     <button
-                        onClick={() => handleGoogleSync(OFFICIAL_SHEET_URL)}
-                        className="text-[13px] font-bold underline underline-offset-2 whitespace-nowrap flex-none"
+                        onClick={bannerMessage.action.run}
+                        disabled={saveStatus.saving && bannerMessage === refusedBanner}
+                        className="text-[13px] font-bold underline underline-offset-2 whitespace-nowrap flex-none disabled:opacity-60"
                     >
-                        Retry official sheet
+                        {bannerMessage.action.label}
                     </button>
                 )}
-                <button
-                    onClick={() => setSyncMessage(null)}
-                    className="opacity-55 hover:opacity-100 flex-none leading-none text-lg"
-                >
-                    &times;
-                </button>
+                {bannerMessage.dismissable && (
+                    <button
+                        onClick={() => setSyncMessage(null)}
+                        className="opacity-55 hover:opacity-100 flex-none leading-none text-lg"
+                        aria-label="Dismiss"
+                    >
+                        &times;
+                    </button>
+                )}
             </div>
         </div>
     ) : null;
@@ -3224,6 +3334,9 @@ const App = () => {
             dataAsOf={safeKey === 'stock' ? undefined : sheetUpdatedTillDate}
             lastSyncTime={safeKey === 'stock' ? undefined : lastSyncTime}
             banner={shellBanner}
+            saveStatus={syncEnabled ? (
+                <SaveStatus status={saveStatus} refreshedAt={refreshedAt} refreshing={refreshing} onRetry={retryAllSaves} onRefresh={() => { void refreshBook(); }} />
+            ) : undefined}
         >
             {showSkeleton ? (
                 // The shape of what is coming, rather than a spinner over an

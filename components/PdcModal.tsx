@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User } from '../types';
+import type { SaveOutcome } from '../services/useSupabaseSync';
 import { ChequeIcon } from './icons/Icons';
 
 interface PdcModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (chequeData: Omit<PdcCheque, 'id'> & { id?: string }) => void;
+    /** May answer with the server's verdict; on a refusal the dialog stays open with everything typed. */
+    onSave: (chequeData: Omit<PdcCheque, 'id'> & { id?: string }) => void | SaveOutcome | Promise<void | SaveOutcome>;
     chequeToEdit?: PdcCheque | null;
     preselectedCustomerId?: string;
     customers: Outstanding[];
@@ -50,6 +52,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
     const [receivedDate, setReceivedDate] = useState(new Date().toISOString().split('T')[0]);
     const [remarks, setRemarks] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         if (chequeToEdit) {
@@ -99,8 +102,9 @@ const PdcModal: React.FC<PdcModalProps> = ({
 
     const selectedCustomer = customers.find(c => c.id === customerId);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
         setError(null);
 
         if (!customerId) {
@@ -133,7 +137,10 @@ const PdcModal: React.FC<PdcModalProps> = ({
         const finalCustomerName = selectedCustomer ? selectedCustomer.company : 'Unknown Customer';
         const finalCrmOwnerId = selectedCustomer ? selectedCustomer.crmOwnerId : (currentUser?.id || '');
 
-        onSave({
+        setSaving(true);
+        let verdict: void | SaveOutcome;
+        try {
+            verdict = await onSave({
             id: chequeToEdit?.id,
             customerId,
             customerName: finalCustomerName,
@@ -146,8 +153,17 @@ const PdcModal: React.FC<PdcModalProps> = ({
             remarks: remarks.trim(),
             crmOwnerId: finalCrmOwnerId,
             addedBy: currentUser?.name || 'System'
-        });
-
+            });
+        } catch (e: any) {
+            setSaving(false);
+            setError(`Not saved: ${e?.message || 'the save was not accepted'}. The cheque is still here — try again.`);
+            return;
+        }
+        setSaving(false);
+        if (verdict && verdict.ok === false) {
+            setError(`Not saved: ${verdict.message} The cheque is kept in this tab and will be retried; you can also try again now.`);
+            return;
+        }
         onClose();
     };
 
@@ -374,9 +390,10 @@ const PdcModal: React.FC<PdcModalProps> = ({
                         </button>
                         <button
                             type="submit"
+                            disabled={saving}
                             className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-colors flex items-center space-x-2"
                         >
-                            <span>{chequeToEdit ? 'Save Changes' : 'Add PDC Cheque'}</span>
+                            <span>{saving ? 'Saving…' : chequeToEdit ? 'Save Changes' : 'Add PDC Cheque'}</span>
                         </button>
                     </div>
                 </form>

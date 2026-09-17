@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import type { SaveOutcome } from '../services/useSupabaseSync';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
     customerToEdit: Outstanding | null; // null means Add New Customer
-    onSave: (customer: Outstanding) => void;
+    /** May answer with the server's verdict; on a refusal the dialog stays open with everything typed. */
+    onSave: (customer: Outstanding) => void | SaveOutcome | Promise<void | SaveOutcome>;
     onClose: () => void;
     currentUser: User | null;
     users: User[];
@@ -60,6 +62,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     // Follow-up
     const [followUpDate, setFollowUpDate] = useState('');
     const [initialNote, setInitialNote] = useState('');
+    /** Waiting for the server to accept the save; the reason if it did not. */
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
     const [isUrgent, setIsUrgent] = useState(false);
 
     /**
@@ -183,8 +188,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
         setAdditionalContacts(prev => prev.filter(c => c.id !== id));
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (saving) return;
         if (!company.trim()) {
             alert('Company name is required.');
             return;
@@ -294,7 +300,16 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             if (moneyChanged) Object.assign(savedRecord, moneyFromForm());
         }
 
-        onSave(savedRecord);
+        setSaving(true);
+        setSaveError(null);
+        try {
+            const verdict = await onSave(savedRecord);
+            if (verdict && verdict.ok === false) setSaveError(verdict.message);
+        } catch (err: any) {
+            setSaveError(err?.message || 'The save was not accepted. Nothing has been lost; try again.');
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
@@ -727,6 +742,11 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                         </div>
                     </div>
 
+                    {saveError && (
+                        <div role="alert" className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
+                            Not saved: {saveError} Your changes are still here — try again, or close and they will be retried from this tab.
+                        </div>
+                    )}
                     {/* Footer */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3 max-md:pb-[env(safe-area-inset-bottom)] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
                         <button 
@@ -738,9 +758,10 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                         </button>
                         <button 
                             type="submit" 
+                            disabled={saving}
                             className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5"
                         >
-                            <span>{isNew ? 'Create Customer' : 'Save Changes'}</span>
+                            <span>{saving ? 'Saving…' : isNew ? 'Create Customer' : 'Save Changes'}</span>
                         </button>
                     </div>
                 </form>

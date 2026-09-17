@@ -220,6 +220,8 @@ export interface AppShellProps {
   onChangePassword?: () => void;
   dataAsOf?: string;
   lastSyncTime?: string;
+  /** Saved / saving / not saved, and how fresh the book is — shown on every page. */
+  saveStatus?: React.ReactNode;
 
   banner?: React.ReactNode;
   /**
@@ -252,6 +254,7 @@ export const AppShell = ({
   onChangePassword,
   dataAsOf,
   lastSyncTime,
+  saveStatus,
   banner,
   fitViewport,
   children,
@@ -597,7 +600,7 @@ export const AppShell = ({
             <h1 className="text-[32px] sm:text-[36px] max-md:text-[27px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
               {title}
             </h1>
-            {(subtitle || dataAsOf || lastSyncTime) && (
+            {(subtitle || dataAsOf || lastSyncTime || saveStatus) && (
               <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3 max-md:mt-2 max-md:text-[13px] max-md:gap-x-2 max-md:gap-y-1">
                 {subtitle}
                 {dataAsOf && (
@@ -615,6 +618,12 @@ export const AppShell = ({
                     <span className={syncIsStale ? 'text-warn font-semibold' : 'text-pos font-semibold'}>
                       {syncedLabel}
                     </span>
+                  </>
+                )}
+                {saveStatus && (
+                  <>
+                    {(subtitle || dataAsOf || syncedLabel) && <span className="w-1 h-1 rounded-full bg-label-3" aria-hidden="true" />}
+                    {saveStatus}
                   </>
                 )}
               </div>
