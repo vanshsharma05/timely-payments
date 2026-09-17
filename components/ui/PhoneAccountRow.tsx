@@ -109,7 +109,7 @@ export const PhoneAccountRow = ({
                         .join(' · ') || 'No contact on file'}
                 </p>
                 {lastNote && (
-                    <p className="text-[12px] text-label-4 mt-1 truncate" title={lastNote}>
+                    <p className="text-[12px] text-label-3 mt-1 truncate" title={lastNote}>
                         {lastNote}
                     </p>
                 )}

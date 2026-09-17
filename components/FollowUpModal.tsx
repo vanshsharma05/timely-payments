@@ -9,6 +9,7 @@ import { renderTemplate } from '../services/messageTemplate';
 import CustomerActivityPanel from './CustomerActivityPanel';
 import { useIsPhone } from './ui/usePhone';
 import { Disclosure } from './ui/Disclosure';
+import { useModal } from './ui/useModal';
 import { ChequeStateBadge, stateOf } from './ui/ChequeState';
 import StatusBadge from './StatusBadge';
 import { followUpStatusOf } from '../types';
@@ -51,6 +52,9 @@ const FollowUpModal = ({
     position,
     onNavigate,
 }: FollowUpModalProps) => {
+    // Focus stays inside; Esc and the arrows are handled by this dialog's own key handler below.
+    const panel = useModal(true, undefined, { closeOnEscape: false });
+
     const [nextFollowUpDate, setNextFollowUpDate] = useState(() => {
         if (customer.followUpDate) {
             try {
@@ -407,13 +411,13 @@ const FollowUpModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="follow-up-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Modal Header */}
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl max-md:px-4 max-md:py-3 max-md:rounded-none">
                     <div>
                         <div className="flex items-center gap-2">
                             <BuildingOfficeIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
-                            <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white leading-tight">
+                            <h2 id="follow-up-title" className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white leading-tight">
                                 {customer.company}
                             </h2>
                         </div>
@@ -558,7 +562,7 @@ const FollowUpModal = ({
                                 <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
                                     outcome === 'follow_up' ? 'bg-green-50 dark:bg-green-950/40 border-green-500 font-bold text-green-900 dark:text-green-200 ring-2 ring-green-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                 }`}>
-                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} className="mr-2 text-green-600 dark:text-green-400"/>
+                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} data-autofocus className="mr-2 text-green-600 dark:text-green-400"/>
                                     <span>Follow up again</span>
                                 </label>
                                 <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
@@ -1013,9 +1017,9 @@ const FollowUpModal = ({
                                         <button
                                             type="button"
                                             onClick={() => onAddPdc(customer.id)}
-                                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold flex items-center gap-1 transition-colors shadow-2xs"
+                                            className="h-7 px-2.5 bg-accent hover:bg-accent-press text-on-accent rounded-full text-[12px] font-semibold flex items-center gap-1 transition-colors shadow-2xs"
                                         >
-                                            <span>+ Add Cheque</span>
+                                            <span>+ Add cheque</span>
                                         </button>
                                     )}
                                 </div>
@@ -1180,7 +1184,7 @@ const FollowUpModal = ({
                     <button 
                         onClick={onClose} 
                         type="button" 
-                        className="px-4 py-2 text-xs font-bold rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                        className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
                      aria-label="Close">
                         Cancel
                     </button>
@@ -1189,7 +1193,7 @@ const FollowUpModal = ({
                         type="button"
                         disabled={!canEditFollowUp || saving}
                         title={canEditFollowUp ? 'Save this follow-up' : 'Your role can read follow-ups but not record them'}
-                        className="px-5 py-2 text-xs font-bold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                     >
                         {saving ? 'Saving…' : 'Save follow-up'}
                     </button>

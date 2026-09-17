@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
+import { loadXlsx } from '../services/excel';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, followUpStatusOf, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing, isBadDebt } from '../types';
 import StatusBadge from './StatusBadge';
-import AiReportModal from './AiReportModal';
+const AiReportModal = lazy(() => import('./AiReportModal'));
 import { WhatsAppIcon, FireIcon, DownloadIcon, ChequeIcon, SparklesIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button } from './ui/Primitives';
 import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
@@ -383,11 +383,8 @@ export const ReportsView = ({
     /** True when a stored contact number is worth offering as a dial link. */
     const dialable = (raw?: string) => (raw || '').replace(/D/g, '').length >= 7;
 
-    const exportToExcel = () => {
-        if (!XLSX) {
-            alert('Excel utility is loading, please try again in a moment.');
-            return;
-        }
+    const exportToExcel = async () => {
+        const XLSX = await loadXlsx();
 
         // With rows ticked, the download is those rows — otherwise the whole
         // filtered report, exactly as before.
@@ -741,7 +738,7 @@ export const ReportsView = ({
                             {canDownloadExcel && (
                                 <button
                                     onClick={exportToExcel}
-                                    className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent hover:bg-accent-press text-on-accent"
                                 >
                                     Export these {selected.length}
                                 </button>
@@ -1059,7 +1056,8 @@ export const ReportsView = ({
                 )}
             </div>
 
-            {/* AI Report Modal */}
+            {/* AI Report Modal — its markdown renderer arrives when it is first opened */}
+            <Suspense fallback={null}>
             <AiReportModal
                 isOpen={isAiReportOpen}
                 onClose={() => setIsAiReportOpen(false)}
@@ -1070,6 +1068,7 @@ export const ReportsView = ({
                 pdcCheques={pdcCheques}
                 onFollowUp={onFollowUp}
             />
+            </Suspense>
         </div>
     );
 };

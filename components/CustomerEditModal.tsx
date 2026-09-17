@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
-import { useEscape } from './ui/useEscape';
+import { useModal } from './ui/useModal';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
@@ -66,7 +66,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     /** Waiting for the server to accept the save; the reason if it did not. */
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    useEscape(onClose, !saving);
+    const panel = useModal(true, onClose, { closeOnEscape: !saving });
     const [isUrgent, setIsUrgent] = useState(false);
 
     /**
@@ -319,12 +319,12 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <span>{isNew ? 'Add New Customer' : 'Edit Customer Master'}</span>
+                        <h2 id="customer-edit-title" className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <span>{isNew ? 'Add a customer' : 'Edit customer details'}</span>
                         </h2>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {isNew ? 'Create a new customer account, assign CRM owner, and set outstanding ledger details.' : `Updating company details and contact directory for ${customerToEdit?.company}`}
@@ -350,6 +350,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             <input
                                 type="text"
                                 value={company}
+                                data-autofocus
                                 onChange={e => setCompany(e.target.value)}
                                 placeholder="e.g. SHREE RAM INDUSTRIES PVT LTD"
                                 className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold focus:ring-2 focus:ring-accent text-gray-900 dark:text-white uppercase"
@@ -618,7 +619,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             <button
                                 type="button"
                                 onClick={handleAddContact}
-                                className="flex-none px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg whitespace-nowrap"
+                                className="flex-none h-9 px-3.5 bg-accent hover:bg-accent-press text-on-accent text-[12.5px] font-semibold rounded-full whitespace-nowrap"
                             >
                                 + Add
                             </button>
@@ -757,16 +758,16 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                         <button 
                             type="button"
                             onClick={onClose} 
-                            className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
                          aria-label="Close">
                             Cancel
                         </button>
                         <button 
                             type="submit" 
                             disabled={saving}
-                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5"
+                            className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                         >
-                            <span>{saving ? 'Saving…' : isNew ? 'Create Customer' : 'Save Changes'}</span>
+                            <span>{saving ? 'Saving…' : isNew ? 'Add customer' : 'Save changes'}</span>
                         </button>
                     </div>
                 </form>

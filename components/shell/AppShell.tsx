@@ -264,6 +264,21 @@ export const AppShell = ({
   const [userOpen, setUserOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * The box keeps its own copy of what is typed and hands the term on a
+   * beat later. Every keystroke used to re-render the whole app — the list
+   * behind it re-filtered four thousand accounts each time — and the cursor
+   * lagged the finger. The term from elsewhere (a card, the book's own box,
+   * Clear) still lands here at once.
+   */
+  const [draft, setDraft] = useState(searchTerm);
+  useEffect(() => { setDraft(searchTerm); }, [searchTerm]);
+  useEffect(() => {
+    if (draft === searchTerm) return;
+    const t = window.setTimeout(() => onSearch(draft), 180);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
   const setupSheetRef = useRef<HTMLDivElement>(null);
   const setupTabRef = useRef<HTMLButtonElement>(null);
@@ -346,17 +361,18 @@ export const AppShell = ({
               <SearchGlyph className="w-[18px] h-[18px] absolute left-4 top-1/2 -translate-y-1/2 text-label-3 pointer-events-none" />
               <input
                 ref={searchRef}
-                value={searchTerm}
-                onChange={e => onSearch(e.target.value)}
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') onSearch(draft); }}
                 // The full placeholder is cut to "Search customers, co" in the
                 // width a phone leaves for it; say less rather than half.
                 placeholder={isPhone ? searchPlaceholderShort : searchPlaceholder}
                 aria-label="Search"
                 className="w-full h-11 pl-12 pr-12 rounded-full bg-card-3 border border-transparent text-[14px] text-label placeholder:text-label-3 focus:bg-card focus:border-accent focus:shadow-e2 outline-none transition-all"
               />
-              {searchTerm ? (
+              {draft ? (
                 <button
-                  onClick={() => onSearch('')}
+                  onClick={() => { setDraft(''); onSearch(''); }}
                   aria-label="Clear search"
                   className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover transition-colors text-[17px] leading-none"
                 >

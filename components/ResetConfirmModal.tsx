@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { ResetPlan } from '../services/reset';
+import { useModal } from './ui/useModal';
 
 export interface ResetConfirmModalProps {
     plan: ResetPlan;
@@ -25,6 +26,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({ plan, onDo
     const [downloaded, setDownloaded] = useState(false);
     const [phrase, setPhrase] = useState('');
     const [busy, setBusy] = useState(false);
+    const panel = useModal(true, onCancel, { closeOnEscape: !busy });
     const [error, setError] = useState<string | null>(null);
     const { counts } = plan;
     const ready = downloaded && phrase.trim() === RESET_PHRASE && !busy;
@@ -44,8 +46,8 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({ plan, onDo
     const n = (v: number, one: string, many = one + 's') => `${v} ${v === 1 ? one : many}`;
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start" role="dialog" aria-modal="true" aria-labelledby="reset-title">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 max-md:max-h-none max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start">
+            <div ref={panel} role="alertdialog" aria-modal="true" aria-labelledby="reset-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800 max-md:max-h-none max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none">
                 <div className="p-5 sm:p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start">
                     <div>
                         <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-300">

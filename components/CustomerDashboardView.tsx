@@ -595,7 +595,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 : 'bg-card-3 text-label-2 cursor-not-allowed'
                         }`}
                     >
-                        <span>Add Customer</span>
+                        <span>Add customer</span>
                         
                     </button>
 
@@ -1180,9 +1180,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     {canAddCustomer && (
                         <button
                             onClick={onAddCustomer}
-                            className="mt-3 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all inline-flex items-center gap-1"
+                            className="mt-3 h-9 px-4 bg-accent hover:bg-accent-press text-on-accent text-[13px] font-semibold rounded-full shadow-e1 transition-all inline-flex items-center gap-1"
                         >
-                            <span>Add New Customer</span>
+                            <span>Add customer</span>
                         </button>
                     )}
                 </div>
@@ -1567,7 +1567,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                         disabled={!canEditFollowUp}
                                                         className={`h-8 px-3 text-[12.5px] font-semibold rounded-full transition-all ${
                                                             canEditFollowUp
-                                                                ? 'bg-green-600 hover:bg-green-700 text-white shadow-2xs'
+                                                                ? 'bg-accent hover:bg-accent-press text-on-accent shadow-2xs'
                                                                 : 'bg-gray-200 dark:bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed'
                                                         }`}
                                                         title="Open this account: log the call, set the next date"
@@ -1736,7 +1736,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                             disabled={!canEditFollowUp}
                                             className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                                                 canEditFollowUp
-                                                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-2xs'
+                                                    ? 'bg-accent hover:bg-accent-press text-on-accent shadow-2xs'
                                                     : 'bg-gray-200 dark:bg-gray-700 text-gray-400 opacity-50 cursor-not-allowed'
                                             }`}
                                         >

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, DataVisibility, UserPermissions, TeamMemberDraft, DEFAULT_ROLE_PERMISSIONS } from '../types';
+import { useModal } from './ui/useModal';
 
 interface UserModalProps {
     userToEdit: User | null;
@@ -25,6 +26,7 @@ const typeCrmCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9_]+/
 const KNOWN_CRMS = ['ANKUR', 'PRIKSHIT', 'VISHNU', 'POONAM', 'SANDEEP', 'KAPIL', 'SAVIA', 'ROHINI', 'GARRY'];
 
 const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: UserModalProps) => {
+    const panel = useModal(true, onClose);
     const [name, setName] = useState('');
     const [crmCode, setCrmCode] = useState('');
     const [crmCodeTouched, setCrmCodeTouched] = useState(false);
@@ -161,12 +163,12 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="user-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                                        <span>{userToEdit ? `Edit User: ${userToEdit.name}` : 'Add New User'}</span>
+                        <h2 id="user-title" className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                                        <span>{userToEdit ? `Edit ${userToEdit.name}` : 'Add a team member'}</span>
                         </h2>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             Configure user profile, role classification, customer access rights, and action permissions.
@@ -193,6 +195,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 id="userName"
                                 type="text"
                                 value={name}
+                                data-autofocus
                                 onChange={(e) => setName(e.target.value)}
                                 placeholder="e.g. Ankur Sharma"
                                 className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
@@ -495,16 +498,16 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                             type="button"
                             onClick={onClose}
                             disabled={saving}
-                            className="px-4 py-2.5 text-sm font-semibold rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
                          aria-label="Close">
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={saving}
-                            className="px-5 py-2.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                         >
-                            <span>{saving ? 'Saving…' : userToEdit ? 'Save User & Rights' : 'Create Account'}</span>
+                            <span>{saving ? 'Saving…' : userToEdit ? 'Save changes' : 'Create login'}</span>
                         </button>
                     </div>
                 </form>

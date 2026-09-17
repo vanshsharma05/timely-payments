@@ -63,7 +63,7 @@ export const BalanceAmount: React.FC<BalanceAmountProps> = ({
         <span className={`inline-flex items-center gap-1 ${defaultClass} ${className}`}>
             <span>{formatted}</span>
             {showDrLabel && amount > 0 && (
-                <span className="text-[11.5px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-tight">
+                <span className="text-[11.5px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
                     Dr
                 </span>
             )}

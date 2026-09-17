@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useIsPhone } from './ui/usePhone';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../services/excel';
 import { Outstanding, PdcCheque, PdcStatus, User, UserRole, can, seesWholeBook, scopeTo, chequeState, ChequeState, CHEQUE_ACTIVE, findOwner, ownerKey } from '../types';
 import { ChequeIcon, DownloadIcon, EditIcon, TrashIcon } from './icons/Icons';
 import { Button } from './ui/Primitives';
@@ -302,8 +302,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     };
 
     // Export to Excel / CSV
-    const handleExport = () => {
-        if (XLSX) {
+    const handleExport = async () => {
+        const XLSX = await loadXlsx();
+        {
             const dataToExport = filteredCheques.map(c => {
                 const customer = customerById.get(c.customerId);
                 const crmUser = users.find(u => u.id === (customer?.crmOwnerId || c.crmOwnerId));
@@ -325,8 +326,6 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'PDC Cheques');
             XLSX.writeFile(workbook, `PDC_Cheques_${new Date().toISOString().split('T')[0]}.xlsx`);
-        } else {
-            alert('Export utility is loading, please try again in a moment.');
         }
     };
 

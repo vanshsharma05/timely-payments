@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Template } from '../types';
+import { useModal } from './ui/useModal';
 
 interface TemplateModalProps {
     templateToEdit: Template | null;
@@ -29,6 +30,7 @@ const PLACEHOLDERS: { token: string; label: string }[] = [
 ];
 
 const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) => {
+    const panel = useModal(true, onClose);
     const [name, setName] = useState('');
     const [content, setContent] = useState('');
     const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -80,20 +82,21 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="template-title" className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 <form onSubmit={handleSubmit}>
                     <div className="p-6">
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
-                                {templateToEdit ? 'Edit Template' : 'Add New Template'}
+                            <h2 id="template-title" className="text-2xl font-bold text-gray-800 dark:text-white">
+                                {templateToEdit ? 'Edit template' : 'New template'}
                             </h2>
                             <button type="button" onClick={onClose} className="w-9 h-9 grid place-items-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-hover text-2xl leading-none" aria-label="Close">&times;</button>
                         </div>
                         <div className="space-y-4">
                             <div>
                                 <label htmlFor="templateName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Template Name</label>
-                                <input aria-label="Template Name"
+                                <input aria-label="Template name"
                                     id="templateName"
+                                    data-autofocus
                                     type="text"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
@@ -134,8 +137,8 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
                         </div>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-800 px-6 py-3 flex justify-end space-x-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button onClick={onClose} type="button" className="px-4 py-2 text-sm font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600" aria-label="Close">Cancel</button>
-                        <button type="submit" className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700">Save Template</button>
+                        <button onClick={onClose} type="button" className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40" aria-label="Close">Cancel</button>
+                        <button type="submit" className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">Save template</button>
                     </div>
                 </form>
             </div>

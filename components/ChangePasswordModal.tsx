@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { changeOwnPassword } from '../services/repository';
 import { Button, Spinner, cx } from './ui/Primitives';
+import { useModal } from './ui/useModal';
 
 /**
  * Change your own password.
@@ -21,6 +22,7 @@ const ChangePasswordModal = ({
     const [show, setShow] = useState(false);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    const panel = useModal(true, onClose, { closeOnEscape: !busy });
     const firstRef = useRef<HTMLInputElement>(null);
 
     const submit = async (e: React.FormEvent) => {
@@ -54,10 +56,10 @@ const ChangePasswordModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4">
-            <div className="bg-card rounded-[20px] shadow-e3 w-full max-w-[420px] p-6">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="change-password-title" className="bg-card rounded-[20px] shadow-e3 w-full max-w-[420px] p-6">
                 <div className="flex items-start justify-between gap-4">
                     <div>
-                        <h2 className="text-[19px] font-extrabold text-label tracking-[-0.02em]">Change password</h2>
+                        <h2 id="change-password-title" className="text-[19px] font-extrabold text-label tracking-[-0.02em]">Change password</h2>
                         <p className="text-[13.5px] text-label-3 mt-1">
                             You will stay signed in on this device.
                         </p>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../services/excel';
 import { User, can, matchesSearch } from '../types';
 import {
     StockItem,
@@ -24,6 +24,7 @@ import { formatCompact, formatDate, formatINR, groupIndian } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { DownloadIcon, SyncIcon } from './icons/Icons';
 import { ChevronDown } from './shell/NavIcons';
+import { useModal } from './ui/useModal';
 
 /* ============================================================================
    Live stock — a window onto the stores sheet.
@@ -361,12 +362,8 @@ export const LiveStockView = ({
     const leaveCompare = () => { setCompareIds([]); setCompareOpen(false); setCompareMode(false); };
     // Nothing to lay side by side once the ticks are gone.
     useEffect(() => { if (compared.length === 0) setCompareOpen(false); }, [compared.length]);
-    useEffect(() => {
-        if (!compareOpen) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCompareOpen(false);
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [compareOpen]);
+    // Esc closes, Tab stays inside, focus comes back to the list: the same hook every dialog uses.
+    const comparePanel = useModal(compareOpen, () => setCompareOpen(false));
 
     // A sub-category belongs to a category; changing the category clears it.
     useEffect(() => { setSubCategory('ALL'); }, [category]);
@@ -384,12 +381,7 @@ export const LiveStockView = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [items]);
 
-    useEffect(() => {
-        if (!selected) return;
-        const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [selected]);
+    const drawerPanel = useModal(!!selected, () => setSelected(null));
 
     // "now" ticks so the "2 min ago" stays honest without a re-read.
     const [, setTick] = useState(0);
@@ -499,7 +491,8 @@ export const LiveStockView = ({
         else { setSortKey(k); setSortDesc(k !== 'name' && k !== 'category'); }
     };
 
-    const exportExcel = (source: StockItem[] = filtered) => {
+    const exportExcel = async (source: StockItem[] = filtered) => {
+        const XLSX = await loadXlsx();
         const rows = source.map(i => ({
             'Item Code': i.code,
             'Description': i.description,
@@ -1037,7 +1030,7 @@ export const LiveStockView = ({
                                                                 <p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(item.minLevel)} · max {formatQty(item.maxLevel)}</p>
                                                             </>
                                                         ) : (
-                                                            <span className="text-[11.5px] text-label-4">no levels</span>
+                                                            <span className="text-[11.5px] text-label-3">no levels</span>
                                                         )}
                                                     </td>
                                                     {showPrices && <td className="px-3 py-2.5 text-right whitespace-nowrap num text-label-2">{item.rate ? formatINR(item.rate) : '—'}</td>}
@@ -1133,9 +1126,9 @@ export const LiveStockView = ({
 
             {/* ---------- compare panel: one column per item, the same facts in the same rows ---------- */}
             {compareOpen && compared.length > 0 && (
-                <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={`Comparing ${compared.length} items`}>
+                <div className="fixed inset-0 z-50">
                     <button type="button" aria-label="Close" onClick={() => setCompareOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
-                    <div className="absolute inset-x-0 bottom-0 top-0 md:inset-6 md:max-w-[1180px] md:mx-auto bg-card md:rounded-[20px] shadow-e3 flex flex-col animate-reveal">
+                    <div ref={comparePanel} role="dialog" aria-modal="true" aria-label={`Comparing ${compared.length} items`} className="absolute inset-x-0 bottom-0 top-0 md:inset-6 md:max-w-[1180px] md:mx-auto bg-card md:rounded-[20px] shadow-e3 flex flex-col animate-reveal">
                         <div className="px-5 py-4 border-b border-separator flex items-start justify-between gap-3 flex-none">
                             <div className="min-w-0">
                                 <p className="text-[12px] font-semibold uppercase tracking-wider text-label-3">Side by side</p>
@@ -1223,7 +1216,7 @@ export const LiveStockView = ({
                                             <>
                                                 {Row('Availability', i => { const a = availabilityOf(i); return <div className="flex items-center gap-1.5 flex-wrap"><Badge tone={AVAILABILITY_TONE[a]}>{AVAILABILITY_LABELS[a]}</Badge>{isCritical(i) && <Badge tone="dang">Critical</Badge>}</div>; })}
                                                 {Row('In stock', i => { const a = availabilityOf(i); return <><span className={cx('num text-[18px] font-semibold', a === 'out' ? 'text-dang' : i.quantity === most ? 'text-pos' : 'text-label')}>{formatQty(i.quantity)}</span><span className="text-[11.5px] text-label-3"> {i.unit}</span>{i.quantityWithPo !== i.quantity && <span className="block text-[11.5px] text-label-3 num">+PO {formatQty(i.quantityWithPo)}</span>}</>; })}
-                                                {Row('Levels', i => hasLevels(i) ? <><LevelBar item={i} /><p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(i.minLevel)} · max {formatQty(i.maxLevel)}</p></> : <span className="text-[11.5px] text-label-4">no levels{i.status === 'OD' ? ' · on demand' : ''}</span>)}
+                                                {Row('Levels', i => hasLevels(i) ? <><LevelBar item={i} /><p className="text-[11px] text-label-3 mt-1.5 num">min {formatQty(i.minLevel)} · max {formatQty(i.maxLevel)}</p></> : <span className="text-[11.5px] text-label-3">no levels{i.status === 'OD' ? ' · on demand' : ''}</span>)}
                                                 {Row('Short by', i => hasLevels(i) && i.quantity < i.minLevel ? <span className="num font-semibold text-dang">{formatQty(i.minLevel - i.quantity, i.unit)}{showPrices && i.rate ? <span className="block text-[11.5px] font-normal text-label-3">{formatINR((i.minLevel - i.quantity) * i.rate)} to bring back</span> : null}</span> : <span className="text-label-4">—</span>)}
                                                 {showPrices && Row('Rate', i => i.rate ? <span className="num text-label">{formatINR(i.rate)}<span className="text-[11.5px] text-label-3"> / {i.unit || 'unit'}</span></span> : <span className="text-label-4">—</span>)}
                                                 {showPrices && Row('Value', i => <span className="num font-semibold text-label" title={formatINR(i.value)}>{formatCompact(i.value)}</span>)}
@@ -1264,9 +1257,9 @@ export const LiveStockView = ({
             {selected && (() => {
                 const a = availabilityOf(selected);
                 return (
-                <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={selected.code}>
+                <div className="fixed inset-0 z-50">
                     <button type="button" aria-label="Close" onClick={() => setSelected(null)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
-                    <div className="absolute inset-y-0 right-0 w-full md:w-[460px] bg-card shadow-e3 flex flex-col animate-in slide-in-from-right-4 fade-in duration-150">
+                    <div ref={drawerPanel} role="dialog" aria-modal="true" aria-label={selected.code} className="absolute inset-y-0 right-0 w-full md:w-[460px] bg-card shadow-e3 flex flex-col animate-in slide-in-from-right-4 fade-in duration-150">
                         <div className="px-5 py-4 border-b border-separator flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <p className="text-[12px] font-semibold uppercase tracking-wider text-label-3">

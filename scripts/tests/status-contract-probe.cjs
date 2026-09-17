@@ -66,7 +66,7 @@ const BASE = (process.env.PROBE_BASE || 'http://localhost:3000').replace(/\/$/, 
 
     const search = async (q) => { await page.evaluate((v) => { const i = document.querySelector('input[placeholder^="Search by name"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); }, q); await wait(900); };
     const rowButton = (text) => page.evaluate((t) => { const b = [...document.querySelectorAll('tbody tr button')].find((x) => x.textContent.trim().toLowerCase() === t.toLowerCase() || (x.getAttribute('title') || '').startsWith(t)); if (!b) return false; b.click(); return true; }, text);
-    const press = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === l); if (!b) return false; b.click(); return true; }, label);
+    const press = (label) => page.evaluate((l) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim().toLowerCase() === l.toLowerCase()); if (!b) return false; b.click(); return true; }, label);
     const settle = () => wait(1600); // past the hook's 800 ms debounce
     const setInput = (selector, value) => page.evaluate((s, v) => { const i = document.querySelector(s); if (!i) return false; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); return true; }, selector, value);
 

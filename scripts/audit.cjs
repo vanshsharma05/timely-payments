@@ -224,10 +224,10 @@ const closeDialog = async page => {
 
   // ---- dialogs ----
   const dialogs = [
-    ['Add customer dialog', 'Customers', 'Add Customer'],
+    ['Add customer dialog', 'Customers', 'Add customer'],
     ['Record cheque dialog', 'PDC cheques', 'Add PDC'],
-    ['Add user dialog', 'Team & access', 'Add User'],
-    ['Template dialog', 'Message templates', 'New Template'],
+    ['Add user dialog', 'Team & access', 'Add a team member'],
+    ['Template dialog', 'Message templates', 'New template'],
   ];
   for (const [label, screen, trigger] of dialogs) {
     await nav(page, screen);

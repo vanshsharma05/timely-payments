@@ -120,7 +120,7 @@ const dialogOpen = page =>
 
   /* ---- dialogs open and close ---- */
   const dialogs = [
-    ['Customers', 'Add Customer'],
+    ['Customers', 'Add customer'],
     ['PDC cheques', 'Add PDC'],
   ];
   for (const [tab, trigger] of dialogs) {

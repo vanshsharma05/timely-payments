@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { loadXlsx } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
@@ -25,7 +25,7 @@ import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
-import LiveStockView from './components/LiveStockView';
+const LiveStockView = lazy(() => import('./components/LiveStockView'));
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
@@ -33,17 +33,19 @@ import { BadDebtStrip } from './components/ui/BadDebtStrip';
 import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ExclamationTriangleIcon, BuildingOfficeIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
-import UserModal from './components/UserModal';
-import ChangePasswordModal from './components/ChangePasswordModal';
-import TemplateModal from './components/TemplateModal';
+const UserModal = lazy(() => import('./components/UserModal'));
+const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'));
+const TemplateModal = lazy(() => import('./components/TemplateModal'));
 import NotificationBanner from './components/NotificationBanner';
-import ReportsView, { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
-import SyncReconciliationModal from './components/SyncReconciliationModal';
-import ResetConfirmModal from './components/ResetConfirmModal';
-import DataSourceView, { SheetCheck } from './components/DataSourceView';
+import type { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
+const ReportsView = lazy(() => import('./components/ReportsView'));
+const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
+const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
+import type { SheetCheck } from './components/DataSourceView';
+const DataSourceView = lazy(() => import('./components/DataSourceView'));
 import { previewSync, describePreview } from './services/syncPreview';
 import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
-import PdcChequesView from './components/PdcChequesView';
+const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
 import PdcModal from './components/PdcModal';
 import { CompanyProfileView } from './components/CompanyProfileView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
@@ -304,8 +306,9 @@ const App = () => {
      * thousand customers, which made the one job this is for — giving the
      * recovery agency a defaulter list — impossible.
      */
-    const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => {
-        if (XLSX) {
+    const handleExportCustomerExcel = async (rowsToExport: Outstanding[] = appData) => {
+        const XLSX = await loadXlsx();
+        {
             const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","City","State","GSTIN","Category","Payment Rank","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
             ];
             const rows = rowsToExport.map(c => [
@@ -338,8 +341,6 @@ const App = () => {
             XLSX.utils.book_append_sheet(wb, ws,"Customers");
             const scope = rowsToExport.length === appData.length ? 'All' : `${rowsToExport.length}_selected`;
             XLSX.writeFile(wb, `Customers_${scope}_${new Date().toISOString().split('T')[0]}.xlsx`);
-        } else {
-            alert("Export functionality ready. Please try again.");
         }
     };
 
@@ -357,11 +358,8 @@ const App = () => {
      * hold a CRM of its own — its column looks the name up from the master — so
      * the master is the one place a correction has to land.
      */
-    const handleExportCrmAssignments = () => {
-        if (!XLSX) {
-            alert('Export functionality ready. Please try again.');
-            return;
-        }
+    const handleExportCrmAssignments = async () => {
+        const XLSX = await loadXlsx();
         const sheetSays = new Map(crmConflicts.map(c => [c.company, c.sheetCrm]));
         const headers = ['Company', 'CRM Owner (app)', 'CRM Owner (master sheet)', 'Differs', 'Total Outstanding'];
         const rows = [...appData]
@@ -2529,8 +2527,9 @@ const App = () => {
             setSyncMessage(null);
 
             const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
                 try {
+                    const XLSX = await loadXlsx();
                     const data = e.target?.result;
                     const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
                     const sheetName = workbook.SheetNames[0];
@@ -2583,15 +2582,12 @@ const App = () => {
             alert("Column headers copied to clipboard! Paste them into the first row of your Excel or Google Sheet.");
         };
 
-        const downloadTemplate = () => {
-            if (XLSX) {
-                const ws = XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws,"Sheet1");
-                XLSX.writeFile(wb,"TimelyPayment_Template.xlsx");
-            } else {
-                alert("Export functionality not ready yet. Please try again in a moment.");
-            }
+        const downloadTemplate = async () => {
+            const XLSX = await loadXlsx();
+            const ws = XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            XLSX.writeFile(wb, "TimelyPayment_Template.xlsx");
         };
 
 
@@ -2661,17 +2657,13 @@ const App = () => {
                                     <div>
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                                             <div>
-                                                <h2 className="text-xl font-bold text-label">System Users & Access Roles</h2>
-                                                <p className="text-xs text-label-3 mt-0.5">Manage executive admin, CRM account owners, and collection staff.</p>
+                                                <h2 className="text-[17px] font-extrabold text-label tracking-[-0.02em]">Team</h2>
+                                                <p className="text-[13px] text-label-3 mt-0.5">Who can sign in, what they see, and what they may change.</p>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => handleOpenUserModal(null)}
-                                                    className="flex items-center px-3.5 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press shadow-xs"
-                                                >
-                                                    <UserPlusIcon className="w-4 h-4 -ml-1 mr-2" />
-                                                    <span>Add User</span>
-                                                </button>
+                                                <Button size="sm" variant="primary" onClick={() => handleOpenUserModal(null)} icon={<UserPlusIcon className="w-4 h-4" />}>
+                                                    Add a team member
+                                                </Button>
                                             </div>
                                         </div>
                                         {/* Phone: five columns will not fit, so each person is a
@@ -2853,16 +2845,22 @@ const App = () => {
                         )}
                          {activeTab === 'templates' && rights.canSyncSheets && (
                             <div>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold text-label">Manage Message Templates</h2>
-                                    <button 
-                                        onClick={() => handleOpenTemplateModal(null)}
-                                        className="flex items-center px-3 py-2 text-sm font-semibold rounded-lg bg-accent text-on-accent hover:bg-accent-press"
-                                    >
-                                        <UserPlusIcon className="w-5 h-5 -ml-1 mr-2" />
-                                        <span>New Template</span>
-                                    </button>
+                                <div className="flex justify-between items-center gap-3 mb-4">
+                                    <div>
+                                        <h2 className="text-[17px] font-extrabold text-label tracking-[-0.02em]">Templates</h2>
+                                        <p className="text-[13px] text-label-3 mt-0.5">The wording offered when a WhatsApp reminder is opened.</p>
+                                    </div>
+                                    <Button size="sm" variant="primary" onClick={() => handleOpenTemplateModal(null)}>
+                                        New template
+                                    </Button>
                                 </div>
+                                {templates.length === 0 ? (
+                                    <EmptyState
+                                        title="No templates yet"
+                                        hint="A template is the wording offered when someone opens a WhatsApp reminder. Add one and the team can pick it."
+                                        action={<Button size="sm" variant="primary" onClick={() => handleOpenTemplateModal(null)}>New template</Button>}
+                                    />
+                                ) : (
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full divide-y divide-separator">
                                         <thead className="bg-card-2">
@@ -2886,6 +2884,7 @@ const App = () => {
                                         </tbody>
                                     </table>
                                 </div>
+                                )}
                             </div>
                         )}
                         {activeTab === 'source' && rights.canSyncSheets && (
@@ -3182,9 +3181,14 @@ const App = () => {
                     <p className="text-[14px] mt-1 opacity-90">{error}</p>
                 </div>
             ) : (
-                renderDashboard()
+                /* The tab views arrive as their own chunks the first time they
+                   are opened; until then the same list placeholder the book uses. */
+                <Suspense fallback={<Card className="overflow-hidden"><LoadingList label="Loading" rows={6} /></Card>}>
+                    {renderDashboard()}
+                </Suspense>
             )}
         </AppShell>
+        <Suspense fallback={null}>
 
             {isModalOpen && liveSelectedCustomer && (
                 <FollowUpModal
@@ -3267,6 +3271,7 @@ const App = () => {
                     }}
                 />
             )}
+        </Suspense>
             {isCustomerModalOpen && (
                 <CustomerEditModal
                     customerToEdit={customerToEdit}

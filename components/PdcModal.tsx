@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User, matchesSearch, findOwner } from '../types';
 import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
-import { useEscape } from './ui/useEscape';
+import { useModal } from './ui/useModal';
 import { ChequeIcon } from './icons/Icons';
 import { formatCompact, formatINR, chequeWhen, localIsoDate } from './ui/format';
 
@@ -82,7 +82,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
     const [remarks, setRemarks] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    useEscape(onClose, isOpen && !saving);
+    const panel = useModal(isOpen, onClose, { closeOnEscape: !saving });
     /** A new cheque's id, fixed for this open of the dialog so a retry saves the same cheque, not a second one. */
     const newId = useRef<string | null>(null);
     useEffect(() => { if (isOpen) newId.current = null; }, [isOpen]);
@@ -242,13 +242,13 @@ const PdcModal: React.FC<PdcModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="pdc-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header: what this is, and whose cheque it is */}
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl max-md:px-4 max-md:py-3 max-md:rounded-none">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
                             <ChequeIcon className="w-5 h-5 text-pos flex-none" />
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">
+                            <h2 id="pdc-title" className="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">
                                 {chequeToEdit ? `Edit cheque #${chequeToEdit.chequeNumber}` : 'Record a cheque'}
                             </h2>
                         </div>

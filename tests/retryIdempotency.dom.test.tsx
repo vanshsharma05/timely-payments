@@ -138,10 +138,10 @@ describe('new customers', () => {
         const owner = document.querySelector('select') as HTMLSelectElement;
         const option = [...owner.options].find(o => o.value && o.value !== '')!;
         fireEvent.change(owner, { target: { value: option.value } });
-        fireEvent.click(screen.getByRole('button', { name: /create customer/i }));
+        fireEvent.click(screen.getByRole('button', { name: /add customer/i }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
         await waitFor(() => expect(document.body.textContent).toMatch(/Not saved/));
-        fireEvent.click(screen.getByRole('button', { name: /create customer/i }));
+        fireEvent.click(screen.getByRole('button', { name: /add customer/i }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
         const ids = onSave.mock.calls.map(c => c[0].id);
         expect(ids[0]).toMatch(/^cust_/);

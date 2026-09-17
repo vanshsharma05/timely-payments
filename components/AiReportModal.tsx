@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import { Outstanding, User, CompanyProfile, AiReportRequest, AiReportResponse, PdcCheque, PdcStatus, overdueAgeing, followUpStatusOf } from '../types';
 import { authHeaders } from '../services/repository';
 import { SparklesIcon, DownloadIcon, CheckCircleIcon, UsersIcon, ClockIcon, ExclamationTriangleIcon } from './icons/Icons';
+import { useModal } from './ui/useModal';
 
 interface AiReportModalProps {
     isOpen: boolean;
@@ -26,6 +27,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
     selectedCrm = 'ALL',
     pdcCheques = [],
 }) => {
+    const panel = useModal(isOpen, onClose);
     const [mode, setMode] = useState<AiReportMode>('credit_reduction');
     const [targetCrm, setTargetCrm] = useState<string>(selectedCrm);
     const [customPrompt, setCustomPrompt] = useState<string>('');
@@ -216,23 +218,23 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto max-md:p-0">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="ai-report-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="p-5 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-card-2 text-label">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white/20 rounded-xl backdrop-blur-xs">
-                            <SparklesIcon className="w-6 h-6 text-yellow-300 animate-pulse" />
+                        <div className="p-2 bg-accent-tint rounded-xl">
+                            <SparklesIcon className="w-6 h-6 text-accent" />
                         </div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h2 className="text-lg sm:text-xl font-bold tracking-tight">
+                                <h2 id="ai-report-title" className="text-lg sm:text-xl font-bold tracking-tight">
                                     AI Financial & Credit Optimization Report
                                 </h2>
                                 <span className="px-2 py-0.5 rounded-full text-[12.5px] font-extrabold bg-yellow-400 text-gray-900">
                                     Gemini 3.7
                                 </span>
                             </div>
-                            <p className="text-xs text-emerald-100 mt-0.5">
+                            <p className="text-xs text-label-3 mt-0.5">
                                 Powered by Google Gemini API • Automated credit days reduction & cash flow intelligence
                             </p>
                         </div>
@@ -260,7 +262,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                 {/* API Status Banner */}
                 <div className="px-6 py-2 bg-slate-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700/60 flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
                     <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-emerald-500 animate-pulse' : 'bg-blue-500'}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
                         <span>
                             {hasApiKey 
                                 ? 'Gemini API Connected (Live Model Analysis)' 
@@ -310,11 +312,11 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                             <span className="font-extrabold text-gray-900 dark:text-white">{formatInr(metrics.totalOutstanding)}</span>
                                         </div>
                                         <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                                            <span className="text-red-500 block text-[11.5px]">Due &gt;45d</span>
+                                            <span className="text-dang block text-[11.5px]">Due &gt;45d</span>
                                             <span className="font-extrabold text-red-600 dark:text-red-400">{formatInr(metrics.dueOver45)}</span>
                                         </div>
                                         <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                                            <span className="text-emerald-500 block text-[11.5px]">Avg Collection</span>
+                                            <span className="text-pos block text-[11.5px]">Avg collection</span>
                                             <span className="font-extrabold text-emerald-600 dark:text-emerald-400">{metrics.averageCollectionDays} days</span>
                                         </div>
                                     </div>
@@ -520,7 +522,7 @@ export const AiReportModal: React.FC<AiReportModalProps> = ({
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <span>Copy Report</span>
+                                                        <span>Copy report</span>
                                                     </>
                                                 )}
                                             </button>

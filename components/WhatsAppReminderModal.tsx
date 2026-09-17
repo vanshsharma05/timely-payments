@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useEscape } from './ui/useEscape';
+import { useModal } from './ui/useModal';
 import { Outstanding, Template, User } from '../types';
 import { recordWhatsAppOpened } from '../services/whatsappTrace';
 import { WhatsAppIcon } from './icons/Icons';
@@ -14,7 +14,7 @@ interface WhatsAppReminderModalProps {
 }
 
 export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUser }: WhatsAppReminderModalProps) => {
-    useEscape(onClose);
+    const panel = useModal(true, onClose);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
     const [recipientType, setRecipientType] = useState<'primary' | string>('primary');
     const [customRecipientNumber, setCustomRecipientNumber] = useState('');
@@ -77,13 +77,13 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUse
 
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0 max-md:items-start">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="whatsapp-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-green-50/50 dark:bg-green-950/20 rounded-t-2xl">
                     <div className="flex items-center gap-2">
                         <WhatsAppIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
                         <div>
-                            <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
+                            <h3 id="whatsapp-title" className="font-bold text-gray-900 dark:text-white text-base leading-tight">
                                 Send WhatsApp Reminder
                             </h3>
                             <div className="text-xs text-gray-500 dark:text-gray-400">

@@ -8,12 +8,15 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Keep the vendor libraries in their own chunk so app edits do not
-        // invalidate the whole bundle for returning users.
-        manualChunks: {
-          react: ['react', 'react-dom'],
-          sheets: ['xlsx'],
-          markdown: ['react-markdown'],
+        // React in its own chunk so app edits do not invalidate it for
+        // returning users; SheetJS in its own so the on-demand import stays a
+        // single file. react-markdown is left to the splitter: naming it a
+        // chunk pulled a shared helper into it, so every other chunk — and the
+        // first load — imported the 126 kB renderer nobody had opened.
+        manualChunks(id) {
+          if (id.includes('node_modules/xlsx')) return 'sheets';
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
+          return undefined;
         },
       },
     },

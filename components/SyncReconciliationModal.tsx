@@ -3,7 +3,7 @@ import { Outstanding } from '../types';
 import { mergeWithExistingFollowUps } from '../services/googleSheetService';
 import { previewSync, SyncEffect } from '../services/syncPreview';
 import { formatINR, formatCompact } from './ui/format';
-import { useEscape } from './ui/useEscape';
+import { useModal } from './ui/useModal';
 
 export interface SyncReconciliationModalProps {
     incomingRecords: Outstanding[];
@@ -43,7 +43,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [viewFilter, setViewFilter] = useState<'all' | SyncEffect>('all');
-    useEscape(onCancel);
+    const panel = useModal(true, onCancel);
 
     const preview = useMemo(() => previewSync(existingRecords, incomingRecords), [incomingRecords, existingRecords]);
 
@@ -70,8 +70,8 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
     ];
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start" role="dialog" aria-modal="true" aria-labelledby="sync-review-title">
-            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-separator max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start">
+            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="sync-review-title" className="bg-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-separator max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
                 {/* Header */}
                 <div className="px-5 sm:px-6 py-4 border-b border-separator flex justify-between items-start bg-card-2 rounded-t-2xl max-md:rounded-none">
                     <div className="min-w-0">
