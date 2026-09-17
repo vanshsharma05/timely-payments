@@ -17,12 +17,12 @@ BASELINE BUILD STATUS (2026-09-16, commit de60fc7):
 - `npm run check:classes`: 2 pre-existing findings (`grid-frame` in AppLogo.tsx, `stroke-based` in Icons.tsx — harmless false positives).
 - `npm run check:empty`: clean.
 - Lint: NO linter configured. Type-check is the only static gate.
-- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 221 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
+- Unit/integration tests: NONE at baseline. **Since 2026-09-17: Vitest, 222 tests, `npm run test:run`** (incl. 24 SQL tests in PGlite). Browser suites in `scripts/tests/` (no runner yet) and `scripts/` QA scripts.
 - `npm audit --omit=dev`: nodemailer 9.0.6 HIGH (fix available), qs 6.15.3 MODERATE via express (fix available). Dev-only: `tar` critical and `undici` under the `vercel` CLI.
 - Runtime: Node v24.15.0, npm 11.12.1. No `engines` field. Two lockfiles (`package-lock.json` AND `bun.lock`) — kept for now by owner's instruction (D5).
 CURRENT BUILD STATUS: tsc clean; `npm run build` clean (same chunk warning); `check:classes` 2 pre-existing; `check:empty` clean — after the CRM-workflow batch. No dependency change.
 BASELINE TEST STATUS: browser suites were green at de60fc7 (see 12-TEST-STRATEGY.md). Classified for production safety in Phase 1: 7 READ ONLY, 2 CONTROLLED MUTATION WITH CLEANUP, 1 READ ONLY-but-fragile (`phone-test.cjs`), 0 UNSAFE. None executed this session.
-CURRENT TEST STATUS: unit 221/221 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 16, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7, `crmWorkflow` 21, `searchScope` 9, `managerReports` 16). Live-site probes unchanged since the CRM UX deploy. Local visual QA of the Manager/Reports workflow at 1366×768, 1440×900, 1024×768 (every write aborted): 0 findings.
+CURRENT TEST STATUS: unit 222/222 (money 23, edit dialog 13, `customerRowDiff` 11, `updateCustomerColumns` 5, `useCollectionSync` 12, `syncFlows` 14, `derivedStatus` 16, `statusContract` 16, `resetPlan` 10, `resetSql` 24, `resetConfirmModal` 6, `saveFailures` 13, `refreshMerge` 5, `retryIdempotency` 7, `crmWorkflow` 21, `searchScope` 9, `managerReports` 17). Live-site probes unchanged since the CRM UX deploy. Local visual QA of the Manager/Reports workflow at 1366×768, 1440×900, 1024×768 (every write aborted): 0 findings.
 
 CRITICAL ISSUES (P0): none confirmed.
 IMPORTANT ISSUES:
@@ -45,7 +45,7 @@ OPEN QUESTIONS: Q1–Q14 in 19-OPEN-QUESTIONS.md, now as decision briefs for Q7,
 DECISIONS REQUIRED: none to continue Phase 4. Before the reset fix: Q8. Before RLS tightening: Q14. Before destructive tests: Q6. D7 records the recommended R1 remediation.
 REGRESSION RISKS (CRM workflow): the follow-up dialog's sections are the same markup in a new order inside folds — every field, id and handler is unchanged (pinned: statusContract, saveFailures, retryIdempotency all still pass) — but a fold that is closed hides its fields until opened, so anything that relied on scrolling to "Assign Collector" now opens *Account settings* first; the book rows truncate long contact lines (full text in the tooltip); the delete button is hidden until hover/focus (still there for the roles that had it). Standing: any change to `App.tsx`, `types.ts`, `googleSheetService.ts`, `useSupabaseSync.ts`, `repository.ts`, the dialogs or `supabase/*.sql` without the unit layer.
 RECOMMENDED NEXT SESSION START:
-1. Read this file, then 06-UX-AUDIT.md ("Phase 4, batch 2") and 11 §2.2 / 19 Q15. Run `npm run test:run` (expect 221/221) and `npm run typecheck`.
+1. Read this file, then 06-UX-AUDIT.md ("Phase 4, batch 2") and 11 §2.2 / 19 Q15. Run `npm run test:run` (expect 222/222) and `npm run typecheck`.
 2. Confirm `npx vercel ls --prod` still shows `dpl_HeLAK1WcbkKNHo9N8rsunT98YPq5`. The probes now press "Follow up" / "Save follow-up"; the smoke script clears the shared search before leaving the book.
 3. If the owner approved the Manager/Reports batch: deploy per 17-RELEASE-CHECKLIST.md (no SQL step), then the smoke test and both probes; the probes press "Follow up" / "Save follow-up" and are unaffected by this batch (the book is untouched).
 4. Phase 4 batch 3: the Data source tab (U14); or R1-B after Q15 — the owner's order. Two small follow-ups recorded as T50/T51 (collector drill-down; the with-dues definition).

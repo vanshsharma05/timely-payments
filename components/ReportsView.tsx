@@ -10,7 +10,8 @@ import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
 /** `unattended` = overdue or no follow-up planned — the team table's "Unattended" column, drilled into. */
-export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent' | 'unattended' | 'bad_debt';
+/** `working` = every account with dues except the recovery list — what the team table's "Accounts with dues" counts. */
+export type FollowUpCategoryFilter = 'all' | 'today' | 'no_follow_up' | 'overdue' | 'future' | 'completed' | 'over90' | 'over135' | 'urgent' | 'unattended' | 'working' | 'bad_debt';
 export type AgeingReportFilter = 'all' | '1-45' | '46-90' | '91-135' | 'over90' | 'over135' | 'dueOver45';
 
 interface ReportsViewProps {
@@ -213,15 +214,17 @@ export const ReportsView = ({
             if (a4 > 0) { over135Count++; over135Amount += a4; }
             if (itemOver90 > 0) { over90Count++; over90Amount += itemOver90; }
 
-            if (item.status === FollowUpStatus.Completed) {
-                completedCount++;
-                return;
-            }
-
-            // The recovery list: counted, and out of the four below.
+            // The recovery list: counted, and out of every follow-up list below —
+            // Completed included, which is how the team table counts them, so a
+            // count pressed there opens exactly the accounts it counted.
             if (isBadDebt(item)) {
                 badDebtCount++;
                 badDebtAmount += item.total || 0;
+                return;
+            }
+
+            if (item.status === FollowUpStatus.Completed) {
+                completedCount++;
                 return;
             }
 
@@ -292,7 +295,7 @@ export const ReportsView = ({
             if (categoryFilter === 'no_follow_up' && !isNoFollowUp(item)) return false;
             if (categoryFilter === 'overdue' && !isOverdueFollowUp(item)) return false;
             if (categoryFilter === 'future' && !isFutureFollowUp(item)) return false;
-            if (categoryFilter === 'completed' && item.status !== FollowUpStatus.Completed) return false;
+            if (categoryFilter === 'completed' && (isBadDebt(item) || item.status !== FollowUpStatus.Completed)) return false;
             if (categoryFilter === 'bad_debt' && !isBadDebt(item)) return false;
             // Exactly what the "needs attention" banner counts: flagged urgent,
             // or the follow-up date has gone by. The banner used to set a filter
@@ -300,6 +303,7 @@ export const ReportsView = ({
             // company dashboard dismissed the banner and did nothing else.
             if (categoryFilter === 'urgent' && (isBadDebt(item) || !(item.isUrgent || isOverdueFollowUp(item)))) return false;
             if (categoryFilter === 'unattended' && !(isOverdueFollowUp(item) || isNoFollowUp(item))) return false;
+            if (categoryFilter === 'working' && isBadDebt(item)) return false;
             if (categoryFilter === 'over90' && itemOver90 <= 0) return false;
             if (categoryFilter === 'over135' && a4 <= 0) return false;
 
@@ -588,7 +592,8 @@ export const ReportsView = ({
                             ['completed', 'Completed', boxMetrics.completedCount],
                             ['bad_debt', 'Bad debt', boxMetrics.badDebtCount],
                             ['urgent', 'Needs attention', boxMetrics.urgentCount],
-                        ] as const).filter(([key]) => key !== 'urgent' || categoryFilter === 'urgent').map(([key, label, count]) => (
+                            ['working', 'With dues, not bad debt', boxMetrics.totalCount - boxMetrics.badDebtCount],
+                        ] as const).filter(([key]) => (key !== 'urgent' && key !== 'working') || categoryFilter === key).map(([key, label, count]) => (
                             <button
                                 key={key}
                                 type="button"

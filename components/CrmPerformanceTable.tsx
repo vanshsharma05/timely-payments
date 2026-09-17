@@ -171,7 +171,7 @@ const CrmPerformanceTable = ({ stats, onSelectCrm }: CrmPerformanceTableProps) =
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs sm:text-sm text-gray-900 dark:text-white font-bold">
                                     {drill(stat) ? (
-                                        <button type="button" onClick={drill(stat, 'all')} title="All of this person's accounts with dues — open in Reports" className="num min-h-[30px] min-w-[30px] px-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 hover:underline underline-offset-2">
+                                        <button type="button" onClick={drill(stat, 'working')} title="This person's accounts with dues, bad debt aside — open in Reports on exactly these" className="num min-h-[30px] min-w-[30px] px-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 hover:underline underline-offset-2">
                                             {stat.totalAssigned}
                                         </button>
                                     ) : stat.totalAssigned}

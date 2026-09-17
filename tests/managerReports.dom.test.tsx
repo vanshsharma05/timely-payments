@@ -133,6 +133,19 @@ describe('Reports follows the filters it is handed', () => {
         expect(listCount()).toBe('3');
     });
 
+    it('"Accounts with dues" opens exactly the accounts it counted: dues, bad debt aside — and Completed never holds a defaulter', () => {
+        const withBadDebtCollected = [...book(), account('defaulter_collected', { followUpDate: dayShift(-5), status: FollowUpStatus.Completed, paymentRank: 'Bad' })];
+        openReports({ data: withBadDebtCollected, initialCrmFilter: 'VISHNU', initialCategoryFilter: 'working' });
+        expect(chip(/^With dues, not bad debt/).textContent).toMatch(/\(6\)/);   // 8 on Vishnu's book, 2 defaulters
+        expect(listCount()).toBe('6');
+        expect(rows().map(r => r.textContent!).join(' | ')).not.toMatch(/DEFAULTER/);
+        fireEvent.click(chip(/^Completed/));
+        expect(chip(/^Completed/).textContent).toMatch(/\(1\)/);              // the collected defaulter is under Bad debt, not here
+        expect(listCount()).toBe('1');
+        expect(chip(/^Bad debt/).textContent).toMatch(/\(2\)/);
+        expect(screen.queryByRole('button', { name: /^With dues, not bad debt/ })).toBeNull();   // only while that list is open
+    });
+
     it('a CRM opens on their own book and stays there', () => {
         openReports({ currentUser: crmUser(), initialCrmFilter: 'VISHNU' });
         expect((screen.getByLabelText('Filter by CRM owner') as HTMLSelectElement).value).toBe('VISHNU');
@@ -200,7 +213,7 @@ describe('the team table opens Reports on a person and a list', () => {
         fireEvent.click(within(vishnu).getByRole('button', { name: '2' }));
         expect(onSelectCrm).toHaveBeenLastCalledWith('VISHNU', 'completed');
         fireEvent.click(within(vishnu).getByRole('button', { name: '20' }));
-        expect(onSelectCrm).toHaveBeenLastCalledWith('VISHNU', 'all');
+        expect(onSelectCrm).toHaveBeenLastCalledWith('VISHNU', 'working');
     });
 
     it('a collector\'s row stays plain numbers: Reports has no filter for accounts handed to them', () => {
