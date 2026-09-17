@@ -729,6 +729,12 @@ export async function fetchActivity(customerId: string): Promise<ActivityEntry[]
 }
 
 export interface NewActivity {
+    /**
+     * A client-made uuid, so that posting the same entry twice — because the
+     * first answer was lost on the way back — stores it once. Optional: the
+     * database makes one when none is given.
+     */
+    id?: string;
     customerId: string;
     kind: ActivityKind;
     body: string;
@@ -751,6 +757,7 @@ export async function addActivity(entry: NewActivity, author: User): Promise<Act
     const { data, error } = await db
         .from('customer_activity')
         .insert({
+            ...(entry.id ? { id: entry.id } : {}),
             customer_id: entry.customerId,
             author_id: authorId,
             author_name: author.name,
@@ -762,9 +769,24 @@ export async function addActivity(entry: NewActivity, author: User): Promise<Act
         })
         .select()
         .single();
+    if (error && entry.id && isDuplicateKey(error)) {
+        // The first attempt did land; only its answer was lost. The entry is
+        // there under the id we chose, so this is a success, not a second copy.
+        const { data: existing, error: readError } = await db
+            .from('customer_activity')
+            .select('*')
+            .eq('id', entry.id)
+            .single();
+        fail('Could not save that entry', readError);
+        return rowToActivity(existing);
+    }
     fail('Could not save that entry', error);
     return rowToActivity(data);
 }
+
+/** Postgres 23505: the row with this primary key already exists. */
+const isDuplicateKey = (error: { code?: string; message?: string }): boolean =>
+    error.code === '23505' || /duplicate key/i.test(error.message || '');
 
 /**
  * Appends many entries at once — one request per chunk rather than one per

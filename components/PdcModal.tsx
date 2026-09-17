@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User } from '../types';
 import type { SaveOutcome } from '../services/useSupabaseSync';
 import { ChequeIcon } from './icons/Icons';
@@ -53,6 +53,9 @@ const PdcModal: React.FC<PdcModalProps> = ({
     const [remarks, setRemarks] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    /** A new cheque's id, fixed for this open of the dialog so a retry saves the same cheque, not a second one. */
+    const newId = useRef<string | null>(null);
+    useEffect(() => { if (isOpen) newId.current = null; }, [isOpen]);
 
     useEffect(() => {
         if (chequeToEdit) {
@@ -140,8 +143,9 @@ const PdcModal: React.FC<PdcModalProps> = ({
         setSaving(true);
         let verdict: void | SaveOutcome;
         try {
+            if (!chequeToEdit && !newId.current) newId.current = `pdc_${Date.now()}`;
             verdict = await onSave({
-            id: chequeToEdit?.id,
+            id: chequeToEdit?.id ?? newId.current ?? undefined,
             customerId,
             customerName: finalCustomerName,
             chequeNumber: chequeNumber.trim(),

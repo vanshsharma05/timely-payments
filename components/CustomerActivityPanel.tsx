@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { newEntryId } from '../services/ids';
 import {
     ActivityEntry,
     ActivityKind,
@@ -170,12 +171,19 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
         [entries, resolutions],
     );
 
+    /**
+     * The id the entry being composed will be stored under, made once when
+     * Post is first pressed and kept until it is saved — so pressing Post
+     * again after "no connection" cannot store the same words twice.
+     */
+    const composing = useRef<string | null>(null);
     const reset = () => {
         setKind('note');
         setBody('');
         setPromisedAmount('');
         setPromisedOn('');
         setResolving(null);
+        composing.current = null;
     };
 
     /** A promise or a payment may speak through its figure rather than words. */
@@ -190,8 +198,10 @@ const CustomerActivityPanel = ({ customer, currentUser, onLogged }: Props) => {
         if (kind === 'promise' && !promisedOn) return;
 
         setSaving(true);
+        if (!composing.current) composing.current = newEntryId();
         try {
             const entry = await repo.addActivity({
+                id: composing.current,
                 customerId: customer.id,
                 kind,
                 body: text,

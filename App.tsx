@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
 import { SaveStatus, combineStatus } from './components/SaveStatus';
-import { mergeServerRows } from './services/refresh';
+import { mergeServerRows, replaceOrAdd } from './services/refresh';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
@@ -1791,12 +1791,11 @@ const App = () => {
     /** The cheque dialog waits for the verdict the same way the customer dialogs do. */
     const handleSavePdc = async (chequeData: Omit<PdcCheque, 'id'> & { id?: string }): Promise<SaveOutcome> => {
         const id = chequeData.id || `pdc_${Date.now()}`;
-        if (chequeData.id) {
-            setPdcCheques(prev => prev.map(p => p.id === chequeData.id ? { ...(chequeData as PdcCheque) } : p));
-        } else {
-            const newCheque: PdcCheque = { ...(chequeData as Omit<PdcCheque, 'id'>), id };
-            setPdcCheques(prev => [newCheque, ...prev]);
-        }
+        const cheque: PdcCheque = { ...(chequeData as Omit<PdcCheque, 'id'>), id };
+        // The dialog keeps one id for the cheque it is composing, so a Save
+        // pressed again after a refusal replaces the pending cheque instead of
+        // adding a second one.
+        setPdcCheques(prev => replaceOrAdd(prev, cheque));
         const outcome = outcomeFor(id, await chequesSync.flush());
         if (outcome.ok) setIsPdcModalOpen(false);
         return outcome;

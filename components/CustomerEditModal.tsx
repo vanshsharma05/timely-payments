@@ -75,6 +75,8 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
      * (recomputed only when somebody with the right typed a new figure).
      */
     const opened = useRef({ crmOwnerId: '', followUpDate: '', total: 0, totalType: 'Dr' as BalanceType, a1_45: 0, a46_90: 0, a91_135: 0, aOver135: 0 });
+    /** A new account's id, fixed the first time it is saved from this dialog so a retry saves the same account, not a second one. */
+    const newId = useRef<string | null>(null);
 
     // Additional contacts
     const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
@@ -248,8 +250,9 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
         let savedRecord: Outstanding;
         if (!customerToEdit) {
             const targetDate = followUpDate ? new Date(followUpDate) : undefined;
+            if (!newId.current) newId.current = `cust_${Date.now()}_${encodeURIComponent(company.slice(0, 15).replace(/\s+/g, '_'))}`;
             savedRecord = {
-                id: `cust_${Date.now()}_${encodeURIComponent(company.slice(0, 15).replace(/\s+/g, '_'))}`,
+                id: newId.current,
                 ...details,
                 crmOwnerId: crmOwnerId.trim(),
                 ...moneyFromForm(),

@@ -1,3 +1,8 @@
+/** The item under this id replaced if present, added at the front if not: a retried save must not add twice. */
+export function replaceOrAdd<T extends { id: string }>(list: T[], item: T): T[] {
+    return list.some(x => x.id === item.id) ? list.map(x => (x.id === item.id ? item : x)) : [item, ...list];
+}
+
 /**
  * Folding a fresh read of a collection into the copy a tab holds.
  *
