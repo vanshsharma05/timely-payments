@@ -158,13 +158,35 @@ describe('reset_book — one transaction, snapshot first, ids and history kept',
         expect(b.counts).toEqual({ accounts_on_file: 4, accounts_updated: 4, accounts_settled: 2, accounts_added: 1, cheques_deleted: 2 });
     });
 
-    it('a Manager may run it (the same two roles that see the Data source tab); a CRM may not; a stranger may not', async () => {
-        await actAs(db, MANAGER);
-        await expect(reset(db)).resolves.toMatchObject({ accounts_on_file: 4 });
-        await actAs(db, CRM);
-        await expect(reset(db)).rejects.toThrow(/Only an Admin or Manager/);
-        await actAs(db, null);
-        await expect(reset(db)).rejects.toThrow(/Only an Admin or Manager/);
+    it('is for Admins only: a Manager, a CRM and a stranger are refused, and nothing changes', async () => {
+        for (const who of [MANAGER, CRM, null]) {
+            await actAs(db, who);
+            await expect(reset(db)).rejects.toThrow(/Only an Admin can reset/);
+        }
+        expect(await count(db, 'pdc_cheques')).toBe(2);
+        expect(await count(db, 'book_backups')).toBe(0);
+        expect((await row(db, 'out_63_3_BROTHERS')).notes).toEqual(['[07 Sept - Vishnu] Promised 1L']);
+    });
+
+    it('keeps every owner and collector exactly as they were, on every account', async () => {
+        const before = (await db.query<any>(`select id, crm_owner_id, assigned_collector_id from public.customers order by id`)).rows;
+        await reset(db);
+        const after = (await db.query<any>(`select id, crm_owner_id, assigned_collector_id from public.customers where id <> 'cust_brandnewfirm' order by id`)).rows;
+        expect(after).toEqual(before);
+        expect(before.map((r: any) => r.crm_owner_id)).toEqual(['PRIKSHIT', 'VISHNU', 'ANKUR', 'VISHNU']);
+    });
+
+    it('keeps every activity entry exactly as it was', async () => {
+        const before = (await db.query<any>(`select id, customer_id, author_name, kind, body from public.customer_activity order by created_at, id`)).rows;
+        await reset(db);
+        const after = (await db.query<any>(`select id, customer_id, author_name, kind, body from public.customer_activity order by created_at, id`)).rows;
+        expect(after).toEqual(before);
+        expect(before).toHaveLength(3);
+    });
+
+    it('the backup table is readable by an Admin only', async () => {
+        const policy = (await db.query<any>(`select pg_get_expr(polqual, polrelid) as q from pg_policy where polname = 'book_backups_read'`)).rows[0].q;
+        expect(policy).toBe('is_admin()');
     });
 
     it('refuses without the phrase, and changes nothing', async () => {

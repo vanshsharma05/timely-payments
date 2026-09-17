@@ -765,6 +765,10 @@ const App = () => {
      * itself is one database transaction (services/reset.ts, supabase/reset.sql).
      */
     const handleResetAllDataAndUsers = async () => {
+        if (!rights.isAdmin) {
+            setSyncMessage({ type: 'error', text: 'Only an Admin can reset the book.' });
+            return;
+        }
         setIsSyncing(true);
         setSyncMessage({ type: 'success', text: 'Reading the live sheet before anything changes…' });
         try {
@@ -2969,6 +2973,9 @@ const App = () => {
                                             </a>
                                         </div>
 
+                                        {/* Admin only (owner's decision, 2026-09-17): a Manager sees the
+                                            sync controls above, not this. reset_book() checks the same. */}
+                                        {rights.isAdmin && (
                                         <div className="mt-8 pt-6 border-t border-separator">
                                             <h4 className="text-sm font-semibold text-label-2 mb-3">Troubleshooting & Fresh Start</h4>
                                             <div className="flex flex-wrap items-center gap-3">
@@ -2986,6 +2993,7 @@ const App = () => {
                                                 owners, collectors, contacts and history. Team logins are managed in Team &amp; access.
                                             </p>
                                         </div>
+                                        )}
                                     </div>
                                 </div>
                                 {syncMessage && (

@@ -30,8 +30,10 @@
 --   6. Puts the templates, company profile and data-source settings back to
 --      the defaults handed in.
 --
--- The caller must be an Admin or Manager (the same two roles that see the
--- Data source tab) and must pass the phrase the confirmation dialog asked for.
+-- The caller must be an Admin (owner's decision, 2026-09-17: the Data source
+-- tab is Admin and Manager, the reset on it is Admin only) and must pass the
+-- phrase the confirmation dialog asked for. Owners, collectors and the
+-- activity history are kept (the same decision).
 -- ============================================================================
 
 create table if not exists public.book_backups (
@@ -56,7 +58,7 @@ alter table public.book_backups enable row level security;
 drop policy if exists book_backups_read on public.book_backups;
 create policy book_backups_read on public.book_backups
     for select to authenticated
-    using (public.current_role() in ('Admin','Manager'));
+    using (public.is_admin());
 -- No insert/update/delete policy on purpose: only the two functions below
 -- write here, and they run as their owner.
 
@@ -89,8 +91,8 @@ declare
     v_missing    integer;
 begin
     select role, name into v_role, v_name from public.profiles where id = v_uid;
-    if v_role is null or v_role not in ('Admin', 'Manager') then
-        raise exception 'Only an Admin or Manager can reset the book.' using errcode = '42501';
+    if v_role is null or v_role <> 'Admin' then
+        raise exception 'Only an Admin can reset the book.' using errcode = '42501';
     end if;
     if p_phrase is distinct from 'RESET' then
         raise exception 'The confirmation phrase did not match. Nothing was changed.';

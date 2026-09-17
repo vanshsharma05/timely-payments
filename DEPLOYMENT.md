@@ -194,8 +194,8 @@ production tool for the business, you need a Pro seat.
 
 ## The "Complete fresh start" button, and the way back
 
-*Data source → Troubleshooting & Fresh Start → Reset All Data.* Admin and
-Manager see it. It reads the live sheet first (if that fails, nothing
+*Data source → Troubleshooting & Fresh Start → Reset All Data.* Only an
+Admin sees it, and the database refuses anyone else. It reads the live sheet first (if that fails, nothing
 happens), shows exactly what it will do as counts, makes you download a
 backup file and type `RESET`, then runs **one database transaction**: a
 snapshot of customers, cheques, templates, profile and settings is saved in

@@ -40,11 +40,7 @@ Questions the repository cannot answer. Each brief states what the software does
 
 **Real-world effect.** One misclick by a Manager loses the team's cheque register and the history of every account; a stolen Manager session could do the same.
 
-**Status 2026-09-17 (ninth session).** Option (d) is built (11 §3.0): one database transaction with a snapshot, a restore function, counts-and-phrase confirmation, no deletes, ids/owners/history kept. Three things remain the owner's call:
-
-1. **Who may press it** — still Admin **and** Manager (unchanged; the function checks the same two roles). Narrowing to Admin is one line in `reset_book()` and the button's gate.
-2. **Should a fresh start clear CRM owners and collectors?** The old reset did ("every account comes back with NO CRM — run the customer import afterwards"); the new one **keeps** them, because losing them was the most-complained-about side effect and the import that restores them is a separate step people forget. If the business wants owners cleared, it is one more column in step 3 of the function.
-3. **Should it clear the activity threads?** The old reset lost them only as a side effect of deleting accounts; the new one keeps every entry. Clearing them is a `delete from customer_activity` in the transaction (and they are not in the snapshot today — that would have to be added first).
+**DECIDED by the owner, 2026-09-17:** (1) **Admin only** — the button renders for an Admin only, the handler refuses anyone else, `reset_book()` raises for any role but Admin, and the backup table is readable by an Admin only; (2) **CRM owners and collectors are kept**; (3) **all customer activity/history is kept**. Implemented in the ninth session's batch (11 §3.0) and pinned by `tests/resetSql.test.ts`. What the old reset did to owners (cleared them) and to threads (lost them with deleted accounts) is gone for good. Still open under this question: nothing.
 
 **Options (policy).** (a) Admin only. (b) Admin and Manager, as now. (c) Remove from the app; keep a documented offline procedure (SQL run by whoever administers Supabase). (d) Keep, but only as a server-side transactional job with backup + audit + typed confirmation (the technical fixes), under whichever roles (a)/(b) — **built**.
 
