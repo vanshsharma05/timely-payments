@@ -8,7 +8,6 @@
  * follow-up (off when the role cannot record one), and the banner can be
  * dismissed.
  */
-import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 

@@ -12,7 +12,8 @@ import { useCheques } from './hooks/useCheques';
 import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
 import { useCustomers } from './hooks/useCustomers';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
+import { useWorklistFilters } from './hooks/useWorklistFilters';
+import { Outstanding, User, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
 import { processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -33,7 +34,6 @@ const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'
 const TemplateModal = lazy(() => import('./components/TemplateModal'));
 import { CompanyToday } from './components/pages/CompanyToday';
 import { PersonalToday } from './components/pages/PersonalToday';
-import type { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
 const ReportsView = lazy(() => import('./components/ReportsView'));
 const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
 const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
@@ -73,15 +73,15 @@ const App = () => {
     const outstandingData = useMemo(() => (currentUser ? processStatuses(scopeTo(currentUser, appData)) : []), [currentUser, appData]);
     /** The book is on its way from the server. */
     const [loading, setLoading] = useState<boolean>(false);
-    const [searchTerm, setSearchTerm] = useState('');
+    /** What the Today list and Reports are narrowed to (hooks/useWorklistFilters.ts). */
+    const filters = useWorklistFilters({ currentUser, isAuthenticated, setTab });
+    const {
+        searchTerm, setSearchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter,
+        reportCrm, reportAgeing, showNotificationBanner, setShowNotificationBanner,
+        handleCategoryBoxClick, handleClearFilters, openReport, handleViewPriorityItems,
+    } = filters;
     /** Live stock's own term: a customer searched in the book must not empty the stock list (services/search.ts). */
     const [stockSearch, setStockSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<FollowUpStatus | null>(null);
-    const [categoryFilter, setCategoryFilter] = useState<FollowUpCategoryFilter>('all');
-    // What Reports opens on when a manager arrives from Today: a person (the
-    // team table) and an ageing band (the portfolio card). 'ALL' / 'all' = no filter.
-    const [reportCrm, setReportCrm] = useState<string>('ALL');
-    const [reportAgeing, setReportAgeing] = useState<AgeingReportFilter>('all');
 
 
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -120,10 +120,6 @@ const App = () => {
         handleGoogleSync, handleCustomerMasterSync,
     } = source;
 
-    /** The Today list's filters: the attention banner's, the unattended shortcut's, and whether the banner shows. */
-    const [priorityFilter, setPriorityFilter] = useState(false);
-    const [unattendedFilter, setUnattendedFilter] = useState(false);
-    const [showNotificationBanner, setShowNotificationBanner] = useState(true);
 
     // =====================================================================
     // Supabase backend
@@ -226,30 +222,6 @@ const App = () => {
     dialogOpenRef.current = !!selectedCustomer || !!customers.customerDialog || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
 
 
-    /**
-     * Filters belong to the person looking, not to the data.
-     *
-     * These used to be cleared in the same effect that recomputes the view —
-     * and that effect depends on `appData`, so *every save* reset them. Log a
-     * follow-up from "Due today" and the filter silently fell back to "My
-     * accounts": the list you were working stopped showing today's follow-ups
-     * and showed all 87 instead, which reads as the follow-ups disappearing.
-     * The same happened after grading an account, reassigning one, or a sync
-     * landing while you worked.
-     *
-     * Keyed on who is signed in, so it still clears on sign-in and on a switch
-     * of account, and never because a row was written.
-     */
-    useEffect(() => {
-        if (!isAuthenticated || !currentUser) return;
-        setShowNotificationBanner(true);
-        setPriorityFilter(false);
-        setUnattendedFilter(false);
-        setStatusFilter(null);
-        setCategoryFilter('all');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentUser?.id, isAuthenticated]);
-
     const handleLogin = (user: User) => {
         const fullUser: User = {
             ...user,
@@ -269,60 +241,6 @@ const App = () => {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setTab('overview');
-    };
-
-    const handleCategoryBoxClick = (category: FollowUpCategoryFilter) => {
-        setPriorityFilter(false);
-        setUnattendedFilter(false);
-        setStatusFilter(null);
-        setCategoryFilter(current => current === category ? 'all' : category);
-    };
-
-    const handleClearFilters = () => {
-        setStatusFilter(null);
-        setCategoryFilter('all');
-        setPriorityFilter(false);
-        setUnattendedFilter(false);
-        setReportCrm('ALL');
-        setReportAgeing('all');
-        setSearchTerm('');
-    };
-
-    /**
-     * From a number on Today to the accounts behind it. Reports opens on the
-     * same person, the same follow-up state and the same ageing band the number
-     * was counting — nothing else carried over, so a stale filter from an
-     * earlier visit cannot hide part of the list.
-     */
-    const openReport = (opts: { crm?: string; category?: FollowUpCategoryFilter; ageing?: AgeingReportFilter }) => {
-        setPriorityFilter(false);
-        setUnattendedFilter(false);
-        setStatusFilter(null);
-        setReportCrm(opts.crm ?? 'ALL');
-        setCategoryFilter(opts.category ?? 'all');
-        setReportAgeing(opts.ageing ?? 'all');
-        setTab('reports');
-    };
-
-    /**
-     * "Show them" on the attention banner.
-     *
-     * It used to set priorityFilter, which only the personal dashboard's list
-     * reads. On the company dashboard nothing rendered that list, so the banner
-     * vanished and nothing else happened. Whoever sees the whole book is taken
-     * to the report, filtered to the same accounts the banner counted.
-     */
-    const handleViewPriorityItems = () => {
-        setStatusFilter(null);
-        setUnattendedFilter(false);
-        setShowNotificationBanner(false);
-
-        if (seesWholeBook(currentUser)) {
-            openReport({ category: 'urgent' });
-        } else {
-            setCategoryFilter('all');
-            setPriorityFilter(true);
-        }
     };
 
     /** Whole-book ageing; see ageingTotals(). */
@@ -540,7 +458,7 @@ const App = () => {
      */
     const renderTab = () => {
         if (!currentUser) return null;
-        const filtersActive = categoryFilter !== 'all' || !!statusFilter || priorityFilter || unattendedFilter;
+        const { filtersActive } = filters;
         return (
             <>
                 {safeKey === 'overview' && (wholeBook ? (
