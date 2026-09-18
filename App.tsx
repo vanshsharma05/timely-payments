@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } fro
 import { EXPECTED_HEADERS, parseExcelRows, readWorkbookRows, downloadTemplate, exportCustomersExcel, exportCrmAssignments } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
-import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
-import { SaveStatus, combineStatus } from './components/SaveStatus';
-import { mergeServerRows, replaceOrAdd } from './services/refresh';
+import { SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
+import { SaveStatus } from './components/SaveStatus';
+import { replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
+import { usePersistence } from './hooks/usePersistence';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
@@ -323,90 +324,14 @@ const App = () => {
 
     const syncEnabled = isSupabaseConfigured && isAuthenticated && serverLoaded;
 
-    /**
-     * What each collection has saved, is saving, or could not save — folded
-     * into one line in the header (SaveStatus) and a banner while anything is
-     * refused. The hooks retry on their own; "Retry now" runs them at once.
-     */
-    const [syncStatuses, setSyncStatuses] = useState<Record<string, SyncStatus>>({});
-    const statusFor = (key: string) => (status: SyncStatus) => setSyncStatuses(prev => ({ ...prev, [key]: status }));
-    const customersStatus = useCallback(statusFor('customers'), []);
-    const chequesStatus = useCallback(statusFor('cheques'), []);
-    const templatesStatus = useCallback(statusFor('templates'), []);
-    const profileStatus = useCallback(statusFor('profile'), []);
-    const settingsStatus = useCallback(statusFor('settings'), []);
-    const saveStatus = useMemo(() => combineStatus(Object.values(syncStatuses)), [syncStatuses]);
-
-    // Stable adapters. These tables are small, so a sequential loop is fine.
-    /**
-     * Genuinely new accounts go out as an upsert, so the database can ask for
-     * the "add customer" right only when one is being added. An id we have not
-     * seen may still exist server-side (someone else created it since this tab
-     * loaded), which is why that path upserts. Edits to accounts the server
-     * already has never come here: the sync hook writes them column by column
-     * through `customerColumns` below.
-     */
-    const saveCustomerRows = useCallback(async (rows: Outstanding[], created: Set<string>) => {
-        const fresh = rows.filter(r => created.has(r.id));
-        if (fresh.length) await repo.upsertCustomers(fresh);
-    }, []);
-    /**
-     * An edit writes only the columns that changed since this tab last saved
-     * the row. It used to write the whole row from this tab's copy of the
-     * book, so two people working one account overwrote each other's
-     * unrelated fields — see customerRowDiff() in the repository.
-     */
-    const customerColumns = useMemo(() => ({
-        toRow: repo.outstandingToRow,
-        diff: repo.customerRowDiff,
-        update: (id: string, changes: Partial<repo.CustomerRow>) => repo.updateCustomerColumns(id, changes),
-    }), []);
-
-    const upsertPdcRows = useCallback(async (rows: PdcCheque[]) => {
-        for (const r of rows) await repo.upsertPdcCheque(r);
-    }, []);
-    const upsertTemplateRows = useCallback(async (rows: Template[]) => {
-        for (const r of rows) await repo.upsertTemplate(r);
-    }, []);
-    const customerSignature = useCallback((c: Outstanding) => JSON.stringify(repo.outstandingToRow(c)), []);
-    const jsonSignature = useCallback((r: unknown) => JSON.stringify(r), []);
-
-    const customersSync = useCollectionSync<Outstanding, repo.CustomerRow>({
-        rows: appData, enabled: syncEnabled, label: 'customers',
-        toSignature: customerSignature,
-        upsert: saveCustomerRows, remove: repo.deleteCustomer,
-        partial: customerColumns,
-        onStatus: customersStatus,
+    /** A form is open: the book must not be refreshed under it mid-edit. */
+    const dialogOpen = !!selectedCustomer || isCustomerModalOpen || isPdcModalOpen || !!resetPlan || !!pendingSync;
+    const {
+        customersSync, chequesSync, syncStatuses, saveStatus, retryAllSaves, refreshBook, refreshedAt, refreshing,
+    } = usePersistence({
+        enabled: syncEnabled, appData, setAppData, pdcCheques, templates, companyProfile, dialogOpen,
+        settings: { dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime },
     });
-    const chequesSync = useCollectionSync({
-        rows: pdcCheques, enabled: syncEnabled, label: 'PDC cheques',
-        toSignature: jsonSignature,
-        upsert: upsertPdcRows, remove: repo.deletePdcCheque,
-        onStatus: chequesStatus,
-    });
-    const templatesSync = useCollectionSync({
-        rows: templates, enabled: syncEnabled, label: 'templates',
-        toSignature: jsonSignature,
-        upsert: upsertTemplateRows, remove: repo.deleteTemplate,
-        onStatus: templatesStatus,
-    });
-    useValueSync({
-        value: companyProfile, enabled: syncEnabled, label: 'company profile',
-        save: repo.saveCompanyProfile, onStatus: profileStatus,
-    });
-
-    const settingsValue = useMemo(
-        () => ({ dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime }),
-        [dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime]
-    );
-    useValueSync({
-        value: settingsValue, enabled: syncEnabled, label: 'settings',
-        save: repo.saveAppSettings, onStatus: settingsStatus,
-    });
-
-    const retryAllSaves = useCallback(() => {
-        void Promise.all([customersSync.retry(), chequesSync.retry(), templatesSync.retry()]);
-    }, [customersSync, chequesSync, templatesSync]);
 
     /** "Saved N of M" or the reason, after a bulk change has been given to the server. */
     const reportBulk = (r: SyncPassResult, ids: string[], done: string) => {
@@ -415,71 +340,6 @@ const App = () => {
         else notify('error', `${done} — but ${failed.length} of ${ids.length} could not be saved (${failed[0].message}). They are kept in this tab and will be retried.`);
     };
 
-    /**
-     * Keeping a long-open tab honest.
-     *
-     * The book was read once at sign-in and never again; a colleague's note
-     * or reassignment from the morning stayed invisible all day, and the
-     * next save from here was compared with that morning's copy. Now the
-     * book is re-read when the person comes back to the tab (and every few
-     * minutes while it is open), and the server's rows replace this tab's —
-     * except any row this tab has changed and not yet saved, which is kept
-     * exactly as it is, and any dialog that is open, which pauses the
-     * refresh so a form is never pulled from under a person mid-edit.
-     */
-    const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
-    const [refreshing, setRefreshing] = useState(false);
-    const appDataRef = useRef<Outstanding[]>(appData);
-    appDataRef.current = appData;
-    const refreshBook = useCallback(async () => {
-        if (!syncEnabled || refreshing) return;
-        setRefreshing(true);
-        try {
-            await customersSync.idle();
-            const server = processStatuses(await repo.fetchCustomers());
-            const { merged, accepted, dropped } = mergeServerRows(appDataRef.current, server, customersSync.pendingIds());
-            // The baseline moves first, so the new rows are not mistaken for local edits.
-            customersSync.accept(accepted);
-            customersSync.forget(dropped);
-            setAppData(merged);
-            setRefreshedAt(Date.now());
-        } catch {
-            // The book stays as it was; the next return to the tab tries again.
-        } finally {
-            setRefreshing(false);
-        }
-    }, [syncEnabled, refreshing, customersSync]);
-    const refreshRef = useRef(refreshBook);
-    refreshRef.current = refreshBook;
-    const dialogOpen = !!selectedCustomer || isCustomerModalOpen || isPdcModalOpen || !!resetPlan || !!pendingSync;
-    const dialogOpenRef = useRef(dialogOpen);
-    dialogOpenRef.current = dialogOpen;
-    useEffect(() => {
-        if (!syncEnabled) return;
-        setRefreshedAt(Date.now());   // the load itself is a fresh read
-        let last = Date.now();
-        const maybe = (minAgeMs: number) => {
-            if (document.visibilityState !== 'visible' || dialogOpenRef.current) return;
-            if (Date.now() - last < minAgeMs) return;
-            last = Date.now();
-            void refreshRef.current();
-        };
-        const onVisible = () => maybe(60_000);
-        const onOnline = () => maybe(10_000);
-        const every = window.setInterval(() => maybe(5 * 60_000), 60_000);
-        document.addEventListener('visibilitychange', onVisible);
-        window.addEventListener('focus', onVisible);
-        window.addEventListener('online', onOnline);
-        return () => {
-            window.clearInterval(every);
-            document.removeEventListener('visibilitychange', onVisible);
-            window.removeEventListener('focus', onVisible);
-            window.removeEventListener('online', onOnline);
-        };
-    }, [syncEnabled]);
-    // "x min ago" has to move without anything else changing.
-    const [, setClock] = useState(0);
-    useEffect(() => { const t = window.setInterval(() => setClock(n => n + 1), 30_000); return () => window.clearInterval(t); }, []);
 
     // Update the view when Current User changes or Master Data changes
     const updateViewData = useCallback(async () => {
