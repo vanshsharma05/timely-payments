@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { EXPECTED_HEADERS, downloadTemplate, exportCustomersExcel } from './services/excel';
+import { EXPECTED_HEADERS, downloadTemplate } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
-import { SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
+import { SyncPassResult } from './services/useSupabaseSync';
 import { SaveStatus } from './components/SaveStatus';
 import { searchScopeFor } from './services/search';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
@@ -11,7 +11,8 @@ import { useDataSource } from './hooks/useDataSource';
 import { useCheques } from './hooks/useCheques';
 import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
+import { useCustomers } from './hooks/useCustomers';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, isBadDebt } from './types';
 import { getOutstandingForUser, processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -21,7 +22,7 @@ import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 const LiveStockView = lazy(() => import('./components/LiveStockView'));
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
-import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso, startOfToday } from './components/ui/format';
+import { formatCompact, formatDateShort, formatINR, relativeDays, startOfToday } from './components/ui/format';
 import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
@@ -79,11 +80,6 @@ const App = () => {
     const [reportCrm, setReportCrm] = useState<string>('ALL');
     const [reportAgeing, setReportAgeing] = useState<AgeingReportFilter>('all');
     
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [selectedCustomer, setSelectedCustomer] = useState<Outstanding | null>(null);
-
-    const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
-    const [whatsAppCustomer, setWhatsAppCustomer] = useState<Outstanding | null>(null);
 
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     /**
@@ -130,75 +126,6 @@ const App = () => {
     const [priorityFilter, setPriorityFilter] = useState(false);
     const [unattendedFilter, setUnattendedFilter] = useState(false);
     const [showNotificationBanner, setShowNotificationBanner] = useState(true);
-
-    // Customer Add / Edit State
-    const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
-    const [customerToEdit, setCustomerToEdit] = useState<Outstanding | null>(null);
-
-    const handleOpenAddCustomer = () => {
-        setCustomerToEdit(null);
-        setIsCustomerModalOpen(true);
-    };
-
-    const handleOpenEditCustomer = (customer: Outstanding) => {
-        setCustomerToEdit(customer);
-        setIsCustomerModalOpen(true);
-    };
-
-    /**
-     * The dialog waits for the server's verdict: the record goes into the
-     * book at once (so the tab keeps it and retries if need be), but the
-     * dialog only closes, and "saved" is only said, once the write was
-     * accepted. A refusal goes back to the dialog, which stays open with
-     * everything typed still in it.
-     */
-    const handleSaveCustomer = async (savedCustomer: Outstanding): Promise<SaveOutcome> => {
-        const isExisting = appData.some(c => c.id === savedCustomer.id);
-        let updated: Outstanding[];
-        if (isExisting) {
-            updated = appData.map(c => c.id === savedCustomer.id ? savedCustomer : c);
-        } else {
-            updated = [savedCustomer, ...appData];
-        }
-        const processed = processStatuses(updated);
-        setAppData(processed);
-        const outcome = outcomeFor(savedCustomer.id, await customersSync.flush());
-        if (outcome.ok) {
-            setIsCustomerModalOpen(false);
-            setCustomerToEdit(null);
-            notify('success', `Customer "${savedCustomer.company}" ${isExisting ? 'updated' : 'added'}.`);
-        }
-        return outcome;
-    };
-
-    const handleDeleteCustomer = (customerId: string) => {
-        const target = appData.find(c => c.id === customerId);
-        if (!target) return;
-        const cheques = pdcCheques.filter(p => p.customerId === customerId).length;
-        setAsk({
-            title: 'Delete this customer?',
-            confirmLabel: 'Delete customer',
-            body: <>
-                <p><strong className="text-label">{target.company}</strong>{target.contactPerson ? ` · ${target.contactPerson}` : ''} · balance <span className="num font-semibold text-label">{formatINR(target.total || 0)}</span>{cheques ? ` · ${cheques} cheque${cheques === 1 ? '' : 's'} in the register` : ''}.</p>
-                <p className="mt-2">The account, its contacts, notes, follow-up history{cheques ? ' and its cheques' : ''} leave the book for everyone. This cannot be undone. A customer who has simply paid up should be left in place — the sheet settles them to zero.</p>
-            </>,
-            run: () => {
-                const updated = appData.filter(c => c.id !== customerId);
-                const processed = processStatuses(updated);
-                setAppData(processed);
-                void customersSync.flush().then(r => {
-                    const failed = r.failed.find(f => f.id === customerId);
-                    if (failed) notify('error', `Could not delete "${target.company}": ${failed.message}. It will be tried again.`);
-                    else notify('success', `Customer "${target.company}" deleted.`);
-                });
-            },
-        });
-    };
-
-    const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => exportCustomersExcel(rowsToExport, appData.length);
-
-
-
 
     // =====================================================================
     // Supabase backend
@@ -281,12 +208,28 @@ const App = () => {
         handleBulkPdcStatus, handleBulkDeletePdc, handleOpenPdcForCustomer, handleOpenTodayPdc,
         pdcInitialStatusFilter, pdcInitialCustomerFilter,
     } = cheques;
-    dialogOpenRef.current = !!selectedCustomer || isCustomerModalOpen || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
     /** Team & access (hooks/useTeam.tsx) and message templates (hooks/useTemplates.tsx). */
     const team = useTeam({ users, setUsers, currentUser, setCurrentUser, notify, ask: setAsk });
     const { handleOpenUserModal, handleDeleteUser } = team;
     const templatesFeature = useTemplates({ templates, setTemplates, ask: setAsk });
     const { handleOpenTemplateModal, handleDeleteTemplate } = templatesFeature;
+
+    const filteredData = useMemo(
+        () => filterWorklist(outstandingData, { searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter }, users, startOfToday()),
+        [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users],
+    );
+    /** Everything done to a customer: dialogs, saves, the bulk tools (hooks/useCustomers.tsx). */
+    const customers = useCustomers({
+        appData, setAppData, pdcCheques, users, currentUser, customersSync, notify, reportBulk, ask: setAsk,
+        tab, todayList: filteredData,
+    });
+    const {
+        handleOpenAddCustomer, handleOpenEditCustomer, handleDeleteCustomer, handleExportCustomerExcel,
+        selectedCustomer, liveSelectedCustomer, onBookRowsChange, handleOpenFollowUp, handleSendWhatsApp,
+        handleReassignCrm, handleBulkSetRank, handleBulkReassignCrm, handleBulkSetFollowUp,
+    } = customers;
+    dialogOpenRef.current = !!selectedCustomer || !!customers.customerDialog || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
+
 
 
 
@@ -355,58 +298,6 @@ const App = () => {
         setTab('overview');
     };
 
-    /**
-     * The list an account was opened from, so the dialog can step to the next
-     * one without closing: the book's rows in their current order when it is
-     * open, otherwise the Today list's.
-     */
-    const bookVisibleIds = useRef<string[]>([]);
-    const onBookRowsChange = useCallback((ids: string[]) => { bookVisibleIds.current = ids; }, []);
-    const [followUpList, setFollowUpList] = useState<string[]>([]);
-    const handleOpenFollowUp = (customer: Outstanding) => {
-        const source = safeKey === 'customers' ? bookVisibleIds.current : filteredData.map(c => c.id);
-        setFollowUpList(source.includes(customer.id) ? source : [customer.id]);
-        setSelectedCustomer(customer);
-        setIsModalOpen(true);
-    };
-    const followUpPosition = useMemo(() => {
-        if (!selectedCustomer) return undefined;
-        const index = followUpList.indexOf(selectedCustomer.id);
-        return index >= 0 ? { index, total: followUpList.length } : undefined;
-    }, [selectedCustomer, followUpList]);
-    const handleNavigateFollowUp = useCallback((direction: -1 | 1) => {
-        if (!selectedCustomer) return;
-        const index = followUpList.indexOf(selectedCustomer.id);
-        const next = appData.find(c => c.id === followUpList[index + direction]);
-        if (next) setSelectedCustomer(next);
-    }, [selectedCustomer, followUpList, appData]);
-
-    /**
-     * The follow-up dialog stays open while entries are logged against the
-     * account, and each one writes back. Handing it the row out of appData
-     * rather than the copy taken when it opened means the second entry builds
-     * on the first instead of rebuilding from a snapshot that no longer has it.
-     */
-    const liveSelectedCustomer = useMemo(
-        () => (selectedCustomer ? appData.find(c => c.id === selectedCustomer.id) || selectedCustomer : null),
-        [selectedCustomer, appData],
-    );
-
-    const handleCloseModal = () => {
-        setIsModalOpen(false);
-        setSelectedCustomer(null);
-    };
-
-    /** The follow-up dialog's save: applied at once, then the server's verdict for that one account. */
-    const handleUpdateOutstanding = async (updatedCustomer: Outstanding): Promise<SaveOutcome> => {
-        const processedCustomer = processStatuses([updatedCustomer])[0] || updatedCustomer;
-        setAppData(current => processStatuses(current.map(item =>
-            item.id === processedCustomer.id ? processedCustomer : item
-        )));
-        return outcomeFor(updatedCustomer.id, await customersSync.flush());
-    };
-
-
     const handleCategoryBoxClick = (category: FollowUpCategoryFilter) => {
         setPriorityFilter(false);
         setUnattendedFilter(false);
@@ -461,156 +352,6 @@ const App = () => {
         }
     };
     
-    // Reassign single customer to a CRM
-    const handleReassignCrm = (customerId: string, newCrmId: string) => {
-        setAppData(current => current.map(item =>
-            item.id === customerId ? { ...item, crmOwnerId: newCrmId } : item
-        ));
-        void customersSync.flush().then(r => {
-            const failed = r.failed.find(f => f.id === customerId);
-            if (failed) notify('error', `The owner change could not be saved: ${failed.message}. It is kept in this tab and will be retried.`);
-        });
-    };
-
-    // Bulk reassign multiple customers to a CRM
-    /**
-     * Grades a whole selection at once.
-     *
-     * The agency list is hundreds of accounts; deciding which of them are truly
-     * stuck is a sit-down job done against a filtered list, not one dialog at a
-     * time.
-     */
-    const handleBulkSetRank = (customerIds: string[], rank: PaymentRank | '') => {
-        const idSet = new Set(customerIds);
-        setAppData(current => current.map(item =>
-            idSet.has(item.id) ? { ...item, paymentRank: rank || undefined } : item
-        ));
-        void customersSync.flush().then(r => reportBulk(r, customerIds, rank
-            ? `Marked ${customerIds.length} account${customerIds.length === 1 ? '' : 's'} as ${PAYMENT_RANK_LABELS[rank]}.`
-            : `Cleared the rank on ${customerIds.length} account${customerIds.length === 1 ? '' : 's'}; they go back to being worked out from ageing.`));
-    };
-
-    const handleBulkReassignCrm = (customerIds: string[], newCrmId: string) => {
-        const idSet = new Set(customerIds);
-        setAppData(current => current.map(item =>
-            idSet.has(item.id) ? { ...item, crmOwnerId: newCrmId } : item
-        ));
-        const targetCrmUser = users.find(u => u.id === newCrmId || u.name === newCrmId);
-        const targetName = targetCrmUser ? targetCrmUser.name : (newCrmId || 'Unassigned');
-        void customersSync.flush().then(r => reportBulk(r, customerIds, `Reassigned ${customerIds.length} customer${customerIds.length === 1 ? '' : 's'} to ${targetName}.`));
-    };
-
-    /**
-     * Puts one follow-up date on a whole selection — an Admin's tool for the
-     * overdue list.
-     *
-     * A follow-up that has gone past its date is supposed to be rescheduled by
-     * the CRM who owns it. When it is not, the account sits in "Overdue" and
-     * nobody is prompted to ring. Ticking those rows and setting today brings
-     * them back into the day's worklist in one go, instead of opening each
-     * account to move a date the owner should have moved.
-     *
-     * Two things are deliberate. Each account gets a system entry in its
-     * activity — who moved the date, from what, and that the owner had left it
-     * — so the reschedule is on the record beside the owner's name rather than
-     * silently in a column. And `lastFollowUpOn` is left alone: an Admin
-     * moving a date is not a follow-up, and pretending it was would hide the
-     * very gap this exists to show.
-     */
-    const handleBulkSetFollowUp = async (customerIds: string[], isoDate: string) => {
-        if (!currentUser || currentUser.role !== UserRole.Admin) return;
-        const nextDate = dateFromLocalIso(isoDate);
-        if (!nextDate) {
-            notify('error', 'Pick a follow-up date first.');
-            return;
-        }
-        if (nextDate.getTime() < startOfToday().getTime()) {
-            notify('error', 'A follow-up date in the past would be overdue the moment it is set.');
-            return;
-        }
-
-        const idSet = new Set(customerIds);
-        const nextLabel = formatDate(nextDate);
-        const changed: Outstanding[] = [];
-        const entries: repo.NewActivity[] = [];
-        let overdueMoved = 0;
-
-        const updated = appData.map(item => {
-            if (!idSet.has(item.id)) return item;
-
-            const prev = item.followUpDate ? new Date(item.followUpDate) : undefined;
-            const hadDate = !!prev && !isNaN(prev.getTime());
-            const prevMidnight = hadDate ? new Date(prev!).setHours(0, 0, 0, 0) : NaN;
-            const wasCompleted = item.status === FollowUpStatus.Completed;
-            // Already on that date: nothing to move, nothing to record.
-            if (hadDate && !wasCompleted && prevMidnight === nextDate.getTime()) return item;
-
-            const owner = findOwner(users, item.crmOwnerId)?.name || (item.crmOwnerId || '').trim();
-            const wasOverdue = getFollowUpCategory(item, startOfToday()) === 'overdue';
-            let body: string;
-            if (wasCompleted) {
-                // "Payment collected" closes an account with the day it was
-                // collected as its date, so that date is not a follow-up.
-                body = `Follow-up reopened for ${nextLabel} in a bulk update; it had been closed as collected`
-                    + (hadDate ? ` on ${formatDate(prev)}.` : '.');
-            } else if (hadDate) {
-                body = `Follow-up date moved from ${formatDate(prev)} to ${nextLabel} in a bulk update.`;
-                if (wasOverdue) {
-                    overdueMoved++;
-                    const days = Math.max(1, Math.round((startOfToday().getTime() - prevMidnight) / 86_400_000));
-                    body += owner
-                        ? ` It was ${days} day${days === 1 ? '' : 's'} overdue and ${owner} had not rescheduled it.`
-                        : ` It was ${days} day${days === 1 ? '' : 's'} overdue with no CRM assigned to reschedule it.`;
-                }
-            } else {
-                body = `Follow-up date set to ${nextLabel} in a bulk update.`
-                    + (owner ? ` No follow-up had been planned by ${owner}.` : ' No follow-up had been planned, and no CRM was assigned.');
-            }
-            entries.push({ customerId: item.id, kind: 'system', body });
-
-            // Where the follow-up stands is read from the date; the only status
-            // written here is the reopening of an account closed as collected,
-            // the same way the follow-up form does it.
-            const next: Outstanding = { ...item, followUpDate: nextDate, ...(wasCompleted ? { status: FollowUpStatus.Pending } : {}) };
-            changed.push(next);
-            return next;
-        });
-
-        if (!changed.length) {
-            notify('success', `Every selected account already has its follow-up on ${nextLabel}.`);
-            return;
-        }
-
-        setAppData(processStatuses(updated));
-
-        const unchanged = customerIds.length - changed.length;
-        reportBulk(await customersSync.flush(), changed.map(c => c.id),
-            `Follow-up set to ${nextLabel} on ${changed.length} account${changed.length === 1 ? '' : 's'}`
-            + (unchanged ? ` (${unchanged} already had it)` : '')
-            + `. Each one's activity records the move`
-            + (overdueMoved ? `, and for the ${overdueMoved} that were overdue, that the owner had not rescheduled it.` : '.'),
-        );
-
-        // The date is saved regardless; the record is written best-effort and
-        // any failure is said out loud rather than swallowed.
-        try {
-            await repo.addActivities(entries, currentUser);
-        } catch (e: any) {
-            notify('error', `The dates are saved, but the activity note could not be written: ${e?.message || e}`);
-        }
-    };
-
-    // WhatsApp Reminder Handler (opens recipient & template selector with 'Other number' option)
-    const handleSendWhatsApp = (customer: Outstanding) => {
-        setWhatsAppCustomer(customer);
-        setIsWhatsAppModalOpen(true);
-    };
-
-    const filteredData = useMemo(
-        () => filterWorklist(outstandingData, { searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter }, users, startOfToday()),
-        [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users],
-    );
-
     /** Whole-book ageing; see ageingTotals(). */
     const portfolioAgeing = useMemo(() => ageingTotals(appData), [appData]);
 
@@ -1620,11 +1361,11 @@ const App = () => {
         </AppShell>
         <Suspense fallback={null}>
 
-            {isModalOpen && liveSelectedCustomer && (
+            {liveSelectedCustomer && (
                 <FollowUpModal
                     customer={liveSelectedCustomer}
-                    onClose={handleCloseModal}
-                    onUpdate={handleUpdateOutstanding}
+                    onClose={customers.handleCloseModal}
+                    onUpdate={customers.handleUpdateOutstanding}
                     currentUser={currentUser}
                     users={users}
                     templates={templates}
@@ -1632,8 +1373,8 @@ const App = () => {
                     onAddPdc={handleOpenAddPdc}
                     onUpdatePdcStatus={handleUpdatePdcStatus}
                     onEditCustomer={handleOpenEditCustomer}
-                    position={followUpPosition}
-                    onNavigate={handleNavigateFollowUp}
+                    position={customers.followUpPosition}
+                    onNavigate={customers.handleNavigateFollowUp}
                 />
             )}
             <ConfirmDialog
@@ -1700,26 +1441,20 @@ const App = () => {
                     onCancel={source.handleCancelSyncReconciliation}
                 />
             )}
-            {isWhatsAppModalOpen && whatsAppCustomer && (
+            {customers.whatsAppCustomer && (
                 <WhatsAppReminderModal
-                    customer={whatsAppCustomer}
+                    customer={customers.whatsAppCustomer}
                     templates={templates}
                     currentUser={currentUser}
-                    onClose={() => {
-                        setIsWhatsAppModalOpen(false);
-                        setWhatsAppCustomer(null);
-                    }}
+                    onClose={customers.closeWhatsApp}
                 />
             )}
         </Suspense>
-            {isCustomerModalOpen && (
+            {customers.customerDialog && (
                 <CustomerEditModal
-                    customerToEdit={customerToEdit}
-                    onClose={() => {
-                        setIsCustomerModalOpen(false);
-                        setCustomerToEdit(null);
-                    }}
-                    onSave={handleSaveCustomer}
+                    customerToEdit={customers.customerDialog.customer}
+                    onClose={customers.closeCustomerDialog}
+                    onSave={customers.handleSaveCustomer}
                     currentUser={currentUser}
                     users={users}
                 />
