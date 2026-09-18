@@ -392,9 +392,14 @@ export interface ChequeSummary {
  */
 export function chequeSummary(cheques: PdcCheque[], currentUser: User | null, book: Outstanding[], now: Date): ChequeSummary {
     const mine = new Set(scopeTo(currentUser, book).map(a => a.id));
-    const visible = seesWholeBook(currentUser)
-        ? cheques
-        : cheques.filter(p => mine.has(p.customerId) || isResponsibleFor(currentUser!, { crmOwnerId: p.crmOwnerId || '' }));
+    // Nobody signed in sees no cheques — the rule scopeTo() applies to the
+    // book. The render right after sign-out still holds the cheques, and
+    // asserting a user here read `.id` off null and blanked the page (T65).
+    const visible = !currentUser
+        ? []
+        : seesWholeBook(currentUser)
+            ? cheques
+            : cheques.filter(p => mine.has(p.customerId) || isResponsibleFor(currentUser, { crmOwnerId: p.crmOwnerId || '' }));
 
     let todayCount = 0, todayAmount = 0, overdueCount = 0, overdueAmount = 0;
     let activeCount = 0, activeAmount = 0;
