@@ -85,6 +85,13 @@ export function dateFromLocalIso(iso: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/** Today at midnight, local time: the day every follow-up date is measured against. */
+export function startOfToday(): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
 /** "in 3 days" / "4 days ago" / "today" — used on follow-up dates. */
 export function relativeDays(d: Date | string | undefined | null): { text: string; days: number } | null {
   if (!d) return null;

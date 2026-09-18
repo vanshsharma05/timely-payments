@@ -1,23 +1,23 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { loadXlsx } from './services/excel';
+import { EXPECTED_HEADERS, parseExcelRows, readWorkbookRows, downloadTemplate, exportCustomersExcel, exportCrmAssignments } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
 import { SaveStatus, combineStatus } from './components/SaveStatus';
 import { mergeServerRows, replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
     mergeWithExistingFollowUps,
     fetchGoogleSheetData,
-    parseAmountAndType,
+    OFFICIAL_TRANSACTIONS_SHEET_URL,
+    OFFICIAL_CUSTOMER_MASTER_URL,
     fetchCustomerMasterSheetData,
     mergeCustomerMasterIntoAppData,
     summariseUnlisted,
     countNewNames,
-    netRollUp
 } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -27,7 +27,8 @@ import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 const LiveStockView = lazy(() => import('./components/LiveStockView'));
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
-import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
+import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso, startOfToday } from './components/ui/format';
+import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { BadDebtStrip } from './components/ui/BadDebtStrip';
@@ -100,18 +101,7 @@ function useFitsOneScreen(): boolean {
     return fits;
 }
 
-const getToday = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-};
 
-const OFFICIAL_TRANSACTIONS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1DoBq1UVK53Z_029eIGUQzZ6g3sN2ytVVFCF0tFoYu_4/edit?usp=sharing';
-const OFFICIAL_CUSTOMER_MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pubhtml?gid=895778621&single=true';
-const OFFICIAL_SHEET_URL = OFFICIAL_TRANSACTIONS_SHEET_URL;
-
-const EXPECTED_HEADERS = ["ID","Company","Contact Person","Contact Number","Total Due","Ageing 1-45","Ageing 46-90","Ageing 91-135","Ageing >135","CRM Owner Name","Assigned Collector Name","Follow-up Date","Notes","Is Urgent","Creation Date"
-];
 
 
 const DEFAULT_TEMPLATE: Template = {
@@ -248,7 +238,7 @@ const App = () => {
 
     // Data Source State - default to Google Sheet
     const [dataSourceMode, setDataSourceMode] = useState<'excel' | 'google'>('google');
-    const [googleSheetUrl, setGoogleSheetUrl] = useState(OFFICIAL_SHEET_URL);
+    const [googleSheetUrl, setGoogleSheetUrl] = useState(OFFICIAL_TRANSACTIONS_SHEET_URL);
     const [customerMasterSheetUrl, setCustomerMasterSheetUrl] = useState(OFFICIAL_CUSTOMER_MASTER_URL);
 
     // Customer Add / Edit State
@@ -315,138 +305,9 @@ const App = () => {
         });
     };
 
-    /**
-     * Exports the accounts currently on screen, not the whole book.
-     *
-     * Filtering to the bad debts and pressing Export handed you all four
-     * thousand customers, which made the one job this is for — giving the
-     * recovery agency a defaulter list — impossible.
-     */
-    const handleExportCustomerExcel = async (rowsToExport: Outstanding[] = appData) => {
-        const XLSX = await loadXlsx();
-        {
-            const headers = ["ID","Company","Contact Person","Designation","Contact Number","Email","City","State","GSTIN","Category","Payment Rank","Total Outstanding","Type","1-45 Days","46-90 Days","91-135 Days",">135 Days","Due >45 Days","Over 90 Days","CRM Owner","Status","Follow-up Date","Last Note"
-            ];
-            const rows = rowsToExport.map(c => [
-                c.id,
-                c.company,
-                c.contactPerson,
-                c.contactPost || '',
-                c.contactNumber,
-                c.email || '',
-                c.city || '',
-                c.state || '',
-                c.gstin || '',
-                c.category || '',
-                PAYMENT_RANK_LABELS[getCustomerPaymentRank(c)],
-                c.total,
-                c.totalType || 'Dr',
-                c.ageing['1-45'],
-                c.ageing['46-90'],
-                c.ageing['91-135'],
-                c.ageing['>135'],
-                c.dueOver45 || 0,
-                c.over90 || 0,
-                c.crmOwnerId,
-                followUpStatusOf(c),
-                c.followUpDate ? new Date(c.followUpDate).toISOString().split('T')[0] : '',
-                (c.notes && c.notes.length > 0) ? c.notes[c.notes.length - 1] : ''
-            ]);
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws,"Customers");
-            const scope = rowsToExport.length === appData.length ? 'All' : `${rowsToExport.length}_selected`;
-            XLSX.writeFile(wb, `Customers_${scope}_${new Date().toISOString().split('T')[0]}.xlsx`);
-        }
-    };
+    const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => exportCustomersExcel(rowsToExport, appData.length);
+    const handleExportCrmAssignments = () => exportCrmAssignments(appData, crmConflicts);
 
-    /**
-     * The CRM column as the app holds it, in a form that can be pasted back
-     * into the sheet.
-     *
-     * Ownership is decided here — a handover typed into the app is not undone
-     * by the next import — but the sheet is read by people who never open the
-     * app, and there is no way to write to it from here. This is the bridge:
-     * one row per account, the owner the app is working to, and the owner the
-     * sheet last supplied where the two disagree.
-     *
-     * It is pasted into the **Customer Master**. The outstanding sheet does not
-     * hold a CRM of its own — its column looks the name up from the master — so
-     * the master is the one place a correction has to land.
-     */
-    const handleExportCrmAssignments = async () => {
-        const XLSX = await loadXlsx();
-        const sheetSays = new Map(crmConflicts.map(c => [c.company, c.sheetCrm]));
-        const headers = ['Company', 'CRM Owner (app)', 'CRM Owner (master sheet)', 'Differs', 'Total Outstanding'];
-        const rows = [...appData]
-            .sort((a, b) => a.company.localeCompare(b.company))
-            .map(c => {
-                const fromSheet = sheetSays.get(c.company) || '';
-                return [
-                    c.company,
-                    c.crmOwnerId || '',
-                    fromSheet,
-                    fromSheet ? 'YES' : '',
-                    c.total || 0,
-                ];
-            });
-        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'CRM Owners');
-        XLSX.writeFile(wb, `CRM_Owners_${new Date().toISOString().split('T')[0]}.xlsx`);
-    };
-
-    const parseRawDataArray = useCallback((values: any[][]): Outstanding[] => {
-        return values.map((row, index) => {
-            try {
-                const totalParsed = parseAmountAndType(row[4]);
-                const a1Parsed = parseAmountAndType(row[5]);
-                const a2Parsed = parseAmountAndType(row[6]);
-                const a3Parsed = parseAmountAndType(row[7]);
-                const a4Parsed = parseAmountAndType(row[8]);
-                const over90Net = netRollUp([a3Parsed, a4Parsed]);
-                const dueOver45Net = netRollUp([a2Parsed, a3Parsed, a4Parsed]);
-
-                const outstanding: Outstanding = {
-                    id: row[0] || `row_${index + 1}`,
-                    company: row[1] || 'Unknown Company',
-                    contactPerson: row[2] || '',
-                    contactNumber: row[3] ? String(row[3]) : '',
-                    total: totalParsed.amount,
-                    totalType: totalParsed.type,
-                    ageing: {
-                        '1-45': a1Parsed.amount,
-                        '46-90': a2Parsed.amount,
-                        '91-135': a3Parsed.amount,
-                        '>135': a4Parsed.amount,
-                    },
-                    ageingTypes: {
-                        '1-45': a1Parsed.type,
-                        '46-90': a2Parsed.type,
-                        '91-135': a3Parsed.type,
-                        '>135': a4Parsed.type,
-                    },
-                    over90: over90Net.amount,
-                    over90Type: over90Net.type,
-                    dueOver45: dueOver45Net.amount,
-                    dueOver45Type: dueOver45Net.type,
-                    // Trimming to ensure names match even with trailing spaces
-                    crmOwnerId: row[9] ? String(row[9]).trim() : '',
-                    assignedCollectorId: row[10] ? String(row[10]).trim() : undefined,
-                    followUpDate: row[11] ? new Date(row[11]) : undefined,
-                    notes: row[12] ? String(row[12]).split(',').map(s => s.trim()) : [],
-                    isUrgent: String(row[13]).toUpperCase() === 'TRUE',
-                    creationDate: row[14] ? new Date(row[14]) : new Date(),
-                    status: FollowUpStatus.Pending, 
-                    lastFollowUpOn: undefined
-                };
-                return outstanding;
-            } catch (e) {
-                console.error(`Error parsing row ${index + 2}:`, row, e);
-                return null;
-            }
-        }).filter((item): item is Outstanding => item !== null);
-    }, []);
 
 
 
@@ -941,7 +802,7 @@ const App = () => {
         setIsSyncing(true);
         setSyncMessage({ type: 'success', text: 'Reading the live sheet before anything changes…' });
         try {
-            const parsed = await fetchGoogleSheetData(OFFICIAL_SHEET_URL);
+            const parsed = await fetchGoogleSheetData(OFFICIAL_TRANSACTIONS_SHEET_URL);
             if (!parsed.records || parsed.records.length === 0) {
                 throw new Error('The sheet returned no rows.');
             }
@@ -983,7 +844,7 @@ const App = () => {
             profile: DEFAULT_COMPANY_PROFILE,
             settings: {
                 data_source_mode: 'google',
-                google_sheet_url: OFFICIAL_SHEET_URL,
+                google_sheet_url: OFFICIAL_TRANSACTIONS_SHEET_URL,
                 sheet_updated_till_date: resetPlan.updatedTillDate || '',
                 last_sync_time: new Date().toISOString(),
             },
@@ -1105,7 +966,7 @@ const App = () => {
             notify('error', 'Pick a follow-up date first.');
             return;
         }
-        if (nextDate.getTime() < getToday().getTime()) {
+        if (nextDate.getTime() < startOfToday().getTime()) {
             notify('error', 'A follow-up date in the past would be overdue the moment it is set.');
             return;
         }
@@ -1127,7 +988,7 @@ const App = () => {
             if (hadDate && !wasCompleted && prevMidnight === nextDate.getTime()) return item;
 
             const owner = findOwner(users, item.crmOwnerId)?.name || (item.crmOwnerId || '').trim();
-            const wasOverdue = getFollowUpCategory(item, getToday()) === 'overdue';
+            const wasOverdue = getFollowUpCategory(item, startOfToday()) === 'overdue';
             let body: string;
             if (wasCompleted) {
                 // "Payment collected" closes an account with the day it was
@@ -1138,7 +999,7 @@ const App = () => {
                 body = `Follow-up date moved from ${formatDate(prev)} to ${nextLabel} in a bulk update.`;
                 if (wasOverdue) {
                     overdueMoved++;
-                    const days = Math.max(1, Math.round((getToday().getTime() - prevMidnight) / 86_400_000));
+                    const days = Math.max(1, Math.round((startOfToday().getTime() - prevMidnight) / 86_400_000));
                     body += owner
                         ? ` It was ${days} day${days === 1 ? '' : 's'} overdue and ${owner} had not rescheduled it.`
                         : ` It was ${days} day${days === 1 ? '' : 's'} overdue with no CRM assigned to reschedule it.`;
@@ -1295,7 +1156,7 @@ const App = () => {
 
         } catch (err) {
             const msg = err instanceof Error ? err.message :"Unknown error during sync";
-            setSyncMessage({ type: 'error', text: msg, action: { label: 'Retry official sheet', run: () => handleGoogleSync(OFFICIAL_SHEET_URL) } });
+            setSyncMessage({ type: 'error', text: msg, action: { label: 'Retry official sheet', run: () => handleGoogleSync(OFFICIAL_TRANSACTIONS_SHEET_URL) } });
         } finally {
             setIsSyncing(false);
         }
@@ -1374,106 +1235,13 @@ const App = () => {
         setIsWhatsAppModalOpen(true);
     };
 
-    const filteredData = useMemo(() => {
-        const today = getToday();
-        const searching = Boolean(searchTerm.trim());
-        return outstandingData.filter(item => {
-            const itemCategory = getFollowUpCategory(item, today);
+    const filteredData = useMemo(
+        () => filterWorklist(outstandingData, { searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter }, users, startOfToday()),
+        [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users],
+    );
 
-            /**
-             * Nothing owed is nothing to chase.
-             *
-             * The four boxes above already count it that way, so the list they
-             * open has to agree — otherwise "Due today: 3" opens onto four rows,
-             * one of them at zero, and the two numbers argue with each other.
-             * Now that an account dropped from the outstanding sheet is settled
-             * rather than left standing, this is the list those settled accounts
-             * would otherwise pile up in.
-             *
-             * Two exceptions: an account collected today belongs in "collected"
-             * precisely because it now owes nothing, and a search is a search —
-             * looking a customer up by name must find them, paid or not.
-             */
-            if (!hasOutstanding(item) && itemCategory !== 'completed' && !searching) return false;
-
-            // A defaulter is on the recovery list and nowhere else in the
-            // worklist — unless somebody is searching, and a search must find
-            // anyone. See isBadDebt().
-            if (categoryFilter === 'bad_debt') return isBadDebt(item);
-            if (isBadDebt(item) && !searching) return false;
-
-            if (priorityFilter) {
-                return (item.isUrgent && itemCategory !== 'completed') || itemCategory === 'overdue';
-            }
-
-            if (unattendedFilter) {
-                // Unattended: Overdue OR No Follow-up
-                return itemCategory === 'overdue' || itemCategory === 'no_follow_up';
-            }
-
-            // Category Filter from 4 Main Clickable Boxes
-            if (categoryFilter !== 'all') {
-                if (itemCategory !== categoryFilter) return false;
-            }
-
-            if (!statusFilter) return true;
-            
-            if (statusFilter === FollowUpStatus.Completed) {
-                if (!item.followUpDate) return false;
-                const collectedDate = new Date(item.followUpDate);
-                collectedDate.setHours(0,0,0,0);
-                return item.status === FollowUpStatus.Completed && collectedDate.getTime() === today.getTime();
-            }
-            
-            return followUpStatusOf(item, today) === statusFilter;
-        }).filter(item => {
-            if (!searchTerm.trim()) return true;
-            const userObj = users.find(u => u.id === item.crmOwnerId || u.name === item.crmOwnerId);
-            const crmDisplayName = userObj ? userObj.name.toLowerCase() : '';
-            const collectorObj = users.find(u => u.id === item.assignedCollectorId || u.name === item.assignedCollectorId);
-            const collectorDisplayName = collectorObj ? collectorObj.name.toLowerCase() : '';
-
-            const company = String(item.company || '').toLowerCase();
-            const contactPerson = String(item.contactPerson || '').toLowerCase();
-            const contactPhone = String(item.contactNumber || '').toLowerCase();
-            const email = String(item.email || '').toLowerCase();
-            const crmOwnerId = String(item.crmOwnerId || '').toLowerCase();
-            const assignedCollectorId = String(item.assignedCollectorId || '').toLowerCase();
-            const id = String(item.id || '').toLowerCase();
-            const total = String(item.total || '');
-            const notes = (item.notes || []).join(' ').toLowerCase();
-
-            return matchesSearch(
-                [company, contactPerson, contactPhone, email, crmOwnerId, crmDisplayName,
-                 assignedCollectorId, collectorDisplayName, id, total, notes],
-                searchTerm,
-            );
-        });
-    }, [outstandingData, searchTerm, statusFilter, categoryFilter, priorityFilter, unattendedFilter, users]);
-
-    // 4 Main Boxes Summary (For Admin Company-Wide View)
-
-    // Whole-book ageing. Credit balances are excluded: money sitting with us is
-    // not a receivable and must not inflate the outstanding figure.
-    const portfolioAgeing = useMemo(() => {
-        let a1 = 0, a2 = 0, a3 = 0, a4 = 0;
-        appData.forEach(item => {
-            if (item.totalType === 'Cr') return;
-            const t = item.ageingTypes || {};
-            if (t['1-45'] !== 'Cr') a1 += Math.abs(item.ageing?.['1-45'] || 0);
-            if (t['46-90'] !== 'Cr') a2 += Math.abs(item.ageing?.['46-90'] || 0);
-            if (t['91-135'] !== 'Cr') a3 += Math.abs(item.ageing?.['91-135'] || 0);
-            if (t['>135'] !== 'Cr') a4 += Math.abs(item.ageing?.['>135'] || 0);
-        });
-        const total = a1 + a2 + a3 + a4;
-        const over45 = a2 + a3 + a4;
-        const over90 = a3 + a4;
-        return {
-            a1, a2, a3, a4, total, over45, over90,
-            pct45: total > 0 ? Math.round((over45 / total) * 100) : 0,
-            pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
-        };
-    }, [appData]);
+    /** Whole-book ageing; see ageingTotals(). */
+    const portfolioAgeing = useMemo(() => ageingTotals(appData), [appData]);
 
     /**
      * What the signed-in person may do, in one place.
@@ -1546,350 +1314,27 @@ const App = () => {
     }, []);
 
     /** Same shape as portfolioAgeing, but only what this person is chasing. */
-    const myAgeing = useMemo(() => {
-        let a1 = 0, a2 = 0, a3 = 0, a4 = 0;
-        outstandingData.forEach(item => {
-            if (item.totalType === 'Cr') return;
-            const t = item.ageingTypes || {};
-            if (t['1-45'] !== 'Cr') a1 += Math.abs(item.ageing?.['1-45'] || 0);
-            if (t['46-90'] !== 'Cr') a2 += Math.abs(item.ageing?.['46-90'] || 0);
-            if (t['91-135'] !== 'Cr') a3 += Math.abs(item.ageing?.['91-135'] || 0);
-            if (t['>135'] !== 'Cr') a4 += Math.abs(item.ageing?.['>135'] || 0);
-        });
-        const total = a1 + a2 + a3 + a4;
-        const over45 = a2 + a3 + a4;
-        const over90 = a3 + a4;
-        return {
-            a1, a2, a3, a4, total, over45, over90,
-            pct45: total > 0 ? Math.round((over45 / total) * 100) : 0,
-            pct90: total > 0 ? Math.round((over90 / total) * 100) : 0,
-        };
-    }, [outstandingData]);
+    const myAgeing = useMemo(() => ageingTotals(outstandingData), [outstandingData]);
 
-    const fourBoxesSummary = useMemo(() => {
-        const today = getToday();
-        let todayCount = 0;
-        let todayAmount = 0;
-        let noFollowUpCount = 0;
-        let noFollowUpAmount = 0;
-        let overdueCount = 0;
-        let overdueAmount = 0;
-        let futureCount = 0;
-        let futureAmount = 0;
-        let badDebtCount = 0;
-        let badDebtAmount = 0;
+    /** The company's worklist boxes (Today for whoever reads the whole book). */
+    const fourBoxesSummary = useMemo(() => worklistSummary(appData, startOfToday()), [appData]);
 
-        appData.forEach(item => {
-            // Customers who owe nothing are not work. Left in, the whole
-            // Customer Master lands in "No follow-up" and swamps the box.
-            if (!hasOutstanding(item)) return;
-
-            // Defaulters are counted on their own card, not in the worklist.
-            if (isBadDebt(item)) {
-                badDebtCount++;
-                badDebtAmount += item.total || 0;
-                return;
-            }
-
-            const cat = getFollowUpCategory(item, today);
-            if (cat === 'completed') return;
-
-            if (cat === 'today') {
-                todayCount++;
-                todayAmount += item.total || 0;
-            } else if (cat === 'overdue') {
-                overdueCount++;
-                overdueAmount += item.total || 0;
-            } else if (cat === 'future') {
-                futureCount++;
-                futureAmount += item.total || 0;
-            } else if (cat === 'no_follow_up') {
-                noFollowUpCount++;
-                noFollowUpAmount += item.total || 0;
-            }
-        });
-
-        return {
-            todayCount, todayAmount,
-            noFollowUpCount, noFollowUpAmount,
-            overdueCount, overdueAmount,
-            futureCount, futureAmount,
-            badDebtCount, badDebtAmount,
-        };
-    }, [appData]);
-
-    // 4 Main Boxes Metrics for Current User (CRM View)
-    const userBoxMetrics = useMemo(() => {
-        const today = getToday();
-        let todayCount = 0;
-        let todayAmount = 0;
-        let overdueCount = 0;
-        let overdueAmount = 0;
-        let noFollowUpCount = 0;
-        let noFollowUpAmount = 0;
-        let futureCount = 0;
-        let futureAmount = 0;
-        let totalCount = 0;
-        let totalAmount = 0;
-        let badDebtCount = 0;
-        let badDebtAmount = 0;
-
-        outstandingData.forEach(item => {
-            if (!hasOutstanding(item)) return;
-
-            totalCount++;
-            totalAmount += item.total || 0;
-            // Defaulters stay in the book's total, out of the worklist.
-            if (isBadDebt(item)) {
-                badDebtCount++;
-                badDebtAmount += item.total || 0;
-                return;
-            }
-            const cat = getFollowUpCategory(item, today);
-            if (cat === 'completed') return;
-
-            if (cat === 'today') {
-                todayCount++;
-                todayAmount += item.total || 0;
-            } else if (cat === 'overdue') {
-                overdueCount++;
-                overdueAmount += item.total || 0;
-            } else if (cat === 'future') {
-                futureCount++;
-                futureAmount += item.total || 0;
-            } else if (cat === 'no_follow_up') {
-                noFollowUpCount++;
-                noFollowUpAmount += item.total || 0;
-            }
-        });
-
-        return {
-            todayCount, todayAmount,
-            overdueCount, overdueAmount,
-            noFollowUpCount, noFollowUpAmount,
-            futureCount, futureAmount,
-            totalCount, totalAmount,
-            badDebtCount, badDebtAmount,
-        };
-    }, [outstandingData]);
+    /** The same boxes over this person's slice of the book. */
+    const userBoxMetrics = useMemo(() => worklistSummary(outstandingData, startOfToday()), [outstandingData]);
 
 
-    // Cash Flow Collection Forecast Metrics (Requirement 2)
-    const cashFlowForecastMetrics = useMemo(() => {
-        const today = getToday();
-        const next7Days = new Date(today);
-        next7Days.setDate(next7Days.getDate() + 7);
-
-        let todayForecast = 0;
-        let todayCount = 0;
-        let weekForecast = 0;
-        let weekCount = 0;
-        let totalForecast = 0;
-        let totalCount = 0;
-
-        const committedCustomers: { customer: Outstanding; amount: number; dateText: string }[] = [];
-
-        outstandingData.forEach(item => {
-            if (item.status === FollowUpStatus.Completed) return;
-            if (item.forecastAmount && item.forecastAmount > 0) {
-                const fDate = item.forecastDate ? new Date(item.forecastDate) : (item.followUpDate ? new Date(item.followUpDate) : new Date());
-                fDate.setHours(0,0,0,0);
-                totalForecast += item.forecastAmount;
-                totalCount++;
-
-                committedCustomers.push({
-                    customer: item,
-                    amount: item.forecastAmount,
-                    dateText: fDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
-                });
-
-                if (fDate.getTime() === today.getTime()) {
-                    todayForecast += item.forecastAmount;
-                    todayCount++;
-                } else if (fDate.getTime() > today.getTime() && fDate.getTime() <= next7Days.getTime()) {
-                    weekForecast += item.forecastAmount;
-                    weekCount++;
-                }
-            }
-        });
-
-        return {
-            todayForecast,
-            todayCount,
-            weekForecast,
-            weekCount,
-            totalForecast,
-            totalCount,
-            committedCustomers: committedCustomers.sort((a, b) => b.amount - a.amount),
-        };
-    }, [outstandingData]);
+    const cashFlowForecastMetrics = useMemo(() => cashFlowForecast(outstandingData, startOfToday()), [outstandingData]);
     
-    const notificationSummary = useMemo(() => {
-        // The banner announces the worklist, so it counts the way the cards
-        // do: accounts that owe something, by the date rather than the stored
-        // status, and never a defaulter. It used to read the stored status,
-        // and said "8 overdue" above a card that said 2.
-        const today = getToday();
-        const work = outstandingData.filter(item => hasOutstanding(item) && !isBadDebt(item));
-        const urgentCount = work.filter(item => item.isUrgent && item.status !== FollowUpStatus.Completed).length;
-        const overdueCount = work.filter(item => getFollowUpCategory(item, today) === 'overdue').length;
-        return { urgentCount, overdueCount };
-    }, [outstandingData]);
+    const notificationSummary = useMemo(() => attentionCounts(outstandingData, startOfToday()), [outstandingData]);
 
 
-    /**
-     * Per-CRM collection workload.
-     *
-     * Two things this has to get right, both of which it used to get wrong.
-     *
-     * The bucket key is normalised. The sheet writes a CRM code however the
-     * person typing it felt that day, and the user list has its own spelling;
-     * keying the map on the raw string split one person across "ANKUR",
-     * "Ankur " and "ankur", so a freshly assigned account landed in a bucket
-     * nobody was looking at and every total was short.
-     *
-     * And only accounts that actually owe money are counted. Syncing the
-     * Customer Master brings in the full customer list, most of whom owe
-     * nothing; counting them made each CRM look responsible for thousands of
-     * accounts there was nothing to chase on.
-     */
-    const crmPerformanceStats = useMemo(() => {
-        const today = getToday();
-        type Stat = {
-            crmId: string; crmName: string; totalAssigned: number; followUpDone: number;
-            todayFollowUp: number; overdue: number; unattended: number; timelyCount: number;
-            noDues: number; badDebt: number;
-            /** Reports filters by CRM owner, so only a CRM's row (or the unassigned row) opens there. */
-            drillable?: boolean;
-        };
-        const statsMap = new Map<string, Stat>();
-
-        const blank = (crmId: string, crmName: string): Stat => ({
-            crmId, crmName,
-            totalAssigned: 0, followUpDone: 0, todayFollowUp: 0,
-            overdue: 0, unattended: 0, timelyCount: 0, noDues: 0, badDebt: 0,
-        });
-
-        // Seed the people we know about, so a CRM with an empty book still
-        // appears rather than silently dropping off the table.
-        users.filter(u => u.role === UserRole.CRM || u.role === UserRole.Collector).forEach(u => {
-            const k = ownerKey(u.id);
-            if (k) statsMap.set(k, { ...blank(u.id, u.name), drillable: u.role === UserRole.CRM });
-        });
-
-        statsMap.set('UNASSIGNED', { ...blank('UNASSIGNED', 'No CRM Assigned'), drillable: true });
-
-        /**
-         * The one bucket this owner belongs in.
-         *
-         * Keyed by the person's CRM code whenever the value names somebody on
-         * the roster, so an account saved as "Vansh Sharma" and one saved as
-         * VANSH_SHARMA count towards the same row. Keying on the raw spelling
-         * gave that person two rows with their book split between them — and,
-         * since both rows carried the same `crmId`, two React children with the
-         * same key.
-         */
-        const bucketFor = (raw: string | undefined, key: string) => {
-            const known = users.find(u => ownerKey(u.id) === key || ownerKey(u.name) === key);
-            const bucketKey = known ? ownerKey(known.id) : key;
-            if (!statsMap.has(bucketKey)) {
-                const label = (raw || '').trim();
-                statsMap.set(bucketKey, { ...blank(known?.id || label, known?.name || label), drillable: !known || known.role === UserRole.CRM });
-            }
-            return statsMap.get(bucketKey)!;
-        };
-
-        outstandingData.forEach(item => {
-            const ownerK = ownerKey(item.crmOwnerId) || 'UNASSIGNED';
-            const collectorK = ownerKey(item.assignedCollectorId);
-
-            // An account with a collector on it is work for two people: the CRM
-            // who owns it and the collector chasing it. Bucketing on ownership
-            // alone left every Collector sitting at zero no matter how much had
-            // been handed to them, which is exactly what a manager checks here.
-            const buckets = [bucketFor(item.crmOwnerId, ownerK)];
-            if (collectorK && collectorK !== ownerK) {
-                // Two spellings of one person resolve to one bucket, so compare
-                // the buckets rather than the raw keys — otherwise the account
-                // would be counted twice in the same row.
-                const collectorBucket = bucketFor(item.assignedCollectorId, collectorK);
-                if (collectorBucket !== buckets[0]) buckets.push(collectorBucket);
-            }
-
-            const cat = getFollowUpCategory(item, today);
-
-            for (const stat of buckets) {
-                // On the books but owing nothing — real customers, nothing to chase.
-                if (!hasOutstanding(item)) {
-                    stat.noDues++;
-                    continue;
-                }
-
-                // A defaulter on somebody's book is not a follow-up they missed:
-                // it is on the recovery list, and it does not move their score.
-                if (isBadDebt(item)) {
-                    stat.badDebt++;
-                    continue;
-                }
-
-                stat.totalAssigned++;
-
-                if (cat === 'completed') {
-                    stat.followUpDone++;
-                    stat.timelyCount++;
-                } else if (cat === 'today') {
-                    stat.todayFollowUp++;
-                    stat.timelyCount++;
-                } else if (cat === 'future') {
-                    stat.timelyCount++;
-                } else if (cat === 'overdue') {
-                    stat.overdue++;
-                    stat.unattended++;
-                } else if (cat === 'no_follow_up') {
-                    stat.unattended++;
-                }
-            }
-        });
-
-        return Array.from(statsMap.values()).map(stat => ({
-            ...stat,
-            score: stat.totalAssigned > 0 ? Math.round((stat.timelyCount / stat.totalAssigned) * 100) : 0
-        }));
-
-    }, [outstandingData, users]);
+    /** Per-CRM collection workload; see crmPerformance(). */
+    const crmPerformanceStats = useMemo(() => crmPerformance(outstandingData, users, startOfToday()), [outstandingData, users]);
 
 
 
-    // PDC Cheque Handlers & Calculations
-    /**
-     * Cheques this person is responsible for, and where they stand today.
-     *
-     * This narrowed the list only for a CRM, so a scoped Collector was shown a
-     * badge counting the whole company's cheques while the register itself
-     * showed only theirs. It now uses the same scoping rule as everything else,
-     * and the same date-derived state as the register.
-     */
-    const todayPdcMetrics = useMemo(() => {
-        const today = new Date();
-        const mine = new Set(scopeTo(currentUser, appData).map(a => a.id));
-        const visible = seesWholeBook(currentUser)
-            ? pdcCheques
-            : pdcCheques.filter(p => mine.has(p.customerId) || isResponsibleFor(currentUser!, { crmOwnerId: p.crmOwnerId || '' }));
-
-        let todayCount = 0, todayAmount = 0, overdueCount = 0, overdueAmount = 0;
-        let activeCount = 0, activeAmount = 0;
-
-        for (const cheque of visible) {
-            const state = chequeState(cheque, today);
-            if (!CHEQUE_ACTIVE.includes(state)) continue;
-            activeCount++;
-            activeAmount += cheque.amount;
-            if (state === 'due') { todayCount++; todayAmount += cheque.amount; }
-            if (state === 'overdue') { overdueCount++; overdueAmount += cheque.amount; }
-        }
-
-        return { todayCount, todayAmount, overdueCount, overdueAmount, activeCount, activeAmount };
-    }, [pdcCheques, currentUser, appData]);
+    /** Cheques this person is responsible for, and where they stand today; see chequeSummary(). */
+    const todayPdcMetrics = useMemo(() => chequeSummary(pdcCheques, currentUser, appData, new Date()), [pdcCheques, currentUser, appData]);
 
     const handleOpenAddPdc = (customerId?: string) => {
         setEditingPdcCheque(null);
@@ -2422,7 +1867,7 @@ const App = () => {
                             ) : (
                                 <div className={`mt-6 flex flex-col gap-2.5 ${fitsOneScreen ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5' : ''}`}>
                                     {filteredData.slice(0, 40).map(customer => {
-                                        const cat = getFollowUpCategory(customer, getToday());
+                                        const cat = getFollowUpCategory(customer, startOfToday());
                                         const due = relativeDays(customer.followUpDate);
                                         return (
                                             <div
@@ -2558,19 +2003,7 @@ const App = () => {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
-                    const XLSX = await loadXlsx();
-                    const data = e.target?.result;
-                    const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    const json: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval:"" });
-                    
-                    if (json.length < 1) {
-                         throw new Error("Excel sheet is empty or invalid.");
-                    }
-                    
-                    // Slice(1) to skip header row, assuming file has one.
-                    const parsedData = parseRawDataArray(json.slice(1));
+                    const parsedData = parseExcelRows(await readWorkbookRows(e.target?.result as string | ArrayBuffer));
                     if (appData.length > 0) {
                         // Stamped on confirm, not here — a cancelled review must
                         // not leave the book looking freshly synced.
@@ -2611,13 +2044,6 @@ const App = () => {
             alert("Column headers copied to clipboard! Paste them into the first row of your Excel or Google Sheet.");
         };
 
-        const downloadTemplate = async () => {
-            const XLSX = await loadXlsx();
-            const ws = XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-            XLSX.writeFile(wb, "TimelyPayment_Template.xlsx");
-        };
 
 
         return (

@@ -2,6 +2,10 @@ import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, 
 import { authHeaders } from './repository';
 
 
+/** The company's two sheets: balances (the outstanding sheet) and the customer master. */
+export const OFFICIAL_TRANSACTIONS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1DoBq1UVK53Z_029eIGUQzZ6g3sN2ytVVFCF0tFoYu_4/edit?usp=sharing';
+export const OFFICIAL_CUSTOMER_MASTER_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRJrKqb_XsMoNYlAzO8NYkhbmZC7Z5RID9W9YFAuh6wzi8gnTIPCXj2LMllgpm78MDmOo7D6zdF0bOc/pubhtml?gid=895778621&single=true';
+
 // Parse currency strings and identify if they are Debit (DR - Outstanding payment to take) or Credit (CR - Payment excess with us)
 export function parseAmountAndType(val: any): { amount: number; type: BalanceType } {
     if (typeof val === 'number') {
