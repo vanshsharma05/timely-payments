@@ -6,6 +6,7 @@ import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcom
 import { SaveStatus, combineStatus } from './components/SaveStatus';
 import { mergeServerRows, replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
+import { useTab, useFitsOneScreen } from './hooks/useTab';
 import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
@@ -54,56 +55,6 @@ import { TemplatesView } from './components/TemplatesView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
 
-// Helper to get today's date at midnight
-/**
- * The tab the app is on lives in the URL.
- *
- * It used to live only in React state, so every refresh dropped you back on
- * Today — mid-way through the customer book, or a report you had filtered down,
- * and you were on the dashboard again. In the address bar it survives a
- * refresh, and a link to a particular screen is a link somebody can send.
- */
-const TAB_KEYS = ['overview', 'customers', 'pdc', 'reports', 'stock', 'users', 'alerts', 'templates', 'source'];
-
-const tabFromLocation = (): string => {
-    if (typeof window === 'undefined') return 'overview';
-    const key = (window.location.hash || '').replace(/^#\/?/, '');
-    return TAB_KEYS.includes(key) ? key : 'overview';
-};
-
-/**
- * The shortest window that can hold the Today page without hiding the work.
- *
- * Above the account list sit the app bar, the page title, the worklist cards
- * and (when there is one) the attention banner — about 510px of them. Below
- * that the list needs its own header and a few rows to be worth looking at.
- * On a 1366x768 laptop the viewport is roughly 640px, and holding that page to
- * one screen left the list two pixels tall with not one row visible: "Due
- * today: 2 accounts" and nothing under it.
- *
- * So the one-screen layout applies where it fits and the page scrolls where it
- * does not. A dashboard nobody can read is not a dashboard.
- */
-const MIN_HEIGHT_FOR_ONE_SCREEN = 900;
-
-/** Whether this window is tall enough for a page held to one screen. */
-function useFitsOneScreen(): boolean {
-    const [fits, setFits] = useState(
-        () => typeof window === 'undefined' || window.innerHeight >= MIN_HEIGHT_FOR_ONE_SCREEN,
-    );
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const onResize = () => setFits(window.innerHeight >= MIN_HEIGHT_FOR_ONE_SCREEN);
-        onResize();
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-    return fits;
-}
-
-
-
-
 const DEFAULT_TEMPLATE: Template = {
     id: 'template_default',
     name: 'Standard Reminder',
@@ -138,9 +89,8 @@ const App = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-    // Dashboard Tab States (Lifted up to prevent reset on re-renders)
-    const [adminTab, setAdminTab] = useState(tabFromLocation);
-    const [userTab, setUserTab] = useState(tabFromLocation);
+    /** The screen the app is on; mirrored to the URL hash (hooks/useTab.ts). */
+    const [tab, setTab] = useTab(isAuthenticated);
 
     // This state holds the"Master" data for the application
     const [appData, setAppData] = useState<Outstanding[]>([]);
@@ -593,8 +543,7 @@ const App = () => {
         setIsAuthenticated(false);
         setCurrentUser(null);
         setOutstandingData([]);
-        setAdminTab('overview');
-        setUserTab('overview');
+        setTab('overview');
     };
 
     /**
@@ -679,7 +628,7 @@ const App = () => {
         setReportCrm(opts.crm ?? 'ALL');
         setCategoryFilter(opts.category ?? 'all');
         setReportAgeing(opts.ageing ?? 'all');
-        setAdminTab('reports');
+        setTab('reports');
     };
 
     /**
@@ -1279,7 +1228,6 @@ const App = () => {
         permissions: permissionsOf(currentUser),
     }), [currentUser]);
 
-    const navKey = rights.seesWholeBook ? adminTab : userTab;
     const fitsOneScreen = useFitsOneScreen();
 
     /**
@@ -1287,31 +1235,10 @@ const App = () => {
      * it is stored here: stock is the stores team's record, kept in the sheet,
      * and this is a window onto it — see services/liveStock.ts.
      */
-    const liveStock = useLiveStock(isAuthenticated && navKey === 'stock', rights.runsTheTeam);
+    const liveStock = useLiveStock(isAuthenticated && tab === 'stock', rights.runsTheTeam);
     /** Rate and value on the stock page: Admin and Manager, and only when the read actually carried them. */
     const showStockPrices = rights.runsTheTeam && liveStock.priced;
 
-    useEffect(() => {
-        if (!isAuthenticated || typeof window === 'undefined') return;
-        if (tabFromLocation() === navKey) return;
-        // replaceState, not push: tab changes are not journeys, and stacking one
-        // history entry per click would make Back a way out of the app only
-        // after a dozen presses.
-        window.history.replaceState(null, '', `#${navKey}`);
-    }, [navKey, isAuthenticated]);
-
-    // Somebody editing the address bar, or arriving on a link, still lands on
-    // the screen the URL names.
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const onHashChange = () => {
-            const key = tabFromLocation();
-            setAdminTab(prev => (prev === key ? prev : key));
-            setUserTab(prev => (prev === key ? prev : key));
-        };
-        window.addEventListener('hashchange', onHashChange);
-        return () => window.removeEventListener('hashchange', onHashChange);
-    }, []);
 
     /** Same shape as portfolioAgeing, but only what this person is chasing. */
     const myAgeing = useMemo(() => ageingTotals(outstandingData), [outstandingData]);
@@ -1413,21 +1340,13 @@ const App = () => {
     };
 
     const handleOpenPdcForCustomer = (customerId: string) => {
-        if (currentUser?.role === UserRole.Admin) {
-            setAdminTab('pdc');
-        } else {
-            setUserTab('pdc');
-        }
+        setTab('pdc');
         setPdcInitialCustomerFilter(customerId);
         setPdcInitialStatusFilter('all');
     };
 
     const handleOpenTodayPdc = () => {
-        if (currentUser?.role === UserRole.Admin) {
-            setAdminTab('pdc');
-        } else {
-            setUserTab('pdc');
-        }
+        setTab('pdc');
         setPdcInitialStatusFilter('today');
         setPdcInitialCustomerFilter('all');
     };
@@ -1682,7 +1601,7 @@ const App = () => {
 
     const renderUserDashboard = () => {
         // Use lifted state
-        const activeTab = userTab;
+        const activeTab = tab;
 
         return (
             <>
@@ -1852,7 +1771,7 @@ const App = () => {
                                 }
                                 subtitle={`${filteredData.length} account${filteredData.length === 1 ? '' : 's'}${searchTerm ? ' matching your search' : ''}`}
                                 actions={
-                                    <Button size="sm" variant="quiet" onClick={() => setActiveKey('customers')}>
+                                    <Button size="sm" variant="quiet" onClick={() => setTab('customers')}>
                                         Open full list
                                     </Button>
                                 }
@@ -1925,7 +1844,7 @@ const App = () => {
                                     })}
                                     {filteredData.length > 40 && (
                                         <button
-                                            onClick={() => setActiveKey('customers')}
+                                            onClick={() => setTab('customers')}
                                             className="text-[13.5px] font-semibold text-accent hover:underline self-start mt-1"
                                         >
                                             {filteredData.length - 40} more in the full list
@@ -1991,7 +1910,7 @@ const App = () => {
 
     const renderCompanyDashboard = () => {
         // Use lifted state
-        const activeTab = adminTab;
+        const activeTab = tab;
 
         const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0];
@@ -2189,8 +2108,6 @@ const App = () => {
 
 
     const wholeBook = rights.seesWholeBook;
-    const activeKey = wholeBook ? adminTab : userTab;
-    const setActiveKey = wholeBook ? setAdminTab : setUserTab;
     const boxes = wholeBook ? fourBoxesSummary : userBoxMetrics;
 
     // Needs-attention count drives the badge on"Today" - overdue first,
@@ -2228,7 +2145,7 @@ const App = () => {
     // A tab that is not in this person's navigation must not render either,
     // whatever the tab state happens to be holding.
     const allowedKeys = new Set([...workItems, ...setupItems].map(i => i.key));
-    const safeKey = allowedKeys.has(activeKey) ? activeKey : 'overview';
+    const safeKey = allowedKeys.has(tab) ? tab : 'overview';
 
     const PAGE_TITLE: Record<string, string> = {
         overview: wholeBook ? 'Collections overview' : 'Today\u2019s follow-ups',
@@ -2335,7 +2252,7 @@ const App = () => {
             // panel. Managers and Admins keep a scrolling page — they have the
             // team table under it, which is a read rather than a glance.
             fitViewport={safeKey === 'overview' && !rights.runsTheTeam && fitsOneScreen}
-            onNavigate={setActiveKey}
+            onNavigate={setTab}
             onLogout={handleLogout}
             onChangePassword={() => setIsPasswordModalOpen(true)}
             title={PAGE_TITLE[safeKey] || 'Timely Payment'}
