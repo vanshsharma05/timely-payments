@@ -3,7 +3,8 @@ import { Outstanding } from '../types';
 import { mergeWithExistingFollowUps } from '../services/googleSheetService';
 import { previewSync, SyncEffect } from '../services/syncPreview';
 import { formatINR, formatCompact } from './ui/format';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
 
 export interface SyncReconciliationModalProps {
     incomingRecords: Outstanding[];
@@ -43,7 +44,6 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [viewFilter, setViewFilter] = useState<'all' | SyncEffect>('all');
-    const panel = useModal(true, onCancel);
 
     const preview = useMemo(() => previewSync(existingRecords, incomingRecords), [incomingRecords, existingRecords]);
 
@@ -70,30 +70,36 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
     ];
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-6 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="sync-review-title" className="bg-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-separator max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Header */}
-                <div className="px-5 sm:px-6 py-4 border-b border-separator flex justify-between items-start bg-card-2 rounded-t-2xl max-md:rounded-none">
-                    <div className="min-w-0">
-                        <h2 id="sync-review-title" className="text-[19px] font-extrabold text-label tracking-[-0.02em]">
-                            Review before the balances are updated
-                        </h2>
-                        <p className="text-[13px] text-label-2 mt-1">
-                            {preview.incoming.toLocaleString('en-IN')} rows read from {sourceName}
-                            {updatedTillDate ? <> · sheet updated till <strong className="text-label">{updatedTillDate}</strong></> : null}.
-                            {' '}Only balances and ageing change — contacts, CRM owners, follow-ups, notes and cheques are left exactly as they are.
-                        </p>
-                    </div>
-                    <button
-                        onClick={onCancel}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex-none"
-                        title="Cancel — nothing is written (Esc)"
-                        aria-label="Close"
-                    >
-                        &times;
-                    </button>
-                </div>
-
+        <DialogShell
+            title="Review before the balances are updated"
+            subtitle={<>
+                {preview.incoming.toLocaleString('en-IN')} rows read from {sourceName}
+                {updatedTillDate ? <> · sheet updated till <strong className="text-label">{updatedTillDate}</strong></> : null}.
+                {' '}Only balances and ageing change — contacts, CRM owners, follow-ups, notes and cheques are left exactly as they are.
+            </>}
+            size="xl"
+            onClose={onCancel}
+            flush
+            bodyClassName="flex flex-col"
+            footerNote={<>
+                {nothingMoves
+                    ? <strong className="text-label">Nothing changes — the book already matches the sheet.</strong>
+                    : <strong className="text-label">Follow-ups, notes, contacts, cheques and CRM owners are kept.</strong>}
+                {preview.untouched > 0 && <span> {preview.untouched.toLocaleString('en-IN')} account{preview.untouched === 1 ? '' : 's'} not in the sheet were already at zero.</span>}
+            </>}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onCancel}>Cancel</Button>
+                <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleApplySync}
+                    title={nothingMoves ? 'Records that the book was checked against the sheet just now; nothing else is written' : `Writes the ${preview.changed + preview.added + preview.settled} changes above`}
+                >
+                    <span>Update balances</span>
+                    <span className="num px-1.5 py-0.5 rounded-full bg-black/15 text-[11.5px]">{preview.incoming} rows</span>
+                </Button>
+            </>}
+        >
                 {/* What this sync does, in four numbers */}
                 <div className="px-5 sm:px-6 py-3 border-b border-separator grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {([
@@ -145,7 +151,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                 </div>
 
                 {/* Table */}
-                <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[420px] max-md:max-h-none">
+                <div className="min-h-[220px]">
                     <table className="min-w-full divide-y divide-separator text-xs">
                         <thead className="bg-card-2 sticky top-0 z-10 text-[11.5px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                             <tr>
@@ -195,35 +201,7 @@ export const SyncReconciliationModal: React.FC<SyncReconciliationModalProps> = (
                     )}
                 </div>
 
-                {/* Footer */}
-                <div className="px-4 sm:px-6 py-3.5 bg-card-2 border-t border-separator flex flex-col sm:flex-row justify-between items-center gap-3 rounded-b-2xl max-md:rounded-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]">
-                    <div className="text-[12.5px] text-label-2">
-                        {nothingMoves
-                            ? <strong className="text-label">Nothing changes — the book already matches the sheet.</strong>
-                            : <strong className="text-label">Follow-ups, notes, contacts, cheques and CRM owners are kept.</strong>}
-                        {preview.untouched > 0 && <span> {preview.untouched.toLocaleString('en-IN')} account{preview.untouched === 1 ? '' : 's'} not in the sheet were already at zero.</span>}
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button
-                            type="button"
-                            onClick={onCancel}
-                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleApplySync}
-                            title={nothingMoves ? 'Records that the book was checked against the sheet just now; nothing else is written' : `Writes the ${preview.changed + preview.added + preview.settled} changes above`}
-                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 inline-flex items-center gap-2 whitespace-nowrap"
-                        >
-                            <span>Update balances</span>
-                            <span className="num px-1.5 py-0.5 rounded-full bg-black/15 text-[11.5px]">{preview.incoming} rows</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        </DialogShell>
     );
 };
 

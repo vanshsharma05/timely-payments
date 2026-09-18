@@ -6,7 +6,7 @@ import { useCollectionSync, useValueSync, SyncStatus, SyncPassResult, SaveOutcom
 import { SaveStatus, combineStatus } from './components/SaveStatus';
 import { mergeServerRows, replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, DataVisibility, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, followUpStatusOf, can, permissionsOf, seesWholeBook, ownerKey, scopeTo, isResponsibleFor, hasOutstanding, chequeState, CHEQUE_ACTIVE, getCustomerPaymentRank, PAYMENT_RANK_LABELS, PaymentRank, matchesSearch, findOwner, isBadDebt } from './types';
 import {
     getOutstandingForUser,
     processStatuses,
@@ -29,8 +29,9 @@ const LiveStockView = lazy(() => import('./components/LiveStockView'));
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, formatDate, formatDateShort, formatINR, relativeDays, dateFromLocalIso } from './components/ui/format';
 import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { BadDebtStrip } from './components/ui/BadDebtStrip';
-import { CheckCircleIcon, UsersIcon, EditIcon, TrashIcon, UserPlusIcon, ExclamationTriangleIcon, BuildingOfficeIcon } from './components/icons/Icons';
+import { CheckCircleIcon, ExclamationTriangleIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
 const UserModal = lazy(() => import('./components/UserModal'));
@@ -47,7 +48,8 @@ import { previewSync, describePreview } from './services/syncPreview';
 import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
 const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
 import PdcModal from './components/PdcModal';
-import { CompanyProfileView } from './components/CompanyProfileView';
+import { TeamView } from './components/TeamView';
+import { TemplatesView } from './components/TemplatesView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
 
@@ -175,6 +177,12 @@ const App = () => {
     const [whatsAppCustomer, setWhatsAppCustomer] = useState<Outstanding | null>(null);
 
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+    /**
+     * A question before something that cannot be undone, asked in the app.
+     * The browser's confirm() could not name the record, styled "OK" as the
+     * destructive answer, and looked nothing like the rest of the app.
+     */
+    const [ask, setAsk] = useState<{ title: string; body: React.ReactNode; confirmLabel: string; tone?: 'danger' | 'primary'; run: () => void } | null>(null);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -190,7 +198,6 @@ const App = () => {
     // Company Profile state
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
 
-    const [userManagementTab, setUserManagementTab] = useState<'users' | 'company'>('users');
 
     const handleSaveCompanyProfile = (updated: CompanyProfile) => {
         setCompanyProfile(updated);
@@ -287,16 +294,25 @@ const App = () => {
     const handleDeleteCustomer = (customerId: string) => {
         const target = appData.find(c => c.id === customerId);
         if (!target) return;
-        if (window.confirm(`Are you sure you want to delete customer"${target.company}"?`)) {
-            const updated = appData.filter(c => c.id !== customerId);
-            const processed = processStatuses(updated);
-            setAppData(processed);
-            void customersSync.flush().then(r => {
-                const failed = r.failed.find(f => f.id === customerId);
-                if (failed) notify('error', `Could not delete "${target.company}": ${failed.message}. It will be tried again.`);
-                else notify('success', `Customer "${target.company}" deleted.`);
-            });
-        }
+        const cheques = pdcCheques.filter(p => p.customerId === customerId).length;
+        setAsk({
+            title: 'Delete this customer?',
+            confirmLabel: 'Delete customer',
+            body: <>
+                <p><strong className="text-label">{target.company}</strong>{target.contactPerson ? ` · ${target.contactPerson}` : ''} · balance <span className="num font-semibold text-label">{formatINR(target.total || 0)}</span>{cheques ? ` · ${cheques} cheque${cheques === 1 ? '' : 's'} in the register` : ''}.</p>
+                <p className="mt-2">The account, its contacts, notes, follow-up history{cheques ? ' and its cheques' : ''} leave the book for everyone. This cannot be undone. A customer who has simply paid up should be left in place — the sheet settles them to zero.</p>
+            </>,
+            run: () => {
+                const updated = appData.filter(c => c.id !== customerId);
+                const processed = processStatuses(updated);
+                setAppData(processed);
+                void customersSync.flush().then(r => {
+                    const failed = r.failed.find(f => f.id === customerId);
+                    if (failed) notify('error', `Could not delete "${target.company}": ${failed.message}. It will be tried again.`);
+                    else notify('success', `Customer "${target.company}" deleted.`);
+                });
+            },
+        });
     };
 
     /**
@@ -879,15 +895,25 @@ const App = () => {
         handleCloseUserModal();
     };
 
-    const handleDeleteUser = async (userId: string) => {
-        if (!window.confirm(`Remove ${userId}? Their login stops working immediately.`)) return;
-        try {
-            await repo.deleteTeamMember(userId);
-            setUsers(await repo.fetchUsers());
-            notify('success', `${userId} no longer has access.`);
-        } catch (e: any) {
-            notify('error', e?.message || 'Could not remove the user.');
-        }
+    const handleDeleteUser = (userId: string) => {
+        const who = users.find(u => u.id === userId);
+        setAsk({
+            title: 'Remove this team member?',
+            confirmLabel: 'Remove access',
+            body: <>
+                <p><strong className="text-label">{who?.name || userId}</strong>{who ? ` · ${who.role}` : ''}{who?.email ? ` · ${who.email}` : ''}.</p>
+                <p className="mt-2">Their login stops working immediately. The accounts they own stay in the book under their name until someone reassigns them.</p>
+            </>,
+            run: async () => {
+                try {
+                    await repo.deleteTeamMember(userId);
+                    setUsers(await repo.fetchUsers());
+                    notify('success', `${who?.name || userId} no longer has access.`);
+                } catch (e: any) {
+                    notify('error', e?.message || 'Could not remove the user.');
+                }
+            },
+        });
     };
 
     /**
@@ -1005,9 +1031,15 @@ const App = () => {
             alert("You cannot delete the last template.");
             return;
         }
-        if (window.confirm('Are you sure you want to delete this template?')) {
-            setTemplates(currentTemplates => currentTemplates.filter(t => t.id !== templateId));
-        }
+        const t = templates.find(x => x.id === templateId);
+        setAsk({
+            title: 'Delete this template?',
+            confirmLabel: 'Delete template',
+            body: <>
+                <p><strong className="text-label">{t?.name || 'This template'}</strong> will no longer be offered when a WhatsApp reminder is opened. Reminders already sent are not affected. This cannot be undone.</p>
+            </>,
+            run: () => setTemplates(currentTemplates => currentTemplates.filter(x => x.id !== templateId)),
+        });
     };
 
     // Reassign single customer to a CRM
@@ -1290,17 +1322,14 @@ const App = () => {
         // The Data source page asks in its own dialog, naming what the import
         // does; the browser confirm() below is only for any other caller.
         if (appData.length > 0 && !opts.confirmed) {
-            const proceed = window.confirm(
-                'ONE-TIME CUSTOMER IMPORT\n\n' +
-                'The customer list is maintained in the software, not in this sheet. ' +
-                'This is for loading customers in bulk — normally you add a customer here instead.\n\n' +
-                'It fills in details that are missing and overwrites nothing: names, phone numbers, ' +
-                'addresses, credit terms, categories and CRM owners already recorded here are left exactly as they are.\n\n' +
-                'Run it now to bring in the CATEGORY column (Builder, Dealer, Dealer Offset, Retailer and the trades) ' +
-                'for customers that do not have one yet.\n\n' +
-                'Continue?'
-            );
-            if (!proceed) return;
+            setAsk({
+                title: 'Import customers from the master sheet?',
+                confirmLabel: 'Import customers',
+                tone: 'primary',
+                body: <p>Customers already on file keep every detail recorded here; blanks are filled in and names not on file are added. No balances change.</p>,
+                run: () => { void handleCustomerMasterSync(urlToUse, { confirmed: true }); },
+            });
+            return;
         }
 
         setIsSyncing(true);
@@ -2621,303 +2650,80 @@ const App = () => {
 
                 {activeTab === 'stock' && renderLiveStock()}
 
-                {activeTab !== 'overview' && activeTab !== 'customers' && activeTab !== 'pdc' && activeTab !== 'stock' && (
-                    // On a phone the reports bring their own cards, so the wrapper
-                    // steps out of the way; the setup pages keep it, a little tighter.
-                    <div className={`bg-card rounded-lg shadow-md p-6 ${activeTab === 'reports' ? 'max-md:p-0 max-md:bg-transparent max-md:shadow-none' : 'max-md:p-4'}`}>
-                        {activeTab === 'users' && rights.isAdmin && (
-                            <div className="space-y-6">
-                                {/* Sub-navigation tabs inside User Management */}
-                                <div className="flex flex-wrap items-center gap-2 border-b border-separator pb-3">
-                                    <button
-                                        onClick={() => setUserManagementTab('users')}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
- userManagementTab === 'users'
- ? 'bg-accent text-on-accent shadow-e1'
- : 'bg-card-3 text-label-2 hover:bg-hover'
- }`}
-                                    >
-                                        <UsersIcon className="w-4 h-4" />
-                                        <span>User Accounts ({users.length})</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setUserManagementTab('company')}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
- userManagementTab === 'company'
- ? 'bg-accent text-on-accent shadow-e1'
- : 'bg-card-3 text-label-2 hover:bg-hover'
- }`}
-                                    >
-                                        <BuildingOfficeIcon className="w-4 h-4" />
-                                        <span>Company Profile & Organization</span>
-                                    </button>
-                                </div>
-
-                                {userManagementTab === 'users' ? (
-                                    <div>
-                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                                            <div>
-                                                <h2 className="text-[17px] font-extrabold text-label tracking-[-0.02em]">Team</h2>
-                                                <p className="text-[13px] text-label-3 mt-0.5">Who can sign in, what they see, and what they may change.</p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <Button size="sm" variant="primary" onClick={() => handleOpenUserModal(null)} icon={<UserPlusIcon className="w-4 h-4" />}>
-                                                    Add a team member
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        {/* Phone: five columns will not fit, so each person is a
-                                            card — name, role, scope, and the two actions. Rights are
-                                            on the edit form, one tap away. */}
-                                        <div className="md:hidden rounded-xl border border-separator divide-y divide-separator bg-card">
-                                            {users.map(user => (
-                                                <div key={user.id} className="px-4 py-3.5">
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <p className="font-bold text-label text-[15px] truncate">{user.name}</p>
-                                                            <p className="text-[12px] text-label-3 font-mono mt-0.5">ID: {user.id}</p>
-                                                            {user.email && <p className="text-[12px] text-label-3 truncate">{user.email}</p>}
-                                                        </div>
-                                                        <span className={`inline-flex flex-none px-2.5 py-1 text-xs font-bold rounded-lg ${
-                                                            user.role === UserRole.Admin ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
-                                                            user.role === UserRole.Manager ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' :
-                                                            user.role === UserRole.CRM ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
-                                                            user.role === UserRole.Collector ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                                                            'bg-card-3 text-label-2 border border-separator'
-                                                        }`}>
-                                                            {user.role}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-wrap items-center gap-1 mt-2.5">
-                                                        {user.role === UserRole.Admin || user.dataVisibility === DataVisibility.All ? (
-                                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">All accounts</span>
-                                                        ) : (
-                                                            (user.assignedCrms && user.assignedCrms.length > 0 ? user.assignedCrms : [user.id]).map(c => (
-                                                                <span key={c} className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">{c}</span>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2 mt-3">
-                                                        <button
-                                                            onClick={() => handleOpenUserModal(user)}
-                                                            className="flex-1 h-10 flex items-center justify-center gap-1.5 text-[13px] font-semibold rounded-lg bg-green-50 text-green-700 dark:bg-green-950/60 dark:text-green-300 border border-green-200 dark:border-green-800"
-                                                        >
-                                                            <EditIcon className="w-3.5 h-3.5" />
-                                                            Edit rights
-                                                        </button>
-                                                        {user.role !== UserRole.Admin && (
-                                                            <button
-                                                                onClick={() => handleDeleteUser(user.id)}
-                                                                className="w-10 h-10 grid place-items-center text-dang rounded-lg border border-separator"
-                                                                aria-label={`Remove ${user.name}`}
-                                                            >
-                                                                <TrashIcon className="w-4 h-4" />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="overflow-x-auto rounded-xl border border-separator max-md:hidden">
-                                            <table className="min-w-full divide-y divide-separator text-left text-xs sm:text-sm">
-                                                <thead className="bg-card-2">
-                                                    <tr>
-                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">User & ID</th>
-                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Role</th>
-                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Assigned CRMs / Scope</th>
-                                                        <th className="px-4 py-3 font-semibold text-label-3 uppercase tracking-wider">Granted Permissions</th>
-                                                        <th className="px-4 py-3 text-right font-semibold text-label-3 uppercase tracking-wider">Actions</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-card divide-y divide-separator">
-                                                    {users.map(user => {
-                                                        const p = user.permissions;
-                                                        return (
-                                                            <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                                                                <td className="px-4 py-3 whitespace-nowrap">
-                                                                    <div className="font-bold text-label">{user.name}</div>
-                                                                    <div className="text-xs text-label-3 font-mono">ID: {user.id}</div>
-                                                                    {user.email && (
-                                                                        <div className="text-xs text-label-3">{user.email}</div>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-4 py-3 whitespace-nowrap">
-                                                                    <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-lg ${
- user.role === UserRole.Admin ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
- user.role === UserRole.Manager ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800' :
- user.role === UserRole.CRM ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
- user.role === UserRole.Collector ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
- 'bg-card-3 text-label-2 border border-separator'
- }`}>
-                                                                        {user.role}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-4 py-3">
-                                                                    {user.role === UserRole.Admin || user.dataVisibility === DataVisibility.All ? (
-                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                                                            All Accounts
-                                                                        </span>
-                                                                    ) : (
-                                                                        <div className="flex flex-wrap gap-1">
-                                                                            {(user.assignedCrms && user.assignedCrms.length > 0 ? user.assignedCrms : [user.id]).map(c => (
-                                                                                <span key={c} className="inline-flex items-center px-2 py-0.5 rounded text-[12.5px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                                                                                    {c}
-                                                                                </span>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-4 py-3">
-                                                                    <div className="flex flex-wrap gap-1 text-[11.5px]">
-                                                                        {user.role === UserRole.Admin ? (
-                                                                            <span className="font-bold text-purple-600 dark:text-purple-400">Full System Control (All Rights)</span>
-                                                                        ) : (
-                                                                            <>
-                                                                                {p?.canAddCustomer && <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800">+ Add Customer</span>}
-                                                                                {p?.canEditCustomer && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">Edit Info</span>}
-                                                                                {p?.canEditFinancials && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-semibold border border-amber-200 dark:border-amber-800">Edit Financials</span>}
-                                                                                {p?.canManagePdc && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800">Manage PDC</span>}
-                                                                                {p?.canReassignCrm && <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-semibold border border-purple-200 dark:border-purple-800">Reassign CRM</span>}
-                                                                                {p?.canDeleteCustomer && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 font-semibold border border-red-200 dark:border-red-800">Delete</span>}
-                                                                                {p?.canExportData && <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300 font-semibold border border-teal-200 dark:border-teal-800">Export</span>}
-                                                                            </>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                                                                    <div className="flex justify-end items-center space-x-2">
-                                                                        <button 
-                                                                            onClick={() => handleOpenUserModal(user)} 
-                                                                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-green-50 text-green-700 dark:bg-green-950/60 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 border border-green-200 dark:border-green-800 transition-colors" 
-                                                                            title="Edit user rights and role"
-                                                                        >
-                                                                            <EditIcon className="w-3.5 h-3.5" />
-                                                                            <span>Edit Rights</span>
-                                                                        </button>
-                                                                        {user.role !== UserRole.Admin && (
-                                                                            <button 
-                                                                                onClick={() => handleDeleteUser(user.id)} 
-                                                                                className="p-1.5 text-dang hover:opacity-80 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition-colors" 
-                                                                                title="Delete user"
-                                                                            >
-                                                                                <TrashIcon className="w-4 h-4" />
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <CompanyProfileView
-                                        profile={companyProfile}
-                                        onSave={handleSaveCompanyProfile}
-                                    />
-                                )}
-                            </div>
-                        )}
-                        {activeTab === 'alerts' && rights.canSyncSheets && (
-                            <AlertsView canEdit={rights.canSyncSheets} />
-                        )}
-                        {activeTab === 'reports' && (
-                            <ReportsView
-                                data={appData}
-                                users={users}
-                                currentUser={currentUser!}
-                                companyProfile={companyProfile}
-                                initialCrmFilter={reportCrm}
-                                initialCategoryFilter={categoryFilter}
-                                initialAgeingFilter={reportAgeing}
-                                globalSearch={searchTerm}
-                                onGlobalSearch={setSearchTerm}
-                                onFollowUp={handleOpenFollowUp}
-                                onWhatsApp={handleSendWhatsApp}
-                                onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
-                                onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
-                                onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
-                                pdcCheques={pdcCheques}
-                                onOpenPdcForCustomer={handleOpenPdcForCustomer}
-                            />
-                        )}
-                         {activeTab === 'templates' && rights.canSyncSheets && (
-                            <div>
-                                <div className="flex justify-between items-center gap-3 mb-4">
-                                    <div>
-                                        <h2 className="text-[17px] font-extrabold text-label tracking-[-0.02em]">Templates</h2>
-                                        <p className="text-[13px] text-label-3 mt-0.5">The wording offered when a WhatsApp reminder is opened.</p>
-                                    </div>
-                                    <Button size="sm" variant="primary" onClick={() => handleOpenTemplateModal(null)}>
-                                        New template
-                                    </Button>
-                                </div>
-                                {templates.length === 0 ? (
-                                    <EmptyState
-                                        title="No templates yet"
-                                        hint="A template is the wording offered when someone opens a WhatsApp reminder. Add one and the team can pick it."
-                                        action={<Button size="sm" variant="primary" onClick={() => handleOpenTemplateModal(null)}>New template</Button>}
-                                    />
-                                ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-separator">
-                                        <thead className="bg-card-2">
-                                            <tr>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-label-3 uppercase tracking-wider">Template Name</th>
-                                                <th className="px-6 py-3 text-right text-xs font-medium text-label-3 uppercase tracking-wider">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-card divide-y divide-separator">
-                                            {templates.map(template => (
-                                                <tr key={template.id}>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-label">{template.name}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <div className="flex justify-end items-center space-x-2">
-                                                            <button onClick={() => handleOpenTemplateModal(template)} className="w-9 h-9 grid place-items-center rounded-full text-accent hover:text-accent hover:bg-hover" aria-label={`Edit template ${template.name}`}><EditIcon /></button>
-                                                            <button onClick={() => handleDeleteTemplate(template.id)} className="w-9 h-9 grid place-items-center rounded-full text-dang hover:opacity-80 hover:bg-hover" aria-label={`Delete template ${template.name}`}><TrashIcon /></button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                )}
-                            </div>
-                        )}
-                        {activeTab === 'source' && rights.canSyncSheets && (
-                            <DataSourceView
-                                isAdmin={rights.isAdmin}
-                                dataSourceMode={dataSourceMode}
-                                onDataSourceMode={setDataSourceMode}
-                                googleSheetUrl={googleSheetUrl}
-                                onGoogleSheetUrl={setGoogleSheetUrl}
-                                officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
-                                customerMasterSheetUrl={customerMasterSheetUrl}
-                                onCustomerMasterSheetUrl={setCustomerMasterSheetUrl}
-                                officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
-                                liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
-                                lastSyncTime={lastSyncTime}
-                                sheetUpdatedTillDate={sheetUpdatedTillDate}
-                                accountsWithDues={appData.filter(hasOutstanding).length}
-                                isSyncing={isSyncing}
-                                sheetCheck={sheetCheck}
-                                onSync={() => handleGoogleSync()}
-                                onCheckSheet={handleCheckSheet}
-                                onReviewCheck={handleReviewCheck}
-                                onFileChange={handleFileChange}
-                                expectedHeaders={EXPECTED_HEADERS}
-                                onDownloadTemplate={downloadTemplate}
-                                onCopyHeaders={copyHeaders}
-                                onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
-                                crmConflicts={crmConflicts}
-                                onExportCrmAssignments={handleExportCrmAssignments}
-                                onFreshStart={handleResetAllDataAndUsers}
-                            />
-                        )}
+                {/* The setup pages bring their own cards; only the reports keep the
+                    frame, which steps out of the way on a phone where they bring theirs. */}
+                {activeTab === 'users' && rights.isAdmin && (
+                    <TeamView
+                        users={users}
+                        onAdd={() => handleOpenUserModal(null)}
+                        onEdit={handleOpenUserModal}
+                        onRemove={handleDeleteUser}
+                        companyProfile={companyProfile}
+                        onSaveCompanyProfile={handleSaveCompanyProfile}
+                    />
+                )}
+                {activeTab === 'alerts' && rights.canSyncSheets && (
+                    <AlertsView canEdit={rights.canSyncSheets} />
+                )}
+                {activeTab === 'reports' && (
+                    <div className="bg-card rounded-lg shadow-md p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
+                        <ReportsView
+                            data={appData}
+                            users={users}
+                            currentUser={currentUser!}
+                            companyProfile={companyProfile}
+                            initialCrmFilter={reportCrm}
+                            initialCategoryFilter={categoryFilter}
+                            initialAgeingFilter={reportAgeing}
+                            globalSearch={searchTerm}
+                            onGlobalSearch={setSearchTerm}
+                            onFollowUp={handleOpenFollowUp}
+                            onWhatsApp={handleSendWhatsApp}
+                            onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+                            onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
+                            onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
+                            pdcCheques={pdcCheques}
+                            onOpenPdcForCustomer={handleOpenPdcForCustomer}
+                        />
                     </div>
+                )}
+                {activeTab === 'templates' && rights.canSyncSheets && (
+                    <TemplatesView
+                        templates={templates}
+                        onAdd={() => handleOpenTemplateModal(null)}
+                        onEdit={handleOpenTemplateModal}
+                        onRemove={handleDeleteTemplate}
+                    />
+                )}
+                {activeTab === 'source' && rights.canSyncSheets && (
+                    <DataSourceView
+                        isAdmin={rights.isAdmin}
+                        dataSourceMode={dataSourceMode}
+                        onDataSourceMode={setDataSourceMode}
+                        googleSheetUrl={googleSheetUrl}
+                        onGoogleSheetUrl={setGoogleSheetUrl}
+                        officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
+                        customerMasterSheetUrl={customerMasterSheetUrl}
+                        onCustomerMasterSheetUrl={setCustomerMasterSheetUrl}
+                        officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
+                        liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
+                        lastSyncTime={lastSyncTime}
+                        sheetUpdatedTillDate={sheetUpdatedTillDate}
+                        accountsWithDues={appData.filter(hasOutstanding).length}
+                        isSyncing={isSyncing}
+                        sheetCheck={sheetCheck}
+                        onSync={() => handleGoogleSync()}
+                        onCheckSheet={handleCheckSheet}
+                        onReviewCheck={handleReviewCheck}
+                        onFileChange={handleFileChange}
+                        expectedHeaders={EXPECTED_HEADERS}
+                        onDownloadTemplate={downloadTemplate}
+                        onCopyHeaders={copyHeaders}
+                        onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
+                        crmConflicts={crmConflicts}
+                        onExportCrmAssignments={handleExportCrmAssignments}
+                        onFreshStart={handleResetAllDataAndUsers}
+                    />
                 )}
             </>
         );
@@ -3206,6 +3012,16 @@ const App = () => {
                     onNavigate={handleNavigateFollowUp}
                 />
             )}
+            <ConfirmDialog
+                open={!!ask}
+                title={ask?.title || ''}
+                confirmLabel={ask?.confirmLabel || 'Confirm'}
+                tone={ask?.tone}
+                onCancel={() => setAsk(null)}
+                onConfirm={() => { const a = ask; setAsk(null); a?.run(); }}
+            >
+                {ask?.body}
+            </ConfirmDialog>
             {isPasswordModalOpen && (
                 <ChangePasswordModal
                     onClose={() => setIsPasswordModalOpen(false)}

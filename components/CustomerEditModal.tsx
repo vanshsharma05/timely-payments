@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
@@ -66,7 +67,6 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     /** Waiting for the server to accept the save; the reason if it did not. */
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
-    const panel = useModal(true, onClose, { closeOnEscape: !saving });
     const [isUrgent, setIsUrgent] = useState(false);
 
     /**
@@ -318,29 +318,19 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="customer-edit-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Header */}
-                <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
-                    <div>
-                        <h2 id="customer-edit-title" className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <span>{isNew ? 'Add a customer' : 'Edit customer details'}</span>
-                        </h2>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {isNew ? 'Create a new customer account, assign CRM owner, and set outstanding ledger details.' : `Updating company details and contact directory for ${customerToEdit?.company}`}
-                        </p>
-                    </div>
-                    <button 
-                        type="button" 
-                        onClick={onClose} 
-                        className="w-10 h-10 grid place-items-center flex-none text-label-3 hover:text-label text-2xl font-bold rounded-full hover:bg-hover"
-                     aria-label="Close">
-                        &times;
-                    </button>
-                </div>
-
-                {/* Body Form */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-5">
+        <DialogShell
+            title={isNew ? 'Add a customer' : 'Edit customer details'}
+            subtitle={isNew ? 'A new account: who they are, who owns it, and what they owe today.' : `Company details and contacts for ${customerToEdit?.company}`}
+            onClose={onClose}
+            closeOnEscape={!saving}
+            onSubmit={handleSubmit}
+            footerNote={saveError && <span role="alert" className="font-semibold text-dang">Not saved: {sentence(saveError)} Your changes are still here — try again, or close and they will be retried from this tab.</span>}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : isNew ? 'Add customer' : 'Save changes'}</Button>
+            </>}
+        >
+                <div className="space-y-5">
                     {/* Company & CRM Owner */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="sm:col-span-2">
@@ -748,30 +738,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                         </div>
                     </div>
 
-                    {saveError && (
-                        <div role="alert" className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
-                            Not saved: {sentence(saveError)} Your changes are still here — try again, or close and they will be retried from this tab.
-                        </div>
-                    )}
-                    {/* Footer */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3 max-md:pb-[env(safe-area-inset-bottom)] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button 
-                            type="button"
-                            onClick={onClose} 
-                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
-                         aria-label="Close">
-                            Cancel
-                        </button>
-                        <button 
-                            type="submit" 
-                            disabled={saving}
-                            className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
-                        >
-                            <span>{saving ? 'Saving…' : isNew ? 'Add customer' : 'Save changes'}</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+        </DialogShell>
     );
 };

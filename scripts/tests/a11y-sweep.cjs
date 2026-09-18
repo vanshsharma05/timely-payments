@@ -93,6 +93,8 @@ const SWEEP = `(() => {
   console.log('  open whatsapp:', await rowBtn(/whatsapp/i)); await wait(900); await sweep('WhatsApp dialog'); await trap('WhatsApp dialog');
   await type('input[placeholder^="Search by name"]', ''); await wait(300);
   console.log('  open add:', await click(/^Add customer$/)); await wait(900); await sweep('Add customer dialog'); await trap('Add customer dialog');
+  // the questions asked before something irreversible: in the app, focus on Cancel, Esc backs out (nothing is written)
+  console.log('  ask delete customer:', await rowBtn(/^Delete customer$/)); await wait(600); await sweep('Delete customer question'); await trap('Delete customer question');
   await go('pdc'); await sweep('Cheques');
   await click(/Record a cheque/); await wait(800); await sweep('Record cheque dialog'); await trap('Record cheque dialog');
   await go('reports'); await sweep('Reports');
@@ -101,8 +103,11 @@ const SWEEP = `(() => {
   await go('source'); await sweep('Data source');
   await go('users'); await sweep('Team & access');
   await click(/Add a team member|Add User/); await wait(900); await sweep('Add user dialog'); await trap('Add user dialog');
+  console.log('  ask remove member:', await click(/^Remove /)); await wait(600); await sweep('Remove member question'); await trap('Remove member question');
+  console.log('  company tab:', await click(/^Company profile$/)); await wait(600); await sweep('Company profile');
   await go('templates'); await sweep('Templates');
   await click(/^New template$/); await wait(900); await sweep('Template dialog'); await trap('Template dialog');
+  console.log('  ask delete template:', await click(/^Delete template /)); await wait(600); await sweep('Delete template question'); await trap('Delete template question');
   await go('alerts'); await sweep('Alerts');
   fs.writeFileSync(`${OUT}/a11y-${W}.json`, JSON.stringify({ report, errors }, null, 1));
   console.log('\npage errors:', errors.slice(0, 5));

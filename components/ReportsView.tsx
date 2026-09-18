@@ -5,6 +5,7 @@ import StatusBadge from './StatusBadge';
 const AiReportModal = lazy(() => import('./AiReportModal'));
 import { WhatsAppIcon, FireIcon, DownloadIcon, ChequeIcon, SparklesIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button } from './ui/Primitives';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
@@ -360,6 +361,8 @@ export const ReportsView = ({
     // job this is for; the date is there for anyone who wants a different day.
     const todayIso = localIsoDate();
     const [bulkFollowUp, setBulkFollowUp] = useState(todayIso);
+    /** The bulk follow-up date is asked about in the app, with the count and the date named. */
+    const [confirmBulkDate, setConfirmBulkDate] = useState(false);
 
     /** A selection only ever means rows currently on screen; filtering away a
         selected account must not leave it quietly queued for a bulk action. */
@@ -718,16 +721,7 @@ export const ReportsView = ({
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => {
-                                            if (!bulkFollowUp) return;
-                                            const n = selected.length;
-                                            if (!window.confirm(
-                                                `Set the follow-up date to ${formatDay(bulkFollowUp)} on ${n} account${n === 1 ? '' : 's'}?\n\n`
-                                                + 'Each account\'s activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.',
-                                            )) return;
-                                            onBulkSetFollowUp(selected, bulkFollowUp);
-                                            setSelectedIds([]);
-                                        }}
+                                        onClick={() => { if (bulkFollowUp) setConfirmBulkDate(true); }}
                                         disabled={!bulkFollowUp}
                                         className="px-2.5 py-1.5 min-h-[32px] rounded-lg text-[12px] font-bold bg-accent text-on-accent disabled:opacity-40"
                                     >
@@ -1069,6 +1063,17 @@ export const ReportsView = ({
                 onFollowUp={onFollowUp}
             />
             </Suspense>
+            <ConfirmDialog
+                open={confirmBulkDate}
+                title={`Set the follow-up date on ${selected.length} account${selected.length === 1 ? '' : 's'}?`}
+                confirmLabel="Set the date"
+                tone="primary"
+                onCancel={() => setConfirmBulkDate(false)}
+                onConfirm={() => { setConfirmBulkDate(false); if (!bulkFollowUp || !onBulkSetFollowUp) return; onBulkSetFollowUp(selected, bulkFollowUp); setSelectedIds([]); }}
+            >
+                <p>Every selected account gets <strong className="text-label">{bulkFollowUp ? formatDay(bulkFollowUp) : ''}</strong> as its next follow-up date.</p>
+                <p className="mt-2">Each account's activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.</p>
+            </ConfirmDialog>
         </div>
     );
 };

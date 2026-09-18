@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { changeOwnPassword } from '../services/repository';
 import { Button, Spinner, cx } from './ui/Primitives';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { FIELD, LABEL } from './ui/fields';
 
 /**
  * Change your own password.
@@ -22,7 +23,6 @@ const ChangePasswordModal = ({
     const [show, setShow] = useState(false);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
-    const panel = useModal(true, onClose, { closeOnEscape: !busy });
     const firstRef = useRef<HTMLInputElement>(null);
 
     const submit = async (e: React.FormEvent) => {
@@ -50,78 +50,60 @@ const ChangePasswordModal = ({
         }
     };
 
-    const field =
-        'w-full h-12 px-4 rounded-[12px] bg-card-2 border-2 text-[15px] text-label ' +
-        'placeholder:text-label-3 outline-none transition-colors';
-
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="change-password-title" className="bg-card rounded-[20px] shadow-e3 w-full max-w-[420px] p-6">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <h2 id="change-password-title" className="text-[19px] font-extrabold text-label tracking-[-0.02em]">Change password</h2>
-                        <p className="text-[13.5px] text-label-3 mt-1">
-                            You will stay signed in on this device.
-                        </p>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        aria-label="Close"
-                        className="w-9 h-9 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover text-[20px] leading-none"
-                    >
-                        &times;
-                    </button>
-                </div>
+        <DialogShell
+            title="Change password"
+            subtitle="You will stay signed in on this device."
+            size="sm"
+            onClose={onClose}
+            closeOnEscape={!busy}
+            onSubmit={submit}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose} disabled={busy}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={busy}>
+                    {busy && <Spinner className="w-4 h-4" />}
+                    {busy ? 'Saving…' : 'Change password'}
+                </Button>
+            </>}
+        >
+            <label htmlFor="newPassword" className={LABEL}>New password</label>
+            <input
+                id="newPassword"
+                ref={firstRef}
+                type={show ? 'text' : 'password'}
+                value={password}
+                onChange={e => { setPassword(e.target.value); setError(''); }}
+                autoComplete="new-password"
+                data-autofocus
+                placeholder="At least 8 characters"
+                className={cx(FIELD, error && 'border-dang')}
+            />
 
-                <form onSubmit={submit} className="mt-6" noValidate>
-                    <label htmlFor="newPassword" className="label block mb-1.5">New password</label>
-                    <input
-                        id="newPassword"
-                        ref={firstRef}
-                        type={show ? 'text' : 'password'}
-                        value={password}
-                        onChange={e => { setPassword(e.target.value); setError(''); }}
-                        autoComplete="new-password"
-                        autoFocus
-                        placeholder="At least 8 characters"
-                        className={cx(field, error ? 'border-dang' : 'border-separator-strong focus:border-accent')}
-                    />
+            <label htmlFor="confirmPassword" className={`${LABEL} mt-4`}>Repeat it</label>
+            <input
+                id="confirmPassword"
+                type={show ? 'text' : 'password'}
+                value={confirm}
+                onChange={e => { setConfirm(e.target.value); setError(''); }}
+                autoComplete="new-password"
+                placeholder="Same again"
+                className={cx(FIELD, error && 'border-dang')}
+            />
 
-                    <label htmlFor="confirmPassword" className="label block mt-4 mb-1.5">Repeat it</label>
-                    <input
-                        id="confirmPassword"
-                        type={show ? 'text' : 'password'}
-                        value={confirm}
-                        onChange={e => { setConfirm(e.target.value); setError(''); }}
-                        autoComplete="new-password"
-                        placeholder="Same again"
-                        className={cx(field, error ? 'border-dang' : 'border-separator-strong focus:border-accent')}
-                    />
+            <label className="flex items-center gap-2 mt-3.5 text-[13.5px] text-label-2">
+                <input
+                    type="checkbox"
+                    checked={show}
+                    onChange={e => setShow(e.target.checked)}
+                    className="w-4 h-4 rounded"
+                />
+                Show what I am typing
+            </label>
 
-                    <label className="flex items-center gap-2 mt-3.5 text-[13.5px] text-label-2">
-                        <input
-                            type="checkbox"
-                            checked={show}
-                            onChange={e => setShow(e.target.checked)}
-                            className="w-4 h-4 rounded"
-                        />
-                        Show what I am typing
-                    </label>
-
-                    {error && (
-                        <p role="alert" className="mt-3.5 text-[13.5px] font-semibold text-dang">{error}</p>
-                    )}
-
-                    <div className="flex justify-end gap-2.5 mt-6">
-                        <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-                        <Button type="submit" variant="primary" disabled={busy}>
-                            {busy && <Spinner className="w-4 h-4" />}
-                            {busy ? 'Saving…' : 'Change password'}
-                        </Button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            {error && (
+                <p role="alert" className="mt-3.5 text-[13.5px] font-semibold text-dang">{error}</p>
+            )}
+        </DialogShell>
     );
 };
 

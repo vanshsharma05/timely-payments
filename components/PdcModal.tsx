@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Outstanding, PdcCheque, PdcStatus, PDC_STATUS_CHOICES, User, matchesSearch, findOwner } from '../types';
 import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
 import { ChequeIcon } from './icons/Icons';
 import { formatCompact, formatINR, chequeWhen, localIsoDate } from './ui/format';
 
@@ -82,7 +83,6 @@ const PdcModal: React.FC<PdcModalProps> = ({
     const [remarks, setRemarks] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const panel = useModal(isOpen, onClose, { closeOnEscape: !saving });
     /** A new cheque's id, fixed for this open of the dialog so a retry saves the same cheque, not a second one. */
     const newId = useRef<string | null>(null);
     useEffect(() => { if (isOpen) newId.current = null; }, [isOpen]);
@@ -241,35 +241,20 @@ const PdcModal: React.FC<PdcModalProps> = ({
     ].filter(Boolean).join(' · ');
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="pdc-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Header: what this is, and whose cheque it is */}
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl max-md:px-4 max-md:py-3 max-md:rounded-none">
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                            <ChequeIcon className="w-5 h-5 text-pos flex-none" />
-                            <h2 id="pdc-title" className="text-lg font-bold text-gray-900 dark:text-white leading-tight truncate">
-                                {chequeToEdit ? `Edit cheque #${chequeToEdit.chequeNumber}` : 'Record a cheque'}
-                            </h2>
-                        </div>
-                        <p className="text-[12.5px] text-gray-500 dark:text-gray-400 mt-1">
-                            {chequeToEdit
-                                ? 'Correct what was recorded; the register updates for everyone.'
-                                : 'A post-dated cheque a customer has given. It comes up in the register on its date.'}
-                        </p>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex-none"
-                        title="Close (Esc)"
-                        aria-label="Close"
-                    >
-                        &times;
-                    </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
-                    <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-4 max-md:px-4">
+        <DialogShell
+            title={chequeToEdit ? `Edit cheque #${chequeToEdit.chequeNumber}` : 'Record a cheque'}
+            subtitle={chequeToEdit ? 'Correct what was recorded; the register updates for everyone.' : 'A post-dated cheque a customer has given. It comes up in the register on its date.'}
+            icon={<ChequeIcon className="w-5 h-5" />}
+            size="md"
+            onClose={onClose}
+            closeOnEscape={!saving}
+            onSubmit={handleSubmit}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose} disabled={saving}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : chequeToEdit ? 'Save changes' : 'Record cheque'}</Button>
+            </>}
+        >
+                    <div className="space-y-4">
                         {error && (
                             <div role="alert" className="p-3 bg-dang-bg text-dang rounded-lg text-[13px] font-semibold">
                                 {error}
@@ -463,26 +448,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
                         </div>
                     </div>
 
-                    <div className="flex-none px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2 bg-white dark:bg-gray-900 rounded-b-2xl max-md:px-4 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:rounded-none max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            disabled={saving}
-                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40"
-                        >
-                            {saving ? 'Saving…' : chequeToEdit ? 'Save changes' : 'Record cheque'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        </DialogShell>
     );
 };
 

@@ -1,15 +1,38 @@
 import React, { useState } from 'react';
 import { CompanyProfile } from '../types';
 import { AppLogo } from './icons/AppLogo';
+import { Button, cx } from './ui/Primitives';
+import { FIELD, LABEL } from './ui/fields';
 
 interface CompanyProfileViewProps {
     profile: CompanyProfile;
     onSave: (updatedProfile: CompanyProfile) => void;
 }
 
+type Key = keyof CompanyProfile;
+
+/** One field of the profile: label, input, and how it is written. */
+const FIELDS: { key: Key; label: string; placeholder: string; wide?: boolean; mono?: boolean; upper?: boolean; type?: string }[] = [
+    { key: 'name', label: 'Company name', placeholder: 'e.g. Shori Chemicals Pvt. Ltd.', wide: true },
+    { key: 'tagline', label: 'Tagline', placeholder: 'e.g. Chemical distribution & specialty solutions', wide: true },
+    { key: 'gstin', label: 'GSTIN', placeholder: 'e.g. 07AAAAA0000A1Z5', mono: true, upper: true },
+    { key: 'pan', label: 'PAN', placeholder: 'e.g. ABCDE1234F', mono: true, upper: true },
+    { key: 'phone', label: 'Phone', placeholder: 'e.g. +91 98765 43210' },
+    { key: 'email', label: 'Email', placeholder: 'e.g. accounts@company.com', type: 'email' },
+];
+
+/**
+ * The company's own details: its name and tagline on the dashboards, its
+ * address, tax numbers and bank details on exported statements.
+ *
+ * Rendered inside the Team card, so it is the form and its footer only, in
+ * the same fields and buttons every dialog uses.
+ */
 export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile, onSave }) => {
     const [formData, setFormData] = useState<CompanyProfile>({ ...profile });
     const [savedNotice, setSavedNotice] = useState(false);
+
+    const set = (key: Key, value: string) => setFormData(d => ({ ...d, [key]: value }));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -19,186 +42,86 @@ export const CompanyProfileView: React.FC<CompanyProfileViewProps> = ({ profile,
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-200 dark:border-gray-700">
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Organization & Company Profile</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Configure company branding, address, tax identification, and contact info displayed on dashboards and exported statements.
-                    </p>
-                </div>
-            </div>
-
-            {savedNotice && (
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 rounded-xl text-emerald-800 dark:text-emerald-200 text-sm font-semibold flex items-center gap-2 shadow-xs">
-                    <span className="text-base">✓</span> Company profile updated successfully!
-                </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-xs space-y-6">
-                {/* Organization Identity Header */}
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700">
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-gray-200 dark:border-gray-700">
-                        <AppLogo className="w-10 h-10" variant="full-color" />
+        <form onSubmit={handleSubmit}>
+            <div className="px-5 py-5 max-md:px-4 space-y-5">
+                <div className="flex items-center gap-4 p-4 rounded-[12px] bg-card-2">
+                    <div className="p-2.5 bg-card rounded-xl shadow-e1 flex-none">
+                        <AppLogo className="w-9 h-9" variant="full-color" />
                     </div>
-                    <div>
-                        <h3 className="text-base font-bold text-gray-900 dark:text-white">{formData.name || 'Your Company Name'}</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{formData.tagline || 'Collection & Accounts Receivable Management'}</p>
+                    <div className="min-w-0">
+                        <p className="text-[15px] font-bold text-label truncate">{formData.name || 'Your company name'}</p>
+                        <p className="text-[12.5px] text-label-3 truncate">{formData.tagline || 'Shown on dashboards and exported statements.'}</p>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Company / Organization Legal Name <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            required
-                            value={formData.name || ''}
-                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                            placeholder="e.g. Shori Chemicals Pvt. Ltd."
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-semibold focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {FIELDS.map(f => (
+                        <div key={f.key} className={f.wide ? 'md:col-span-2' : undefined}>
+                            <label htmlFor={`company-${f.key}`} className={LABEL}>
+                                {f.label}
+                                {f.key === 'name' && <span className="text-dang ml-0.5" aria-hidden="true">*</span>}
+                            </label>
+                            <input
+                                id={`company-${f.key}`}
+                                type={f.type || 'text'}
+                                required={f.key === 'name'}
+                                value={formData[f.key] || ''}
+                                onChange={e => set(f.key, f.upper ? e.target.value.toUpperCase() : e.target.value)}
+                                placeholder={f.placeholder}
+                                className={cx(FIELD, f.mono && 'font-mono')}
+                            />
+                        </div>
+                    ))}
 
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Business Tagline / Subtitle
-                        </label>
-                        <input
-                            type="text"
-                            value={formData.tagline || ''}
-                            onChange={e => setFormData({ ...formData, tagline: e.target.value })}
-                            placeholder="e.g. Chemical Distribution & Specialty Solutions"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            GSTIN / Tax Identification
-                        </label>
-                        <input
-                            type="text"
-                            value={formData.gstin || ''}
-                            onChange={e => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
-                            placeholder="e.g. 07AAAAA0000A1Z5"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            PAN Number
-                        </label>
-                        <input
-                            type="text"
-                            value={formData.pan || ''}
-                            onChange={e => setFormData({ ...formData, pan: e.target.value.toUpperCase() })}
-                            placeholder="e.g. ABCDE1234F"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Official Contact Phone
-                        </label>
-                        <input
-                            type="text"
-                            value={formData.phone || ''}
-                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                            placeholder="e.g. +91 9876543210"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Official Email Address
-                        </label>
-                        <input
-                            type="email"
-                            value={formData.email || ''}
-                            onChange={e => setFormData({ ...formData, email: e.target.value })}
-                            placeholder="e.g. ankur@shorichemicals.com"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
-                    </div>
-
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Office Address
-                        </label>
+                        <label htmlFor="company-address" className={LABEL}>Office address</label>
                         <textarea
+                            id="company-address"
                             rows={2}
                             value={formData.address || ''}
-                            onChange={e => setFormData({ ...formData, address: e.target.value })}
-                            placeholder="Street address, office suite, industrial area"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
+                            onChange={e => set('address', e.target.value)}
+                            placeholder="Street, office, industrial area"
+                            className={cx(FIELD, 'h-auto py-2')}
                         />
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            City
-                        </label>
-                        <input
-                            type="text"
-                            value={formData.city || ''}
-                            onChange={e => setFormData({ ...formData, city: e.target.value })}
-                            placeholder="e.g. New Delhi"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                        />
+                        <label htmlFor="company-city" className={LABEL}>City</label>
+                        <input id="company-city" type="text" value={formData.city || ''} onChange={e => set('city', e.target.value)} placeholder="e.g. New Delhi" className={FIELD} />
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            State & PIN Code
-                        </label>
+                        <span className={LABEL} id="company-state-label">State &amp; PIN</span>
                         <div className="grid grid-cols-2 gap-2">
-                            <input
-                                type="text"
-                                value={formData.state || ''}
-                                onChange={e => setFormData({ ...formData, state: e.target.value })}
-                                placeholder="State"
-                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                            />
-                            <input
-                                type="text"
-                                value={formData.pincode || ''}
-                                onChange={e => setFormData({ ...formData, pincode: e.target.value })}
-                                placeholder="PIN Code"
-                                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-accent focus:outline-none"
-                            />
+                            <input type="text" aria-label="State" value={formData.state || ''} onChange={e => set('state', e.target.value)} placeholder="State" className={FIELD} />
+                            <input type="text" aria-label="PIN code" value={formData.pincode || ''} onChange={e => set('pincode', e.target.value)} placeholder="PIN code" className={cx(FIELD, 'font-mono')} />
                         </div>
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            Bank Accounts & Payment Instructions
-                        </label>
+                        <label htmlFor="company-bank" className={LABEL}>Bank account &amp; payment instructions</label>
                         <textarea
+                            id="company-bank"
                             rows={3}
                             value={formData.bankDetails || ''}
-                            onChange={e => setFormData({ ...formData, bankDetails: e.target.value })}
-                            placeholder="Bank Name, Account Holder, A/C Number, IFSC Code, Branch"
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono text-xs focus:ring-2 focus:ring-accent focus:outline-none"
+                            onChange={e => set('bankDetails', e.target.value)}
+                            placeholder="Bank, account holder, account number, IFSC, branch"
+                            className={cx(FIELD, 'h-auto py-2 font-mono text-[12.5px]')}
                         />
+                        <p className="text-[12px] text-label-3 mt-1">Printed on statements so a customer knows where to pay.</p>
                     </div>
                 </div>
+            </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-800">
-                    <button
-                        type="submit"
-                        className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
-                    >
-                        Save Company Profile
-                    </button>
+            <div className="px-5 py-3.5 max-md:px-4 border-t border-separator bg-card-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-[12.5px] text-label-2 min-w-0" role="status" aria-live="polite">
+                    {savedNotice ? <span className="text-pos font-semibold">Saved. The dashboards pick it up straight away.</span> : 'Changes apply for everyone once saved.'}
+                </p>
+                <div className="flex items-center justify-end gap-2 max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
+                    <Button type="submit" variant="primary">Save company profile</Button>
                 </div>
-            </form>
-        </div>
+            </div>
+        </form>
     );
 };
 

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, DataVisibility, UserPermissions, TeamMemberDraft, DEFAULT_ROLE_PERMISSIONS } from '../types';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button, cx } from './ui/Primitives';
+import { FIELD, LABEL } from './ui/fields';
 
 interface UserModalProps {
     userToEdit: User | null;
@@ -23,10 +25,36 @@ const toCrmCode = (value: string) =>
  */
 const typeCrmCode = (value: string) => value.toUpperCase().replace(/[^A-Z0-9_]+/g, '_');
 
+/** Each role, and what it stands for. The preset it applies is in DEFAULT_ROLE_PERMISSIONS. */
+const ROLE_CHOICES: { role: UserRole; label: string; hint: string }[] = [
+    { role: UserRole.Admin, label: 'Admin', hint: 'Everything, including the team and the data source.' },
+    { role: UserRole.Manager, label: 'Manager / sales head', hint: 'The whole book: adds and edits customers and cheques, reports across every CRM.' },
+    { role: UserRole.CRM, label: 'CRM account owner', hint: 'Their own portfolio: follow-ups, new customers, cheques.' },
+    { role: UserRole.Collector, label: 'Collection executive', hint: 'Follow-up notes and cheque entry on the accounts they are assigned.' },
+    { role: UserRole.Viewer, label: 'Read-only viewer', hint: 'Reads summaries and reports; changes nothing.' },
+];
+
+const SCOPE_CHOICES: { value: DataVisibility; label: string; hint: string }[] = [
+    { value: DataVisibility.AssignedOnly, label: 'Assigned portfolios only', hint: 'The accounts owned by the CRM codes chosen below.' },
+    { value: DataVisibility.All, label: 'Every account', hint: 'The whole book, filterable by CRM.' },
+];
+
+/** Every right the form can grant, in the order the Team table lists them. */
+const RIGHT_CHOICES: { key: keyof UserPermissions; label: string; hint: string; danger?: boolean }[] = [
+    { key: 'canAddCustomer', label: 'Add customers', hint: 'Create new customer accounts.' },
+    { key: 'canEditCustomer', label: 'Edit customer details', hint: 'Contacts, mobile, email and designation.' },
+    { key: 'canEditFinancials', label: 'Edit financial amounts', hint: 'The total due and the ageing breakdown.' },
+    { key: 'canEditFollowUp', label: 'Log follow-ups', hint: 'Notes, next dates and cash forecasts.' },
+    { key: 'canManagePdc', label: 'Manage cheques', hint: 'Add, present and clear post-dated cheques.' },
+    { key: 'canReassignCrm', label: 'Reassign CRM owners', hint: 'Move accounts between team members.' },
+    { key: 'canExportData', label: 'Export reports', hint: 'Download the cheque register. The book and reports also need Admin or Manager.' },
+    { key: 'canDeleteCustomer', label: 'Delete customers', hint: 'Remove customer records for good.', danger: true },
+];
+
+
 const KNOWN_CRMS = ['ANKUR', 'PRIKSHIT', 'VISHNU', 'POONAM', 'SANDEEP', 'KAPIL', 'SAVIA', 'ROHINI', 'GARRY'];
 
 const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: UserModalProps) => {
-    const panel = useModal(true, onClose);
     const [name, setName] = useState('');
     const [crmCode, setCrmCode] = useState('');
     const [crmCodeTouched, setCrmCodeTouched] = useState(false);
@@ -162,34 +190,25 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
     const allCrmChoices = Array.from(new Set([...existingCrms, ...assignedCrms]));
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto max-md:p-0">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="user-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-150 my-auto max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Header */}
-                <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50 rounded-t-2xl">
-                    <div>
-                        <h2 id="user-title" className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                                        <span>{userToEdit ? `Edit ${userToEdit.name}` : 'Add a team member'}</span>
-                        </h2>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Configure user profile, role classification, customer access rights, and action permissions.
-                        </p>
-                    </div>
-                    <button 
-                        type="button" 
-                        onClick={onClose} 
-                        className="w-10 h-10 grid place-items-center flex-none text-label-3 hover:text-label text-2xl font-bold rounded-full hover:bg-hover"
-                     aria-label="Close">
-                        &times;
-                    </button>
-                </div>
-
-                {/* Body Form */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-5">
-                    {/* Basic Profile */}
+        <DialogShell
+            title={userToEdit ? `Edit ${userToEdit.name}` : 'Add a team member'}
+            subtitle="Who they are, what they see, and what they may change."
+            size="md"
+            onClose={onClose}
+            closeOnEscape={!saving}
+            onSubmit={handleSubmit}
+            footerNote={error && <span role="alert" className="font-semibold text-dang">{error}</span>}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose} disabled={saving}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : userToEdit ? 'Save changes' : 'Create login'}</Button>
+            </>}
+        >
+                <div className="space-y-5">
+                    {/* Who they are */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label htmlFor="userName" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                                Full Name <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
+                            <label htmlFor="userName" className={LABEL}>
+                                Full name <span className="text-dang ml-0.5" aria-hidden="true">*</span>
                             </label>
                             <input
                                 id="userName"
@@ -198,13 +217,13 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 data-autofocus
                                 onChange={(e) => setName(e.target.value)}
                                 placeholder="e.g. Ankur Sharma"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
+                                className={FIELD}
                                 required
                             />
                         </div>
                         <div>
-                            <label htmlFor="userEmail" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                                Sign-in Email <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
+                            <label htmlFor="userEmail" className={LABEL}>
+                                Sign-in email <span className="text-dang ml-0.5" aria-hidden="true">*</span>
                             </label>
                             <input
                                 id="userEmail"
@@ -213,13 +232,13 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="e.g. ankur@yourcompany.com"
                                 autoComplete="off"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
+                                className={FIELD}
                                 required={!userToEdit}
                             />
                         </div>
                         <div>
-                            <label htmlFor="userCrmCode" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                                CRM Code {userToEdit && <span className="text-gray-400 font-normal">(fixed)</span>}
+                            <label htmlFor="userCrmCode" className={LABEL}>
+                                CRM code {userToEdit && <span className="normal-case tracking-normal font-medium text-label-3">(fixed)</span>}
                             </label>
                             <input
                                 id="userCrmCode"
@@ -228,93 +247,74 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                 onChange={(e) => { setCrmCodeTouched(true); setCrmCode(typeCrmCode(e.target.value)); }}
                                 placeholder="e.g. ANKUR"
                                 readOnly={!!userToEdit}
-                                className={`w-full border rounded-xl shadow-2xs border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold font-mono tracking-wide focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white ${userToEdit ? 'bg-gray-100 dark:bg-gray-800/60 text-gray-500 dark:text-gray-400 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800'}`}
+                                className={cx(FIELD, 'font-mono font-bold tracking-wide', userToEdit && 'opacity-70')}
                             />
-                            <p className="mt-1 text-[11.5px] text-gray-500 dark:text-gray-400">
+                            <p className="mt-1 text-[12px] text-label-3">
                                 {userToEdit
                                     ? 'Customer rows are linked to this code, so it cannot be changed.'
                                     : 'Must match the CRM name in the accounts sheet for their portfolio to appear.'}
                             </p>
                         </div>
                         <div>
-                            <label htmlFor="userPassword" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
-                                Password {userToEdit ? <span className="text-gray-400 font-normal">(Leave blank to keep)</span> : <span className="text-red-600 dark:text-red-400" aria-hidden="true">*</span>}
+                            <label htmlFor="userPassword" className={LABEL}>
+                                Password {userToEdit ? <span className="normal-case tracking-normal font-medium text-label-3">(leave blank to keep)</span> : <span className="text-dang ml-0.5" aria-hidden="true">*</span>}
                             </label>
                             <input
                                 id="userPassword"
                                 type="text"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder={userToEdit ?"Keep existing password" :"At least 6 characters"}
+                                placeholder={userToEdit ? 'Keep the existing password' : 'At least 6 characters'}
                                 autoComplete="new-password"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-medium focus:ring-2 focus:ring-accent focus:border-green-500 text-gray-900 dark:text-white"
+                                className={FIELD}
                             />
                         </div>
                     </div>
 
-                    {/* Role Selection */}
+                    {/* Role: a preset of scope and rights, adjustable below */}
                     <div>
-                        <label htmlFor="userRole" className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                            System Role & Preset
-                        </label>
-                        <select aria-label="System Role & Preset"
+                        <label htmlFor="userRole" className={LABEL}>Role</label>
+                        <select
                             id="userRole"
                             value={role}
                             onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-                            className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-900 dark:text-white focus:ring-2 focus:ring-accent"
+                            className={cx(FIELD, 'font-semibold')}
                         >
-                            <option value={UserRole.Admin}>Admin (Full unrestricted access & role management)</option>
-                            <option value={UserRole.Manager}>Manager / Sales Head (Can view all CRMs, add/edit customers & PDC)</option>
-                            <option value={UserRole.CRM}>CRM Account Owner (Manage assigned portfolio, follow-ups & add customers)</option>
-                            <option value={UserRole.Collector}>Collection Executive (Follow-up collection notes & PDC entry)</option>
-                            <option value={UserRole.Viewer}>Read-Only Viewer (View summary reports & data without editing)</option>
+                            {ROLE_CHOICES.map(r => <option key={r.role} value={r.role}>{r.label}</option>)}
                         </select>
+                        <p className="mt-1 text-[12px] text-label-3">{ROLE_CHOICES.find(r => r.role === role)?.hint}</p>
                     </div>
 
-                    {/* Data Visibility / Scope */}
+                    {/* Scope: whose accounts they see */}
                     {role !== UserRole.Admin && (
-                        <div className="p-3.5 bg-slate-50 dark:bg-gray-800/60 rounded-xl border border-slate-200 dark:border-gray-700/80">
-                            <label className="block text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-2">
-                                Customer Data Visibility
-                            </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <label className={`flex items-center p-2.5 rounded-lg border cursor-pointer transition-all ${dataVisibility === DataVisibility.AssignedOnly ? 'bg-green-50 border-green-300 dark:bg-green-950/30 dark:border-green-700 text-green-900 dark:text-green-200 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs'}`}>
-                                    <input 
-                                        type="radio" 
-                                        name="visibility" 
-                                        value={DataVisibility.AssignedOnly} 
-                                        checked={dataVisibility === DataVisibility.AssignedOnly} 
-                                        onChange={() => setDataVisibility(DataVisibility.AssignedOnly)} 
-                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-accent"
-                                    />
-                                    <div>
-                                        <div className="text-xs font-semibold">Assigned Portfolio Only</div>
-                                        <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Only see own CRM / collector customer accounts</div>
-                                    </div>
-                                </label>
-                                <label className={`flex items-center p-2.5 rounded-lg border cursor-pointer transition-all ${dataVisibility === DataVisibility.All ? 'bg-green-50 border-green-300 dark:bg-green-950/30 dark:border-green-700 text-green-900 dark:text-green-200 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs'}`}>
-                                    <input 
-                                        type="radio" 
-                                        name="visibility" 
-                                        value={DataVisibility.All} 
-                                        checked={dataVisibility === DataVisibility.All} 
-                                        onChange={() => setDataVisibility(DataVisibility.All)} 
-                                        className="mr-2.5 text-green-600 dark:text-green-400 focus:ring-accent"
-                                    />
-                                    <div>
-                                        <div className="text-xs font-semibold">All Company Customers</div>
-                                        <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can view and filter across all CRM portfolios</div>
-                                    </div>
-                                </label>
+                        <div>
+                            <p className={LABEL}>Sees</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Whose accounts they see">
+                                {SCOPE_CHOICES.map(c => {
+                                    const on = dataVisibility === c.value;
+                                    return (
+                                        <label key={c.value} className={cx('flex items-start gap-3 rounded-[12px] border p-3 cursor-pointer transition-colors', on ? 'bg-accent-tint border-accent-tint-2' : 'bg-card-2 border-separator hover:bg-hover')}>
+                                            <input
+                                                type="radio"
+                                                name="visibility"
+                                                value={c.value}
+                                                checked={on}
+                                                onChange={() => setDataVisibility(c.value)}
+                                                className="w-4 h-4 mt-0.5 accent-[var(--accent)]"
+                                            />
+                                            <span>
+                                                <span className="block text-[13.5px] font-semibold text-label">{c.label}</span>
+                                                <span className="block text-[12px] text-label-3 mt-0.5">{c.hint}</span>
+                                            </span>
+                                        </label>
+                                    );
+                                })}
                             </div>
 
-                            {/* Assigned CRMs Multi-Select (For users with AssignedOnly scope) */}
                             {dataVisibility === DataVisibility.AssignedOnly && (
-                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5">
-                                        Assigned CRM Portfolios (Click to toggle):
-                                    </label>
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                <div className="mt-3 rounded-[12px] bg-card-2 p-3">
+                                    <p className="text-[12px] font-semibold text-label-2 mb-2">Which CRM portfolios · press to include or leave out</p>
+                                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Assigned CRM portfolios">
                                         {allCrmChoices.map(crm => {
                                             const isSelected = assignedCrms.includes(crm.toUpperCase());
                                             return (
@@ -322,197 +322,58 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                                     key={crm}
                                                     type="button"
                                                     onClick={() => handleToggleCrm(crm)}
-                                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                                                        isSelected
-                                                            ? 'bg-green-600 text-white shadow-2xs'
-                                                            : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'
-                                                    }`}
+                                                    aria-pressed={isSelected}
+                                                    className={cx('h-8 px-3 rounded-full text-[12.5px] font-bold font-mono transition-colors', isSelected ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator hover:bg-hover')}
                                                 >
-                                                    {isSelected ? '✓ ' : '+ '}{crm}
+                                                    {crm}
                                                 </button>
                                             );
                                         })}
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 mt-2.5">
                                         <input
                                             type="text"
                                             value={customCrmInput}
                                             onChange={e => setCustomCrmInput(e.target.value)}
-                                            placeholder="Add custom CRM name (e.g. VIP_TEAM)"
-                                            className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 flex-1"
+                                            placeholder="Another CRM code, e.g. VIP_TEAM"
+                                            aria-label="Another CRM code"
+                                            className={cx(FIELD, 'h-9 max-md:h-10 bg-card')}
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={handleAddCustomCrm}
-                                            className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs font-bold rounded-lg text-gray-800 dark:text-gray-200"
-                                        >
-                                            Add
-                                        </button>
+                                        <Button type="button" size="sm" variant="secondary" onClick={handleAddCustomCrm}>Add</Button>
                                     </div>
                                 </div>
                             )}
                         </div>
                     )}
 
-                    {/* Granular Permissions Section */}
+                    {/* Rights: the preset, adjusted per person */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <label className="block text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
-                                Granular User Rights & Capabilities
-                            </label>
-                            <span className="text-[11.5px] text-gray-500 dark:text-gray-400">
-                                Customizable per user
-                            </span>
+                        <div className="flex items-baseline justify-between gap-3 mb-1">
+                            <p className={LABEL}>May</p>
+                            <span className="text-[12px] text-label-3">The role fills these in; change any of them for this person.</span>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            {/* Can Add Customer */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canAddCustomer ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canAddCustomer}
-                                    onChange={() => handlePermissionToggle('canAddCustomer')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Add New Customers</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can create fresh customer master records</div>
-                                </div>
-                            </label>
-
-                            {/* Can Edit Customer Master */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canEditCustomer ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canEditCustomer}
-                                    onChange={() => handlePermissionToggle('canEditCustomer')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Edit Customer Info</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can update contacts, mobile, email, and designation</div>
-                                </div>
-                            </label>
-
-                            {/* Can Edit Financials & Ageing */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canEditFinancials ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canEditFinancials}
-                                    onChange={() => handlePermissionToggle('canEditFinancials')}
-                                    className="w-4 h-4 mt-0.5 rounded text-amber-600 dark:text-amber-400 focus:ring-amber-500"
-                                />
-                                <div>
-                                    <div className="font-bold">Edit Financial Amounts</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can modify total due & ageing breakdown</div>
-                                </div>
-                            </label>
-
-                            {/* Can Log Follow-ups & Forecast */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canEditFollowUp ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canEditFollowUp}
-                                    onChange={() => handlePermissionToggle('canEditFollowUp')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Log Follow-ups & Forecasts</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can record notes, dates, and cash targets</div>
-                                </div>
-                            </label>
-
-                            {/* Can Manage PDC Cheques */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canManagePdc ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canManagePdc}
-                                    onChange={() => handlePermissionToggle('canManagePdc')}
-                                    className="mt-0.5 w-4 h-4 rounded text-emerald-600 dark:text-emerald-400 focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Manage PDC Cheques</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can add, deposit, and clear post-dated cheques</div>
-                                </div>
-                            </label>
-
-                            {/* Can Reassign CRM */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canReassignCrm ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canReassignCrm}
-                                    onChange={() => handlePermissionToggle('canReassignCrm')}
-                                    className="w-4 h-4 mt-0.5 rounded text-blue-600 dark:text-blue-400 focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Reassign CRM Owners</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can reallocate accounts between team members</div>
-                                </div>
-                            </label>
-
-                            {/* Can Export Data */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canExportData ? 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700 text-purple-900 dark:text-purple-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canExportData}
-                                    onChange={() => handlePermissionToggle('canExportData')}
-                                    className="w-4 h-4 mt-0.5 rounded text-accent focus:ring-accent"
-                                />
-                                <div>
-                                    <div className="font-bold">Export Reports & Excel</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">
-                                        Can download spreadsheet analysis. Downloading the customer book
-                                        or a report needs Admin or Manager as well — this alone covers
-                                        the cheque register.
-                                    </div>
-                                </div>
-                            </label>
-
-                            {/* Can Delete Customer */}
-                            <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${permissions.canDeleteCustomer ? 'bg-red-50/70 dark:bg-red-950/30 border-red-300 dark:border-red-700 text-red-900 dark:text-red-200 font-semibold' : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={permissions.canDeleteCustomer}
-                                    onChange={() => handlePermissionToggle('canDeleteCustomer')}
-                                    className="w-4 h-4 mt-0.5 rounded text-red-600 dark:text-red-400 focus:ring-dang"
-                                />
-                                <div>
-                                    <div className="font-bold">Delete Customers</div>
-                                    <div className="text-[11.5px] text-gray-500 dark:text-gray-400">Can permanently delete customer records</div>
-                                </div>
-                            </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {RIGHT_CHOICES.map(r => {
+                                const on = !!permissions[r.key];
+                                return (
+                                    <label key={r.key} className={cx('flex items-start gap-3 rounded-[12px] border p-3 cursor-pointer transition-colors', on ? (r.danger ? 'bg-dang-bg border-dang/30' : 'bg-accent-tint border-accent-tint-2') : 'bg-card-2 border-separator hover:bg-hover')}>
+                                        <input
+                                            type="checkbox"
+                                            checked={on}
+                                            onChange={() => handlePermissionToggle(r.key)}
+                                            className={cx('w-4 h-4 mt-0.5 rounded', r.danger ? 'accent-[var(--dang)]' : 'accent-[var(--accent)]')}
+                                        />
+                                        <span>
+                                            <span className={cx('block text-[13.5px] font-semibold', on && r.danger ? 'text-dang' : 'text-label')}>{r.label}</span>
+                                            <span className="block text-[12px] text-label-3 mt-0.5">{r.hint}</span>
+                                        </span>
+                                    </label>
+                                );
+                            })}
                         </div>
                     </div>
-
-                    {/* Footer */}
-                    {error && (
-                        <div
-                            role="alert"
-                            className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[12.5px] font-semibold text-red-800 dark:text-red-300"
-                        >
-                            {error}
-                        </div>
-                    )}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-end space-x-3 max-md:pb-[env(safe-area-inset-bottom)] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            disabled={saving}
-                            className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
-                         aria-label="Close">
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={saving}
-                            className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
-                        >
-                            <span>{saving ? 'Saving…' : userToEdit ? 'Save changes' : 'Create login'}</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                </div>
+        </DialogShell>
     );
 };
 

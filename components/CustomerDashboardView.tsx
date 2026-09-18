@@ -7,6 +7,7 @@ import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatCompact, formatINR, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 
 interface CustomerDashboardViewProps {
     data: Outstanding[];
@@ -223,6 +224,8 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
     // Bulk selection
     const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+    /** The bulk follow-up date is asked about in the app, with the count and the date named. */
+    const [confirmBulkDate, setConfirmBulkDate] = useState(false);
     const [bulkRank, setBulkRank] = useState<PaymentRank | ''>('');
     const [bulkCrm, setBulkCrm] = useState('');
     // Starts on today, because "bring the overdue ones back to today" is the
@@ -1106,16 +1109,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                     </button>
                                 )}
                                 <button
-                                    onClick={() => {
-                                        if (!bulkFollowUp) return;
-                                        const n = selectedCustomerIds.length;
-                                        if (!window.confirm(
-                                            `Set the follow-up date to ${formatDay(bulkFollowUp)} on ${n} account${n === 1 ? '' : 's'}?\n\n`
-                                            + 'Each account\'s activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.',
-                                        )) return;
-                                        onBulkSetFollowUp(selectedCustomerIds, bulkFollowUp);
-                                        setSelectedCustomerIds([]);
-                                    }}
+                                    onClick={() => { if (bulkFollowUp) setConfirmBulkDate(true); }}
                                     disabled={!bulkFollowUp}
                                     className="px-3 py-1.5 min-h-[32px] bg-accent text-card text-xs font-bold rounded-lg disabled:opacity-40"
                                 >
@@ -1578,11 +1572,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                                     {/* Delete Customer Button */}
                                                     {canDeleteCustomer && onDeleteCustomer && (
                                                         <button
-                                                            onClick={() => {
-                                                                if (confirm(`Delete "${item.company}"? This cannot be undone.`)) {
-                                                                    onDeleteCustomer(item.id);
-                                                                }
-                                                            }}
+                                                            onClick={() => onDeleteCustomer(item.id)}
                                                             className="w-8 h-8 grid place-items-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-dang hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-full transition-colors"
                                                             title="Delete customer"
                                                             aria-label={`Delete ${item.company}`}
@@ -1749,6 +1739,17 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                     })}
                 </div>
             )}
+            <ConfirmDialog
+                open={confirmBulkDate}
+                title={`Set the follow-up date on ${selectedCustomerIds.length} account${selectedCustomerIds.length === 1 ? '' : 's'}?`}
+                confirmLabel="Set the date"
+                tone="primary"
+                onCancel={() => setConfirmBulkDate(false)}
+                onConfirm={() => { setConfirmBulkDate(false); if (!bulkFollowUp) return; onBulkSetFollowUp?.(selectedCustomerIds, bulkFollowUp); setSelectedCustomerIds([]); }}
+            >
+                <p>Every selected account gets <strong className="text-label">{bulkFollowUp ? formatDay(bulkFollowUp) : ''}</strong> as its next follow-up date.</p>
+                <p className="mt-2">Each account's activity will record the move — and, where it was overdue, that its CRM had not rescheduled it.</p>
+            </ConfirmDialog>
         </div>
     );
 };

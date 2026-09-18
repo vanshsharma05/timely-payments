@@ -9,7 +9,9 @@ import { renderTemplate } from '../services/messageTemplate';
 import CustomerActivityPanel from './CustomerActivityPanel';
 import { useIsPhone } from './ui/usePhone';
 import { Disclosure } from './ui/Disclosure';
-import { useModal } from './ui/useModal';
+import { ConfirmDialog } from './ui/ConfirmDialog';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
 import { ChequeStateBadge, stateOf } from './ui/ChequeState';
 import StatusBadge from './StatusBadge';
 import { followUpStatusOf } from '../types';
@@ -52,8 +54,6 @@ const FollowUpModal = ({
     position,
     onNavigate,
 }: FollowUpModalProps) => {
-    // Focus stays inside; Esc and the arrows are handled by this dialog's own key handler below.
-    const panel = useModal(true, undefined, { closeOnEscape: false });
 
     const [nextFollowUpDate, setNextFollowUpDate] = useState(() => {
         if (customer.followUpDate) {
@@ -196,12 +196,19 @@ const FollowUpModal = ({
         setShowAddContactForm(false);
     };
 
+    /** Which contact is about to go, asked about in the app before it does. */
+    const [removingContact, setRemovingContact] = useState<AdditionalContact | null>(null);
     const handleRemoveContact = (id: string) => {
-        if (window.confirm('Remove this contact person from the company records?')) {
-            setAdditionalContacts(prev => prev.filter(c => c.id !== id));
-            if (recipientType === id) {
-                setRecipientType('primary');
-            }
+        const c = additionalContacts.find(x => x.id === id);
+        if (c) setRemovingContact(c);
+    };
+    const confirmRemoveContact = () => {
+        const id = removingContact?.id;
+        setRemovingContact(null);
+        if (!id) return;
+        setAdditionalContacts(prev => prev.filter(c => c.id !== id));
+        if (recipientType === id) {
+            setRecipientType('primary');
         }
     };
 
@@ -410,79 +417,62 @@ const FollowUpModal = ({
     }, [activeRecipient.number]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="follow-up-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl lg:max-w-6xl max-h-[92vh] flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:max-h-none max-md:h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-slate-50 dark:bg-gray-800/50 rounded-t-2xl max-md:px-4 max-md:py-3 max-md:rounded-none">
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <BuildingOfficeIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
-                            <h2 id="follow-up-title" className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white leading-tight">
-                                {customer.company}
-                            </h2>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                            <StatusBadge status={followUpStatusOf(customer)} />
-                            {customer.followUpDate && (
-                                <span>Next <strong className="text-gray-800 dark:text-gray-200">{new Date(customer.followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</strong>{customer.forecastAmount ? <> · <strong className="text-gray-800 dark:text-gray-200">{formatCurrencyValue(customer.forecastAmount)}</strong> expected</> : null}</span>
-                            )}
-                            <span>{lastFollowUpText}</span>
-                            <span>Owner <strong className="text-gray-800 dark:text-gray-200">{findOwner(users, customer.crmOwnerId)?.name || customer.crmOwnerId || 'Unassigned'}</strong></span>
-                            {customer.email && customer.email.includes('@') && <span>{customer.email}</span>}
-                            {onEditCustomer && (
-                                <button
-                                    type="button"
-                                    onClick={() => onEditCustomer(customer)}
-                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 font-semibold underline flex items-center gap-1"
-                                >
-                                    Edit details
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-none">
-                        {position && onNavigate && position.total > 1 && (
-                            <div className="hidden sm:flex items-center gap-1 mr-2 text-[12.5px] text-label-3" aria-label="Move through the list">
-                                <button type="button" onClick={() => onNavigate(-1)} disabled={saving || position.index <= 0} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Previous account (Alt+←)" aria-label="Previous account">‹</button>
-                                <span className="num tabular-nums">{position.index + 1} / {position.total}</span>
-                                <button type="button" onClick={() => onNavigate(1)} disabled={saving || position.index >= position.total - 1} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Next account (Alt+→)" aria-label="Next account">›</button>
-                            </div>
-                        )}
-                        <button
-                            onClick={onClose}
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Close (Esc)"
-                            aria-label="Close">
-                            &times;
+        <DialogShell
+            title={customer.company}
+            icon={<BuildingOfficeIcon className="w-5 h-5" />}
+            subtitle={
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <StatusBadge status={followUpStatusOf(customer)} />
+                    {customer.followUpDate && (
+                        <span>Next <strong className="text-label">{new Date(customer.followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</strong>{customer.forecastAmount ? <> · <strong className="text-label">{formatCurrency(customer.forecastAmount)}</strong> expected</> : null}</span>
+                    )}
+                    <span>{lastFollowUpText}</span>
+                    <span>Owner <strong className="text-label">{findOwner(users, customer.crmOwnerId)?.name || customer.crmOwnerId || 'Unassigned'}</strong></span>
+                    {customer.email && customer.email.includes('@') && <span>{customer.email}</span>}
+                    {onEditCustomer && (
+                        <button type="button" onClick={() => onEditCustomer(customer)} className="text-accent font-semibold underline underline-offset-2">
+                            Edit details
                         </button>
+                    )}
+                </div>
+            }
+            headerExtra={position && onNavigate && position.total > 1 ? (
+                <div className="hidden sm:flex items-center gap-1 mr-1 text-[12.5px] text-label-3" aria-label="Move through the list">
+                    <button type="button" onClick={() => onNavigate(-1)} disabled={saving || position.index <= 0} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Previous account (Alt+Left)" aria-label="Previous account">&lsaquo;</button>
+                    <span className="num tabular-nums">{position.index + 1} / {position.total}</span>
+                    <button type="button" onClick={() => onNavigate(1)} disabled={saving || position.index >= position.total - 1} className="h-8 w-8 grid place-items-center rounded-full hover:bg-hover disabled:opacity-30 text-label-2" title="Next account (Alt+Right)" aria-label="Next account">&rsaquo;</button>
+                </div>
+            ) : undefined}
+            subheader={isPhone ? (
+                <div className="px-4 py-2 bg-card">
+                    <div className="flex rounded-xl bg-card-2 p-1 gap-1" role="tablist" aria-label="Follow-up or account activity">
+                        {([['form', 'Follow-up'], ['activity', 'Activity']] as const).map(([key, label]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                role="tab"
+                                aria-selected={phoneTab === key}
+                                onClick={() => setPhoneTab(key)}
+                                className={`flex-1 h-10 rounded-lg text-[14px] font-bold transition-colors ${
+                                    phoneTab === key ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2'
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
                     </div>
                 </div>
-
-                {isPhone && (
-                    <div className="flex-none px-4 py-2 border-b border-separator bg-card">
-                        <div className="flex rounded-xl bg-card-2 p-1 gap-1" role="tablist" aria-label="Follow-up or account activity">
-                            {([['form', 'Follow-up'], ['activity', 'Activity']] as const).map(([key, label]) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={phoneTab === key}
-                                    onClick={() => setPhoneTab(key)}
-                                    className={`flex-1 h-10 rounded-lg text-[14px] font-bold transition-colors ${
-                                        phoneTab === key ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2'
-                                    }`}
-                                >
-                                    {label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Body: the form on the left, the shared record on the right.
+            ) : undefined}
+            size="wide"
+            onClose={onClose}
+            closeOnEscape={false}
+            flush
+            scroll={false}
+            bodyClassName="flex flex-col lg:flex-row"
+        >
+                {/* The form on the left, the shared record on the right.
                     Narrow screens have no room for two columns, so the record
                     drops underneath the form instead. */}
-                <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
                   <div className={`flex flex-col min-h-0 lg:flex-1 lg:border-r border-separator max-md:flex-1 ${isPhone && phoneTab !== 'form' ? 'hidden' : ''}`}>
                 <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 max-md:p-4">
                     
@@ -1181,22 +1171,16 @@ const FollowUpModal = ({
                 )}
                 {/* Modal Footer */}
                 <div className="bg-gray-50 dark:bg-gray-800/80 px-6 py-3.5 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-800 rounded-b-2xl max-md:px-4 max-md:py-3 max-md:rounded-none max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:h-11 max-md:[&>button]:text-[14px]">
-                    <button 
-                        onClick={onClose} 
-                        type="button" 
-                        className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40"
-                     aria-label="Close">
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
+                    <Button type="button" variant="quiet" onClick={onClose} aria-label="Close">Cancel</Button>
+                    <Button
                         type="button"
+                        variant="primary"
+                        onClick={handleSave}
                         disabled={!canEditFollowUp || saving}
                         title={canEditFollowUp ? 'Save this follow-up' : 'Your role can read follow-ups but not record them'}
-                        className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                     >
                         {saving ? 'Saving…' : 'Save follow-up'}
-                    </button>
+                    </Button>
                 </div>
                   </div>
 
@@ -1207,9 +1191,17 @@ const FollowUpModal = ({
                         onLogged={handleActivityLogged}
                     />
                   </div>
-                </div>
-            </div>
-        </div>
+            <ConfirmDialog
+                open={!!removingContact}
+                title="Remove this contact?"
+                confirmLabel="Remove contact"
+                onCancel={() => setRemovingContact(null)}
+                onConfirm={confirmRemoveContact}
+            >
+                <p><strong className="text-label">{removingContact?.name}</strong>{removingContact?.post ? ` · ${removingContact.post}` : ''}{removingContact?.mobile ? ` · ${removingContact.mobile}` : ''}.</p>
+                <p className="mt-2">They come off this account's contact list when you save the follow-up. Cancel the follow-up and they stay.</p>
+            </ConfirmDialog>
+        </DialogShell>
     );
 };
 

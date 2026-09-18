@@ -89,7 +89,8 @@ describe('useModal', () => {
         const onConfirm = vi.fn(); const onCancel = vi.fn();
         render(<ConfirmDialog open title="Delete?" confirmLabel="Delete it" onConfirm={onConfirm} onCancel={onCancel}>Body</ConfirmDialog>);
         expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
-        expect(screen.getByRole('alertdialog').getAttribute('aria-labelledby')).toBe('confirm-title');
+        const d = screen.getByRole('alertdialog');
+        expect(document.getElementById(d.getAttribute('aria-labelledby')!)!.textContent).toBe('Delete?');   // labelled by its title
         fireEvent.keyDown(window, { key: 'Escape' });
         expect(onCancel).toHaveBeenCalledTimes(1);
         expect(onConfirm).not.toHaveBeenCalled();

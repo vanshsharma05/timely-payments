@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Template } from '../types';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
+import { FIELD, LABEL } from './ui/fields';
 
 interface TemplateModalProps {
     templateToEdit: Template | null;
@@ -30,7 +32,6 @@ const PLACEHOLDERS: { token: string; label: string }[] = [
 ];
 
 const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) => {
-    const panel = useModal(true, onClose);
     const [name, setName] = useState('');
     const [content, setContent] = useState('');
     const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -81,68 +82,61 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex justify-center items-center p-4 overflow-y-auto max-md:p-0 max-md:items-start">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="template-title" className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                <form onSubmit={handleSubmit}>
-                    <div className="p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 id="template-title" className="text-2xl font-bold text-gray-800 dark:text-white">
-                                {templateToEdit ? 'Edit template' : 'New template'}
-                            </h2>
-                            <button type="button" onClick={onClose} className="w-9 h-9 grid place-items-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-hover text-2xl leading-none" aria-label="Close">&times;</button>
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label htmlFor="templateName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Template Name</label>
-                                <input aria-label="Template name"
-                                    id="templateName"
-                                    data-autofocus
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-accent focus:border-green-500"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="templateContent" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Template Content</label>
-                                <textarea
-                                    id="templateContent"
-                                    ref={contentRef}
-                                    value={content}
-                                    onChange={(e) => setContent(e.target.value)}
-                                    rows={10}
-                                    className="mt-1 block w-full border rounded-md shadow-sm bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 focus:ring-accent focus:border-green-500 font-mono text-sm"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Available Placeholders: <span className="font-normal text-gray-500 dark:text-gray-400">click one to drop it in where the cursor is</span>
-                                </p>
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                    {PLACEHOLDERS.map(p => (
-                                        <button
-                                            key={p.token}
-                                            type="button"
-                                            onClick={() => insertPlaceholder(p.token)}
-                                            title={p.label}
-                                            className="font-mono text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded px-2 py-1 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                                        >
-                                            {p.token}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+        <DialogShell
+            title={templateToEdit ? 'Edit template' : 'New template'}
+            subtitle="The wording offered when someone opens a WhatsApp reminder. Placeholders fill in from the account."
+            onClose={onClose}
+            onSubmit={handleSubmit}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose}>Cancel</Button>
+                <Button type="submit" variant="primary">Save template</Button>
+            </>}
+        >
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="templateName" className={LABEL}>Template name</label>
+                    <input aria-label="Template name"
+                        id="templateName"
+                        data-autofocus
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className={FIELD}
+                        required
+                    />
+                </div>
+                <div>
+                    <label htmlFor="templateContent" className={LABEL}>Message</label>
+                    <textarea
+                        id="templateContent"
+                        ref={contentRef}
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        rows={10}
+                        className={`${FIELD} h-auto py-2 leading-relaxed`}
+                        required
+                    />
+                </div>
+                <div>
+                    <p className="text-[12.5px] font-semibold text-label-2">
+                        Placeholders <span className="font-normal text-label-3">— press one to drop it in where the cursor is</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                        {PLACEHOLDERS.map(p => (
+                            <button
+                                key={p.token}
+                                type="button"
+                                onClick={() => insertPlaceholder(p.token)}
+                                title={p.label}
+                                className="font-mono text-[12px] bg-card-3 text-label rounded-full px-2.5 h-7 hover:bg-hover transition-colors"
+                            >
+                                {p.token}
+                            </button>
+                        ))}
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-800 px-6 py-3 flex justify-end space-x-3 max-md:pb-[calc(12px+env(safe-area-inset-bottom))] max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]">
-                        <button onClick={onClose} type="button" className="h-9 px-4 rounded-full text-[13px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label disabled:opacity-40" aria-label="Close">Cancel</button>
-                        <button type="submit" className="h-9 px-5 rounded-full text-[13px] font-semibold bg-accent text-on-accent hover:bg-accent-press shadow-e1 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">Save template</button>
-                    </div>
-                </form>
+                </div>
             </div>
-        </div>
+        </DialogShell>
     );
 };
 

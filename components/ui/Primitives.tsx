@@ -17,7 +17,7 @@ export const cx = (...parts: (string | false | null | undefined)[]) =>
 
 /* --------------------------------- Button -------------------------------- */
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'destructive' | 'quiet';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
@@ -27,7 +27,10 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   secondary: 'bg-accent-tint text-accent hover:bg-accent-tint-2 active:scale-[.98]',
   /* Material text */
   ghost: 'bg-transparent text-label-2 hover:bg-hover hover:text-label',
+  /* Tonal red: a page-level control that leads to something destructive */
   danger: 'bg-dang-bg text-dang hover:brightness-95 active:scale-[.98]',
+  /* Filled red: the final answer in a question dialog, the one that does it */
+  destructive: 'bg-dang text-card shadow-e1 hover:brightness-95 active:scale-[.98]',
   /* Neutral outlined */
   quiet: 'bg-card border border-separator-strong text-label-2 hover:bg-hover hover:text-label',
 };

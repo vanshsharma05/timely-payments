@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useModal } from './ui/useModal';
+import { DialogShell } from './ui/DialogShell';
+import { Button } from './ui/Primitives';
 import { Outstanding, Template, User } from '../types';
 import { recordWhatsAppOpened } from '../services/whatsappTrace';
 import { WhatsAppIcon } from './icons/Icons';
@@ -14,7 +15,6 @@ interface WhatsAppReminderModalProps {
 }
 
 export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUser }: WhatsAppReminderModalProps) => {
-    const panel = useModal(true, onClose);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id || '');
     const [recipientType, setRecipientType] = useState<'primary' | string>('primary');
     const [customRecipientNumber, setCustomRecipientNumber] = useState('');
@@ -76,31 +76,34 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUse
     }, [whatsAppMessage]);
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-3 sm:p-4 overflow-y-auto backdrop-blur-xs max-md:p-0 max-md:items-start">
-            <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="whatsapp-title" className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-200 dark:border-gray-800 my-auto animate-in fade-in zoom-in-95 duration-150 max-md:min-h-[100dvh] max-md:max-w-none max-md:rounded-none max-md:border-0 max-md:my-0">
-                {/* Header */}
-                <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-green-50/50 dark:bg-green-950/20 rounded-t-2xl">
-                    <div className="flex items-center gap-2">
-                        <WhatsAppIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
-                        <div>
-                            <h3 id="whatsapp-title" className="font-bold text-gray-900 dark:text-white text-base leading-tight">
-                                Send WhatsApp Reminder
-                            </h3>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {customer.company}
-                            </div>
-                        </div>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl font-bold p-1 leading-none rounded-lg"
-                     aria-label="Close">
-                        &times;
-                    </button>
-                </div>
-
-                {/* Body */}
-                <div className="p-5 space-y-4 text-xs">
+        <DialogShell
+            title="WhatsApp reminder"
+            subtitle={customer.company}
+            icon={<WhatsAppIcon className="w-5 h-5" />}
+            size="md"
+            onClose={onClose}
+            footer={<>
+                <Button type="button" variant="quiet" onClick={onClose}>Close</Button>
+                <a
+                    href={`https://wa.me/${cleanWhatsAppNumber}?text=${whatsAppMessage}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                        recordWhatsAppOpened(customer, { name: activeRecipient.name, number: cleanWhatsAppNumber }, templates.find(t => t.id === selectedTemplateId)?.name, currentUser);
+                        onClose();
+                    }}
+                    className={`inline-flex items-center justify-center gap-2 h-10 px-4.5 rounded-full font-semibold text-[14px] transition-all whitespace-nowrap ${
+                        cleanWhatsAppNumber
+                            ? 'bg-green-600 hover:bg-green-700 text-white shadow-e1'
+                            : 'bg-card-3 text-label-3 pointer-events-none'
+                    }`}
+                >
+                    <WhatsAppIcon className="w-4 h-4" />
+                    <span>Open WhatsApp to {activeRecipient.name} ({cleanWhatsAppNumber || 'Enter Number'})</span>
+                </a>
+            </>}
+        >
+                <div className="space-y-4 text-xs">
                     {/* Recipient Selection */}
                     <div>
                         <label className="block text-[12.5px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1.5">
@@ -230,35 +233,7 @@ export const WhatsAppReminderModal = ({ customer, templates, onClose, currentUse
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="px-5 py-3.5 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-2 rounded-b-2xl max-md:mt-auto max-md:rounded-none max-md:pb-[calc(14px+env(safe-area-inset-bottom))] max-md:[&>*]:flex-1 max-md:[&>*]:min-h-[44px]">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold text-xs hover:bg-gray-300 transition-colors"
-                     aria-label="Close">
-                        Close
-                    </button>
-                    <a
-                        href={`https://wa.me/${cleanWhatsAppNumber}?text=${whatsAppMessage}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => {
-                            recordWhatsAppOpened(customer, { name: activeRecipient.name, number: cleanWhatsAppNumber }, templates.find(t => t.id === selectedTemplateId)?.name, currentUser);
-                            onClose();
-                        }}
-                        className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-lg font-bold text-xs transition-all shadow-sm ${
-                            cleanWhatsAppNumber
-                                ? 'bg-green-600 hover:bg-green-700 text-white'
-                                : 'bg-gray-300 dark:bg-gray-700 text-gray-500 pointer-events-none'
-                        }`}
-                    >
-                        <WhatsAppIcon className="w-4 h-4" />
-                        <span>Open WhatsApp to {activeRecipient.name} ({cleanWhatsAppNumber || 'Enter Number'})</span>
-                    </a>
-                </div>
-            </div>
-        </div>
+        </DialogShell>
     );
 };
 
