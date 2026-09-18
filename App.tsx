@@ -1,55 +1,62 @@
 import { useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { EXPECTED_HEADERS, downloadTemplate } from './services/excel';
+import { Outstanding, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { SyncPassResult } from './services/useSupabaseSync';
-import { SaveStatus } from './components/SaveStatus';
+import { processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
+import { EXPECTED_HEADERS, downloadTemplate } from './services/excel';
+import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { searchScopeFor } from './services/search';
+import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { useSession } from './hooks/useSession';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
 import { usePersistence } from './hooks/usePersistence';
-import { useDataSource } from './hooks/useDataSource';
+import { useDataSource, Question } from './hooks/useDataSource';
+import { useCustomers } from './hooks/useCustomers';
 import { useCheques } from './hooks/useCheques';
 import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
-import { useCustomers } from './hooks/useCustomers';
 import { useWorklistFilters } from './hooks/useWorklistFilters';
-import { Outstanding, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
-import { processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
-import { CustomerDashboardView } from './components/CustomerDashboardView';
-import { CustomerEditModal } from './components/CustomerEditModal';
-import LoginScreen from './components/LoginScreen';
-import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
-import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
-const LiveStockView = lazy(() => import('./components/LiveStockView'));
-import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
 import { formatCompact, startOfToday } from './components/ui/format';
-import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { Card, LoadingList } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
+import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
+import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 import { ShellBanner, ShellMessage } from './components/shell/ShellBanner';
-import FollowUpModal from './components/FollowUpModal';
-import AlertsView from './components/AlertsView';
-const UserModal = lazy(() => import('./components/UserModal'));
-const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'));
-const TemplateModal = lazy(() => import('./components/TemplateModal'));
+import { SaveStatus } from './components/SaveStatus';
+import LoginScreen from './components/LoginScreen';
 import { CompanyToday } from './components/pages/CompanyToday';
 import { PersonalToday } from './components/pages/PersonalToday';
-const ReportsView = lazy(() => import('./components/ReportsView'));
-const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
-const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
-const DataSourceView = lazy(() => import('./components/DataSourceView'));
-const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
-import PdcModal from './components/PdcModal';
+import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { TeamView } from './components/TeamView';
 import { TemplatesView } from './components/TemplatesView';
+import AlertsView from './components/AlertsView';
+import { CustomerEditModal } from './components/CustomerEditModal';
+import FollowUpModal from './components/FollowUpModal';
+import PdcModal from './components/PdcModal';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
+// The tab views and the setup dialogs arrive as their own chunks the first time they are opened.
+const ReportsView = lazy(() => import('./components/ReportsView'));
+const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
+const LiveStockView = lazy(() => import('./components/LiveStockView'));
+const DataSourceView = lazy(() => import('./components/DataSourceView'));
+const UserModal = lazy(() => import('./components/UserModal'));
+const TemplateModal = lazy(() => import('./components/TemplateModal'));
+const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'));
+const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
+const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
 
 /**
+ * The root: who is signed in, the book and the other collections, and the
+ * shell around the screen for the tab.
+ *
  * Supabase is the master record and the only one: state is loaded from it on
- * sign-in and written back as it changes. Nothing about the book is cached in
- * the browser, so a stale tab can never overwrite the team's work.
+ * sign-in and written back as it changes (hooks/useSession, hooks/usePersistence).
+ * Nothing about the book is cached in the browser, so a stale tab can never
+ * overwrite the team's work. Each feature's actions and dialogs live in a
+ * hook of their own (customers, cheques, team, templates, the data source,
+ * the Today filters); the figures on Today are pure functions in
+ * services/metrics.ts; the two Today pages are components/pages.
  */
-
 const App = () => {
     /**
      * Who is signed in, and the one read of everything after sign-in
@@ -82,6 +89,32 @@ const App = () => {
      * every change, with a loading flag that blinked the skeleton each time.
      */
     const outstandingData = useMemo(() => (currentUser ? processStatuses(scopeTo(currentUser, appData)) : []), [currentUser, appData]);
+    const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>([]);
+    const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
+
+    /** The banner at the top of the shell. Errors linger; confirmations do not. */
+    const [syncMessage, setSyncMessage] = useState<ShellMessage>(null);
+    const notify = useCallback((type: 'success' | 'error', text: string) => {
+        setSyncMessage({ type, text });
+        window.setTimeout(() => setSyncMessage(null), type === 'error' ? 12000 : 5000);
+    }, []);
+    /** "Saved N of M" or the reason, after a bulk change has been given to the server. */
+    const reportBulk = (r: SyncPassResult, ids: string[], done: string) => {
+        const failed = r.failed.filter(f => ids.includes(f.id));
+        if (!failed.length) notify('success', done);
+        else notify('error', `${done} — but ${failed.length} of ${ids.length} could not be saved (${failed[0].message}). They are kept in this tab and will be retried.`);
+    };
+    /**
+     * A question before something that cannot be undone, asked in the app.
+     * The browser's confirm() could not name the record, styled "OK" as the
+     * destructive answer, and looked nothing like the rest of the app.
+     */
+    const [ask, setAsk] = useState<Question | null>(null);
+    const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+    /** Live stock's own term: a customer searched in the book must not empty the stock list (services/search.ts). */
+    const [stockSearch, setStockSearch] = useState('');
+
     /** What the Today list and Reports are narrowed to (hooks/useWorklistFilters.ts). */
     const filters = useWorklistFilters({ currentUser, isAuthenticated, setTab });
     const {
@@ -89,33 +122,12 @@ const App = () => {
         reportCrm, reportAgeing, showNotificationBanner, setShowNotificationBanner,
         handleCategoryBoxClick, handleClearFilters, openReport, handleViewPriorityItems,
     } = filters;
-    /** Live stock's own term: a customer searched in the book must not empty the stock list (services/search.ts). */
-    const [stockSearch, setStockSearch] = useState('');
-
-
-    const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-    /**
-     * A question before something that cannot be undone, asked in the app.
-     * The browser's confirm() could not name the record, styled "OK" as the
-     * destructive answer, and looked nothing like the rest of the app.
-     */
-    const [ask, setAsk] = useState<{ title: string; body: React.ReactNode; confirmLabel: string; tone?: 'danger' | 'primary'; run: () => void } | null>(null);
-    const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>([]);
-
-    const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
-    const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
-    const [syncMessage, setSyncMessage] = useState<ShellMessage>(null);
-
-    /** Banner at the top of the shell. Errors linger; confirmations do not. */
-    const notify = useCallback((type: 'success' | 'error', text: string) => {
-        setSyncMessage({ type, text });
-        window.setTimeout(() => setSyncMessage(null), type === 'error' ? 12000 : 5000);
-    }, []);
     const handleSaveCompanyProfile = (updated: CompanyProfile) => {
         setCompanyProfile(updated);
         setSyncMessage({ type: 'success', text: 'Company profile details updated successfully.' });
         setTimeout(() => setSyncMessage(null), 4000);
     };
+
     /** Where the balances come from, and everything that reads or resets them (hooks/useDataSource.tsx). */
     const source = useDataSource({
         appData, setAppData, pdcCheques, templates, companyProfile,
@@ -129,7 +141,6 @@ const App = () => {
         handleGoogleSync, handleCustomerMasterSync,
     } = source;
 
-
     /** A form is open: the book must not be refreshed under it mid-edit. Filled in below, once every dialog's state exists. */
     const dialogOpenRef = useRef(false);
     const {
@@ -138,13 +149,6 @@ const App = () => {
         enabled: syncEnabled, appData, setAppData, pdcCheques, templates, companyProfile, dialogOpenRef,
         settings: { dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime },
     });
-
-    /** "Saved N of M" or the reason, after a bulk change has been given to the server. */
-    const reportBulk = (r: SyncPassResult, ids: string[], done: string) => {
-        const failed = r.failed.filter(f => ids.includes(f.id));
-        if (!failed.length) notify('success', done);
-        else notify('error', `${done} — but ${failed.length} of ${ids.length} could not be saved (${failed[0].message}). They are kept in this tab and will be retried.`);
-    };
 
     /** The cheque register's actions and dialog (hooks/useCheques.ts). */
     const cheques = useCheques({ pdcCheques, setPdcCheques, chequesSync, notify, reportBulk, setTab });
@@ -174,7 +178,6 @@ const App = () => {
         handleReassignCrm, handleBulkSetRank, handleBulkReassignCrm, handleBulkSetFollowUp,
     } = customers;
     dialogOpenRef.current = !!selectedCustomer || !!customers.customerDialog || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
-
 
     /** Whole-book ageing; see ageingTotals(). */
     const portfolioAgeing = useMemo(() => ageingTotals(appData), [appData]);
@@ -226,7 +229,6 @@ const App = () => {
     /** Rate and value on the stock page: Admin and Manager, and only when the read actually carried them. */
     const showStockPrices = rights.runsTheTeam && liveStock.priced;
 
-
     /** Same shape as portfolioAgeing, but only what this person is chasing. */
     const myAgeing = useMemo(() => ageingTotals(outstandingData), [outstandingData]);
 
@@ -236,11 +238,9 @@ const App = () => {
     /** The same boxes over this person's slice of the book. */
     const userBoxMetrics = useMemo(() => worklistSummary(outstandingData, startOfToday()), [outstandingData]);
 
-
     const cashFlowForecastMetrics = useMemo(() => cashFlowForecast(outstandingData, startOfToday()), [outstandingData]);
 
     const notificationSummary = useMemo(() => attentionCounts(outstandingData, startOfToday()), [outstandingData]);
-
 
     /** Per-CRM collection workload; see crmPerformance(). */
     const crmPerformanceStats = useMemo(() => crmPerformance(outstandingData, users, startOfToday()), [outstandingData, users]);
@@ -308,7 +308,6 @@ const App = () => {
     }
 
     if (!currentUser) return null;
-
 
     const wholeBook = rights.seesWholeBook;
     const boxes = wholeBook ? fourBoxesSummary : userBoxMetrics;
@@ -573,7 +572,6 @@ const App = () => {
      * eleven crore before the real figures replaced them a moment later.
      */
     const showSkeleton = loading || (isSupabaseConfigured && isAuthenticated && !serverLoaded);
-
 
     return (
         <>
