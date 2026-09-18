@@ -1,6 +1,6 @@
 # 09 — ENGINEERING AUDIT
 
-Status: Phase 8 not started. This file holds (a) the Phase 1 map of `App.tsx` written so the engineering phase can plan its extraction without re-reading, and (b) preliminary counts.
+Status: **Phase 8 (architecture cleanup) done 2026-09-18, local — see §D.** §A is the Phase 1 map of `App.tsx` as it was (3,302 lines then, 3,107 at the start of Phase 8); §D records what was extracted and what App.tsx is now.
 
 ## A. `App.tsx` — responsibility map (3,302 lines, read in the Phase 1 pass)
 
@@ -106,3 +106,40 @@ Field map for the partial write (every column `useCollectionSync` can now emit):
 | notes | notes | array as is | `[]` | app (mirror of the thread) |
 | isUrgent, isNewCustomer | is_urgent, is_new_customer | `!!` | `false` | app (urgency seeded by import) |
 | addedAt, settledAt | added_at, settled_at | `?? null` | `null` | app (settlement stamped by sync) |
+
+## D. Phase 8 — the App.tsx cleanup (2026-09-18, twenty-fifth session; committed locally, NOT deployed)
+
+Goal: reduce the size and responsibility of `App.tsx` without changing behaviour. Small extractions, each committed on its own, tests after each; the browser QA scripts (which sign in as Admin against the live database with every write aborted) as the App-level net, since no unit test renders App.
+
+**Before:** 3,107 lines · 48 `useState` · 29 effects/memos · 46 handlers · six page-level render functions, two of which rendered the same tab components with near-identical props (A.4) · two tab states for one UI · this person's slice of the book recomputed into state by an effect, one tick late, with a loading flag.
+
+**Extracted (twelve commits, `ca557a1`…`1fa40f3`):**
+
+| Where | What | Lines |
+|---|---|---|
+| `services/metrics.ts` | The eight figures on Today as pure functions: `ageingTotals` (was written twice), `worklistSummary` (was written twice), `filterWorklist`, `cashFlowForecast`, `attentionCounts`, `crmPerformance`, `chequeSummary`; owns the one `CrmStat` type (the table had its own) | 412 |
+| `services/excel.ts` | The upload's row parser, `readWorkbookRows`, the blank template, the customer export and the CRM-owners export; `EXPECTED_HEADERS` | +160 |
+| `services/googleSheetService.ts` | `OFFICIAL_TRANSACTIONS_SHEET_URL`, `OFFICIAL_CUSTOMER_MASTER_URL` (App had them, plus an alias of the first) | — |
+| `hooks/useSession.ts` | Session restore, the one `loadAll` after sign-in, login, logout, `reload` for a fresh start | 106 |
+| `hooks/useTab.ts` | One tab state mirrored to the hash (was two); `useFitsOneScreen` | 81 |
+| `hooks/usePersistence.ts` | The three collection syncs, the two value syncs, the folded save status, retry-all, the periodic re-read of the book. Reads "is a dialog open" through a ref App fills in after every hook has run | 193 |
+| `hooks/useDataSource.tsx` | Sheet addresses and mode, Check the sheet, the balance sync and its review, the Excel upload, the one-time import, the CRM-owners export, the fresh start — with their state; `applySettings` for hydration | 427 |
+| `hooks/useCustomers.tsx` | Add/edit (one dialog object), delete after the question, the follow-up dialog and its stepping through the list it was opened from, the WhatsApp reminder, reassigning, the three bulk tools | 301 |
+| `hooks/useCheques.ts` | Record/edit/delete/mark one or many; the two ways Today opens the register; the cheque dialog as one object | 120 |
+| `hooks/useTeam.tsx`, `hooks/useTemplates.tsx` | Each feature's dialog and actions | 96 + 59 |
+| `hooks/useWorklistFilters.ts` | The shared search term, the card pressed, the banner's and unattended filters, the person/band Reports opens on, and the four actions that set several at once | 117 |
+| `components/pages/CompanyToday.tsx`, `PersonalToday.tsx` | The two Today pages, taking their figures as props (byte-identical JSX, identifiers renamed to props) | 251 + 300 |
+| `components/shell/ShellBanner.tsx` | The passing message or the refused save, with retry and dismiss; one `ShellMessage` type shared with the hooks | 73 |
+| `types.ts` | `DEFAULT_TEMPLATE` beside `DEFAULT_COMPANY_PROFILE` | — |
+
+**After:** `App.tsx` is **771 lines** (−75%): 9 `useState` (the book, the cheques, the templates, the profile, the message, the question, the password dialog, the stock search term, and the tab via its hook), 13 hooks/memos, one handler (`handleSaveCompanyProfile`), one `renderTab()` switch, the shell chrome (nav items, page titles, scope label, skeleton) and the dialog stack. It reads top to bottom: session → tab → the collections → the feature hooks in dependency order → rights → the shell.
+
+**Duplicates removed:** `ageingTotals` and `worklistSummary` each written twice (whole book / my slice); the PDC tab block and the Reports/customers/stock dispatch rendered twice (company and personal dashboards); two tab states; `OFFICIAL_SHEET_URL` = `OFFICIAL_TRANSACTIONS_SHEET_URL`; `getToday()` in App beside `setHours(0,0,0,0)` inline in three memos and two components → `startOfToday()` in `ui/format.ts`; two `CrmStat` interfaces; `isModalOpen`/`isWhatsAppModalOpen` (always equal to "is there a selected customer"); the seven open/target dialog pairs → one object each.
+
+**Dead code removed:** `getOutstandingForUser()` (a Promise around `scopeTo`; the comments that named it now name `scopeTo`), the `error` state and its branch (nothing could set it once the slice was derived), fifteen icon components nothing rendered (`Icons.tsx` ×7, `NavIcons.tsx` ×8), `chequeStateLabel`, `isInHand`, `IDLE_STATUS`, the `Xlsx` type alias.
+
+**Two confirmed bugs fixed on the way (user-visible, so recorded):** (1) a Manager (or a Viewer) pressing "open in cheques" / "Review cheques" went nowhere — the handler set the *personal* tab state while the company view read the other one; one tab state ends it. (2) A CRM's AI credit summary was headed with the placeholder company because the personal view never passed `companyProfile` to Reports; it is passed for everyone now.
+
+**Deliberately left alone:** `ReportsView.boxMetrics` (D5) — a broader computation over a differently scoped list; reconciling it with `worklistSummary` would touch the numbers T51 pinned. The three `formatCurrency` copies (T62): they differ in rounding and sign handling, so consolidating changes rendered text. `alert()` in `copyHeaders` and "cannot delete the last template" (T63). `PdcModal`'s `isOpen` prop (always true now; the modal's own logic reads it). R1-B. Everything the brief excluded: rules, formulas, schema, RLS, permissions.
+
+**Validation:** `tsc` clean; **291/291** (`metrics` 13 new, `todayPages` 6 new); `npm run build` clean, main chunk 567 kB (gzip 150.6 kB, the same), no size warning; `check:classes` the two pre-existing false positives; `check:empty` clean. Against the dev server with every write aborted: the a11y sweep at 1366×768 (every screen, dialog and question: 0 overflow / 0 low-contrast / 0 unnamed, focus kept, Esc closes); the four workflow QA scripts (CRM at 1366/390, Manager/Reports, cheques, Data source at 1366) 0 findings; smoke 12/12; the payload probe (10 requests, all aborted) and the status-contract probe (4) **identical to the production records** — the same PATCHes with the same columns.
