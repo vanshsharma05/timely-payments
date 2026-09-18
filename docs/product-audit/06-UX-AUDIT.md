@@ -233,7 +233,7 @@ Scope: the Cheques / PDC page and its dialog only. No cheque rule, date rule, pe
 
 **Visual QA (dev server, every write aborted):** screenshots at 1366×768, 1024×768 and 390×844 of the page on open, each of the three lists, the row menu, the bulk bar, both dialogs with *More* open and closed, and — with the server's rows rewritten in the browser so five cheques needed attention — the attention list with its tags and buttons. `pdc-qa2.cjs` at the three sizes: 0 findings. The a11y sweep at the three sizes: the page and the dialog 0 overflow / 0 low-contrast / 0 unnamed, focus kept, Esc closes. `tsc` clean; **315/315** (`chequeRegister` rewritten to the three-list model, 29); build clean (the register's chunk 24.6 kB, was 26.8); checks unchanged.
 
-## Phase 4, batch 8 — the cheque page, third pass: the original design, refined (2026-09-18, local; NOT deployed — awaiting the owner's visual review)
+## Phase 4, batch 8 — the cheque page, third pass: the original design, refined (2026-09-18, approved and deployed 23:10 IST — `04e8b7e`, see 16)
 
 **The owner's direction (same day):** the three-list redesign of batch 7 is not wanted. The original screen — before the cheque UX changes — was closer to what they liked, visually and conceptually. Bring its concept back with every engineering improvement made since, and clean it up.
 
