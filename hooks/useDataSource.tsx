@@ -17,8 +17,8 @@ import { previewSync, describePreview } from '../services/syncPreview';
 import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from '../services/reset';
 import { formatCompact } from '../components/ui/format';
 import type { SheetCheck } from '../components/DataSourceView';
+import type { ShellMessage } from '../components/shell/ShellBanner';
 
-export type SyncMessage = { type: 'success' | 'error'; text: string; action?: { label: string; run: () => void } } | null;
 export type Question = { title: string; body: React.ReactNode; confirmLabel: string; tone?: 'danger' | 'primary'; run: () => void };
 
 interface DataSourceInputs {
@@ -28,7 +28,7 @@ interface DataSourceInputs {
     templates: Template[];
     companyProfile: CompanyProfile;
     isAdmin: boolean;
-    setSyncMessage: (m: SyncMessage) => void;
+    setSyncMessage: (m: ShellMessage) => void;
     /** A question asked in the app before something big (the one-time import). */
     ask: (q: Question) => void;
     /** After a fresh start: the tab reloads everything from the server. */

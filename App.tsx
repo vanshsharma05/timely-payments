@@ -26,7 +26,7 @@ import { formatCompact, startOfToday } from './components/ui/format';
 import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { Card, LoadingList } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
-import { CheckCircleIcon, ExclamationTriangleIcon } from './components/icons/Icons';
+import { ShellBanner, ShellMessage } from './components/shell/ShellBanner';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
 const UserModal = lazy(() => import('./components/UserModal'));
@@ -104,7 +104,7 @@ const App = () => {
 
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
     const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
-    const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string, action?: { label: string; run: () => void } } | null>(null);
+    const [syncMessage, setSyncMessage] = useState<ShellMessage>(null);
 
     /** Banner at the top of the shell. Errors linger; confirmations do not. */
     const notify = useCallback((type: 'success' | 'error', text: string) => {
@@ -574,58 +574,6 @@ const App = () => {
      */
     const showSkeleton = loading || (isSupabaseConfigured && isAuthenticated && !serverLoaded);
 
-    /**
-     * A refused save is not a passing message: it stays in the banner, with
-     * the reason and a way to try again, until the server accepts it. A
-     * transient message (a sync result, a bulk action's outcome) takes the
-     * banner over while it lasts.
-     */
-    const refusedBanner = saveStatus.failed.length && !syncMessage ? {
-        type: 'error' as const,
-        text: `${saveStatus.failed.length} change${saveStatus.failed.length === 1 ? '' : 's'} could not be saved: ${saveStatus.failed[0].message}. `
-            + `${saveStatus.failed.length === 1 ? 'It is' : 'They are'} kept in this tab`
-            + (saveStatus.retryAt ? ` and will be tried again in ${Math.max(1, Math.round((saveStatus.retryAt - Date.now()) / 1000))}s.` : ' and will be tried again.'),
-        action: { label: saveStatus.saving ? 'Retrying…' : 'Retry now', run: retryAllSaves },
-        dismissable: false,
-    } : null;
-    const bannerMessage = syncMessage ? { ...syncMessage, dismissable: true } : refusedBanner;
-    const shellBanner = bannerMessage ? (
-        <div className="px-3 sm:px-5 lg:px-7 pt-4">
-            <div
-                role={bannerMessage.type === 'error' ? 'alert' : 'status'}
-                className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${
-                    bannerMessage.type === 'success'
-                        ? 'bg-pos-bg border-pos text-pos'
-                        : 'bg-dang-bg border-dang text-dang'
-                }`}
-            >
-                <span className="mt-0.5 flex-none">
-                    {bannerMessage.type === 'success'
-                        ? <CheckCircleIcon className="w-[18px] h-[18px]" />
-                        : <ExclamationTriangleIcon className="w-[18px] h-[18px]" />}
-                </span>
-                <p className="text-[14px] font-medium flex-1 leading-snug">{bannerMessage.text}</p>
-                {bannerMessage.action && (
-                    <button
-                        onClick={bannerMessage.action.run}
-                        disabled={saveStatus.saving && bannerMessage === refusedBanner}
-                        className="text-[13px] font-bold underline underline-offset-2 whitespace-nowrap flex-none disabled:opacity-60"
-                    >
-                        {bannerMessage.action.label}
-                    </button>
-                )}
-                {bannerMessage.dismissable && (
-                    <button
-                        onClick={() => setSyncMessage(null)}
-                        className="opacity-55 hover:opacity-100 flex-none leading-none text-lg"
-                        aria-label="Dismiss"
-                    >
-                        &times;
-                    </button>
-                )}
-            </div>
-        </div>
-    ) : null;
 
     return (
         <>
@@ -687,7 +635,7 @@ const App = () => {
             readOnly={rights.isViewer}
             dataAsOf={safeKey === 'stock' ? undefined : sheetUpdatedTillDate}
             lastSyncTime={safeKey === 'stock' ? undefined : lastSyncTime}
-            banner={shellBanner}
+            banner={<ShellBanner message={syncMessage} saveStatus={saveStatus} onRetry={retryAllSaves} onDismiss={() => setSyncMessage(null)} />}
             saveStatus={syncEnabled ? (
                 <SaveStatus status={saveStatus} refreshedAt={refreshedAt} refreshing={refreshing} onRetry={retryAllSaves} onRefresh={() => { void refreshBook(); }} />
             ) : undefined}
