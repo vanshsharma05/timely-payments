@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Dispatch, SetStateAction } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Dispatch, SetStateAction, MutableRefObject } from 'react';
 import * as repo from '../services/repository';
 import { useCollectionSync, useValueSync, SyncStatus } from '../services/useSupabaseSync';
 import { combineStatus } from '../components/SaveStatus';
@@ -24,8 +24,8 @@ interface PersistenceInputs {
     templates: Template[];
     companyProfile: CompanyProfile;
     settings: AppSettingsValue;
-    /** A dialog is open: the book must not be refreshed under a form mid-edit. */
-    dialogOpen: boolean;
+    /** Whether a dialog is open right now: the book must not be refreshed under a form mid-edit. */
+    dialogOpenRef: MutableRefObject<boolean>;
 }
 
 /**
@@ -39,7 +39,7 @@ interface PersistenceInputs {
  * for all of them, and the periodic re-read of the book that keeps a
  * long-open tab honest.
  */
-export function usePersistence({ enabled, appData, setAppData, pdcCheques, templates, companyProfile, settings, dialogOpen }: PersistenceInputs) {
+export function usePersistence({ enabled, appData, setAppData, pdcCheques, templates, companyProfile, settings, dialogOpenRef }: PersistenceInputs) {
     /**
      * What each collection has saved, is saving, or could not save — folded
      * into one line in the header (SaveStatus) and a banner while anything is
@@ -162,8 +162,6 @@ export function usePersistence({ enabled, appData, setAppData, pdcCheques, templ
     }, [enabled, refreshing, customersSync, setAppData]);
     const refreshRef = useRef(refreshBook);
     refreshRef.current = refreshBook;
-    const dialogOpenRef = useRef(dialogOpen);
-    dialogOpenRef.current = dialogOpen;
     useEffect(() => {
         if (!enabled) return;
         setRefreshedAt(Date.now());   // the load itself is a fresh read

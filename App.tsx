@@ -4,12 +4,14 @@ import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
 import { SaveStatus } from './components/SaveStatus';
-import { replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
 import { usePersistence } from './hooks/usePersistence';
 import { useDataSource } from './hooks/useDataSource';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
+import { useCheques } from './hooks/useCheques';
+import { useTeam } from './hooks/useTeam';
+import { useTemplates } from './hooks/useTemplates';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
 import { getOutstandingForUser, processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -90,17 +92,8 @@ const App = () => {
      * destructive answer, and looked nothing like the rest of the app.
      */
     const [ask, setAsk] = useState<{ title: string; body: React.ReactNode; confirmLabel: string; tone?: 'danger' | 'primary'; run: () => void } | null>(null);
-    const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState<User | null>(null);
-
     // PDC (Post Dated Cheques) State
     const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>([]);
-
-    const [isPdcModalOpen, setIsPdcModalOpen] = useState(false);
-    const [editingPdcCheque, setEditingPdcCheque] = useState<PdcCheque | null>(null);
-    const [pdcPreselectedCustomerId, setPdcPreselectedCustomerId] = useState<string | undefined>(undefined);
-    const [pdcInitialStatusFilter, setPdcInitialStatusFilter] = useState<string | null>(null);
-    const [pdcInitialCustomerFilter, setPdcInitialCustomerFilter] = useState<string | null>(null);
 
     // Company Profile state
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
@@ -113,9 +106,6 @@ const App = () => {
     };
 
     const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
-    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
-    const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
-    
     const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string, action?: { label: string; run: () => void } } | null>(null);
 
     /** Banner at the top of the shell. Errors linger; confirmations do not. */
@@ -268,12 +258,12 @@ const App = () => {
 
     const syncEnabled = isSupabaseConfigured && isAuthenticated && serverLoaded;
 
-    /** A form is open: the book must not be refreshed under it mid-edit. */
-    const dialogOpen = !!selectedCustomer || isCustomerModalOpen || isPdcModalOpen || !!resetPlan || !!pendingSync;
+    /** A form is open: the book must not be refreshed under it mid-edit. Filled in below, once every dialog's state exists. */
+    const dialogOpenRef = useRef(false);
     const {
         customersSync, chequesSync, syncStatuses, saveStatus, retryAllSaves, refreshBook, refreshedAt, refreshing,
     } = usePersistence({
-        enabled: syncEnabled, appData, setAppData, pdcCheques, templates, companyProfile, dialogOpen,
+        enabled: syncEnabled, appData, setAppData, pdcCheques, templates, companyProfile, dialogOpenRef,
         settings: { dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime },
     });
 
@@ -283,6 +273,21 @@ const App = () => {
         if (!failed.length) notify('success', done);
         else notify('error', `${done} — but ${failed.length} of ${ids.length} could not be saved (${failed[0].message}). They are kept in this tab and will be retried.`);
     };
+
+    /** The cheque register's actions and dialog (hooks/useCheques.ts). */
+    const cheques = useCheques({ pdcCheques, setPdcCheques, chequesSync, notify, reportBulk, setTab });
+    const {
+        handleOpenAddPdc, handleOpenEditPdc, handleSavePdc, handleDeletePdc, handleUpdatePdcStatus,
+        handleBulkPdcStatus, handleBulkDeletePdc, handleOpenPdcForCustomer, handleOpenTodayPdc,
+        pdcInitialStatusFilter, pdcInitialCustomerFilter,
+    } = cheques;
+    dialogOpenRef.current = !!selectedCustomer || isCustomerModalOpen || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
+    /** Team & access (hooks/useTeam.tsx) and message templates (hooks/useTemplates.tsx). */
+    const team = useTeam({ users, setUsers, currentUser, setCurrentUser, notify, ask: setAsk });
+    const { handleOpenUserModal, handleDeleteUser } = team;
+    const templatesFeature = useTemplates({ templates, setTemplates, ask: setAsk });
+    const { handleOpenTemplateModal, handleDeleteTemplate } = templatesFeature;
+
 
 
     // Update the view when Current User changes or Master Data changes
@@ -456,122 +461,6 @@ const App = () => {
         }
     };
     
-    const handleOpenUserModal = (user: User | null) => {
-        setEditingUser(user);
-        setIsUserModalOpen(true);
-    };
-
-    const handleCloseUserModal = () => {
-        setEditingUser(null);
-        setIsUserModalOpen(false);
-    };
-
-    /**
-     * Creates or updates a teammate's real Supabase login and profile, then
-     * re-reads the roster so the table shows what the server actually holds.
-     * Errors are rethrown for UserModal to display: the modal stays open, and a
-     * failed save is never mistaken for a saved one.
-     */
-    const handleSaveUser = async (draft: TeamMemberDraft) => {
-        const isNewUser = !editingUser;
-        const legacyId = (draft.id || draft.name).trim();
-
-        const input: repo.TeamMemberInput = {
-            id: legacyId,
-            name: draft.name,
-            email: draft.email,
-            password: draft.password,
-            role: draft.role,
-            dataVisibility: draft.dataVisibility,
-            permissions: draft.permissions,
-            assignedCrms:
-                draft.assignedCrms || (draft.role === UserRole.CRM ? [legacyId] : []),
-        };
-
-        if (isNewUser) {
-            await repo.createTeamMember(input);
-        } else {
-            await repo.updateTeamMember(input);
-        }
-
-        const roster = await repo.fetchUsers();
-        setUsers(roster);
-        // Keep our own rights fresh if an Admin just edited their own row.
-        const me = roster.find(u => u.id === currentUser?.id);
-        if (me) setCurrentUser(me);
-
-        notify(
-            'success',
-            isNewUser
-                ? `${input.name} can now sign in with ${input.email}.`
-                : `${input.name}'s role and rights are saved.`
-        );
-        handleCloseUserModal();
-    };
-
-    const handleDeleteUser = (userId: string) => {
-        const who = users.find(u => u.id === userId);
-        setAsk({
-            title: 'Remove this team member?',
-            confirmLabel: 'Remove access',
-            body: <>
-                <p><strong className="text-label">{who?.name || userId}</strong>{who ? ` · ${who.role}` : ''}{who?.email ? ` · ${who.email}` : ''}.</p>
-                <p className="mt-2">Their login stops working immediately. The accounts they own stay in the book under their name until someone reassigns them.</p>
-            </>,
-            run: async () => {
-                try {
-                    await repo.deleteTeamMember(userId);
-                    setUsers(await repo.fetchUsers());
-                    notify('success', `${who?.name || userId} no longer has access.`);
-                } catch (e: any) {
-                    notify('error', e?.message || 'Could not remove the user.');
-                }
-            },
-        });
-    };
-
-    // Template Modal Handlers
-    const handleOpenTemplateModal = (template: Template | null) => {
-        setEditingTemplate(template);
-        setIsTemplateModalOpen(true);
-    };
-
-    const handleCloseTemplateModal = () => {
-        setEditingTemplate(null);
-        setIsTemplateModalOpen(false);
-    };
-
-    const handleSaveTemplate = (templateToSave: Omit<Template, 'id'> & { id?: string }) => {
-        setTemplates(currentTemplates => {
-            if (templateToSave.id) {
-                return currentTemplates.map(t => t.id === templateToSave.id ? { ...t, name: templateToSave.name, content: templateToSave.content } : t);
-            } else {
-                const newTemplate: Template = {
-                    ...templateToSave,
-                    id: `template_${Date.now()}`,
-                };
-                return [...currentTemplates, newTemplate];
-            }
-        });
-        handleCloseTemplateModal();
-    };
-
-    const handleDeleteTemplate = (templateId: string) => {
-        if (templates.length <= 1) {
-            alert("You cannot delete the last template.");
-            return;
-        }
-        const t = templates.find(x => x.id === templateId);
-        setAsk({
-            title: 'Delete this template?',
-            confirmLabel: 'Delete template',
-            body: <>
-                <p><strong className="text-label">{t?.name || 'This template'}</strong> will no longer be offered when a WhatsApp reminder is opened. Reminders already sent are not affected. This cannot be undone.</p>
-            </>,
-            run: () => setTemplates(currentTemplates => currentTemplates.filter(x => x.id !== templateId)),
-        });
-    };
-
     // Reassign single customer to a CRM
     const handleReassignCrm = (customerId: string, newCrmId: string) => {
         setAppData(current => current.map(item =>
@@ -795,94 +684,6 @@ const App = () => {
 
     /** Cheques this person is responsible for, and where they stand today; see chequeSummary(). */
     const todayPdcMetrics = useMemo(() => chequeSummary(pdcCheques, currentUser, appData, new Date()), [pdcCheques, currentUser, appData]);
-
-    const handleOpenAddPdc = (customerId?: string) => {
-        setEditingPdcCheque(null);
-        setPdcPreselectedCustomerId(customerId);
-        setIsPdcModalOpen(true);
-    };
-
-    const handleOpenEditPdc = (cheque: PdcCheque) => {
-        setEditingPdcCheque(cheque);
-        setPdcPreselectedCustomerId(cheque.customerId);
-        setIsPdcModalOpen(true);
-    };
-
-    /** The cheque dialog waits for the verdict the same way the customer dialogs do. */
-    const handleSavePdc = async (chequeData: Omit<PdcCheque, 'id'> & { id?: string }): Promise<SaveOutcome> => {
-        const id = chequeData.id || `pdc_${Date.now()}`;
-        const cheque: PdcCheque = { ...(chequeData as Omit<PdcCheque, 'id'>), id };
-        // The dialog keeps one id for the cheque it is composing, so a Save
-        // pressed again after a refusal replaces the pending cheque instead of
-        // adding a second one.
-        setPdcCheques(prev => replaceOrAdd(prev, cheque));
-        const outcome = outcomeFor(id, await chequesSync.flush());
-        if (outcome.ok) setIsPdcModalOpen(false);
-        return outcome;
-    };
-
-    const handleDeletePdc = (chequeId: string) => {
-        setPdcCheques(prev => prev.filter(p => p.id !== chequeId));
-        void chequesSync.flush().then(r => {
-            const failed = r.failed.find(f => f.id === chequeId);
-            if (failed) notify('error', `The cheque could not be deleted: ${failed.message}. It will be tried again.`);
-        });
-    };
-
-    const handleUpdatePdcStatus = (chequeId: string, newStatus: PdcStatus) => {
-        // Pressing the state a cheque is already in is not a change — it used
-        // to rewrite clearedDate to now on a cleared cheque and save the row.
-        if (pdcCheques.find(p => p.id === chequeId)?.status === newStatus) return;
-        setPdcCheques(prev => prev.map(p => {
-            if (p.id === chequeId) {
-                return {
-                    ...p,
-                    status: newStatus,
-                    clearedDate: newStatus === PdcStatus.Cleared ? new Date() : p.clearedDate
-                };
-            }
-            return p;
-        }));
-        void chequesSync.flush().then(r => {
-            const failed = r.failed.find(f => f.id === chequeId);
-            if (failed) notify('error', `The cheque's status could not be saved: ${failed.message}. It is kept in this tab and will be retried.`);
-        });
-    };
-
-    /**
-     * The same two actions across a whole selection.
-     *
-     * A morning's clearing is a dozen cheques at once, and marking them one
-     * dialog at a time is the reason the register goes stale. One pass over the
-     * list, one render, one message.
-     */
-    const handleBulkPdcStatus = (chequeIds: string[], newStatus: PdcStatus) => {
-        const idSet = new Set(chequeIds);
-        setPdcCheques(prev => prev.map(p => (
-            idSet.has(p.id)
-                ? { ...p, status: newStatus, clearedDate: newStatus === PdcStatus.Cleared ? new Date() : p.clearedDate }
-                : p
-        )));
-        void chequesSync.flush().then(r => reportBulk(r, chequeIds, `Marked ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'} as ${newStatus}.`));
-    };
-
-    const handleBulkDeletePdc = (chequeIds: string[]) => {
-        const idSet = new Set(chequeIds);
-        setPdcCheques(prev => prev.filter(p => !idSet.has(p.id)));
-        void chequesSync.flush().then(r => reportBulk(r, chequeIds, `Deleted ${chequeIds.length} cheque${chequeIds.length === 1 ? '' : 's'}.`));
-    };
-
-    const handleOpenPdcForCustomer = (customerId: string) => {
-        setTab('pdc');
-        setPdcInitialCustomerFilter(customerId);
-        setPdcInitialStatusFilter('all');
-    };
-
-    const handleOpenTodayPdc = () => {
-        setTab('pdc');
-        setPdcInitialStatusFilter('today');
-        setPdcInitialCustomerFilter('all');
-    };
 
     // Shared dashboard view for Admin
     const renderAdminOverviewCards = () => (
@@ -1854,29 +1655,29 @@ const App = () => {
                     }}
                 />
             )}
-            {isUserModalOpen && (
+            {team.userDialog && (
                 <UserModal
-                    userToEdit={editingUser}
-                    onClose={handleCloseUserModal}
-                    onSave={handleSaveUser}
+                    userToEdit={team.userDialog.user}
+                    onClose={team.handleCloseUserModal}
+                    onSave={team.handleSaveUser}
                 />
             )}
-            {isTemplateModalOpen && (
+            {templatesFeature.templateDialog && (
                 <TemplateModal
-                    templateToEdit={editingTemplate}
-                    onClose={handleCloseTemplateModal}
-                    onSave={handleSaveTemplate}
+                    templateToEdit={templatesFeature.templateDialog.template}
+                    onClose={templatesFeature.handleCloseTemplateModal}
+                    onSave={templatesFeature.handleSaveTemplate}
                 />
             )}
-            {isPdcModalOpen && (
+            {cheques.chequeDialog && (
                 <PdcModal
-                    isOpen={isPdcModalOpen}
-                    onClose={() => setIsPdcModalOpen(false)}
+                    isOpen
+                    onClose={cheques.closeChequeDialog}
                     onSave={handleSavePdc}
                     customers={appData}
                     currentUser={currentUser!}
-                    chequeToEdit={editingPdcCheque}
-                    preselectedCustomerId={pdcPreselectedCustomerId}
+                    chequeToEdit={cheques.chequeDialog.cheque}
+                    preselectedCustomerId={cheques.chequeDialog.customerId}
                     existingCheques={pdcCheques}
                     users={users}
                 />
