@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { EXPECTED_HEADERS, downloadTemplate } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
-import * as repo from './services/repository';
 import { SyncPassResult } from './services/useSupabaseSync';
 import { SaveStatus } from './components/SaveStatus';
 import { searchScopeFor } from './services/search';
+import { useSession } from './hooks/useSession';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
 import { usePersistence } from './hooks/usePersistence';
 import { useDataSource } from './hooks/useDataSource';
@@ -13,7 +13,7 @@ import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
 import { useCustomers } from './hooks/useCustomers';
 import { useWorklistFilters } from './hooks/useWorklistFilters';
-import { Outstanding, User, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
+import { Outstanding, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
 import { processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
@@ -51,13 +51,24 @@ import WhatsAppReminderModal from './components/WhatsAppReminderModal';
  */
 
 const App = () => {
-    const [users, setUsers] = useState<User[]>([]);
-
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    /** The collections have been read from the server since sign-in; nothing syncs before that. */
-    const [serverLoaded, setServerLoaded] = useState(false);
-    const [restoringSession, setRestoringSession] = useState(isSupabaseConfigured);
+    /**
+     * Who is signed in, and the one read of everything after sign-in
+     * (hooks/useSession.ts). The collections it fills are declared below;
+     * the callback runs only once the server has answered, long after
+     * this render.
+     */
+    const session = useSession({
+        onLoaded: all => {
+            setAppData(processStatuses(all.customers));
+            setPdcCheques(all.pdcCheques);
+            if (all.templates.length) setTemplates(all.templates);
+            if (all.companyProfile) setCompanyProfile(all.companyProfile);
+            source.applySettings(all.settings);
+        },
+        onLoadError: text => setSyncMessage({ type: 'error', text }),
+        onSignedOut: () => setTab('overview'),
+    });
+    const { users, setUsers, currentUser, setCurrentUser, isAuthenticated, serverLoaded, restoringSession, loading, syncEnabled, handleLogin, handleLogout } = session;
 
     /** The screen the app is on; mirrored to the URL hash (hooks/useTab.ts). */
     const [tab, setTab] = useTab(isAuthenticated);
@@ -71,8 +82,6 @@ const App = () => {
      * every change, with a loading flag that blinked the skeleton each time.
      */
     const outstandingData = useMemo(() => (currentUser ? processStatuses(scopeTo(currentUser, appData)) : []), [currentUser, appData]);
-    /** The book is on its way from the server. */
-    const [loading, setLoading] = useState<boolean>(false);
     /** What the Today list and Reports are narrowed to (hooks/useWorklistFilters.ts). */
     const filters = useWorklistFilters({ currentUser, isAuthenticated, setTab });
     const {
@@ -112,7 +121,7 @@ const App = () => {
         appData, setAppData, pdcCheques, templates, companyProfile,
         isAdmin: currentUser?.role === UserRole.Admin,
         setSyncMessage, ask: setAsk,
-        onReset: () => setServerLoaded(false),
+        onReset: session.reload,
     });
     const {
         dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime,
@@ -120,61 +129,6 @@ const App = () => {
         handleGoogleSync, handleCustomerMasterSync,
     } = source;
 
-
-    // =====================================================================
-    // Supabase backend
-    //
-    // Supabase is the master record: state is hydrated from it on sign-in and
-    // every change is written back, so the whole team shares one dataset.
-    // Without VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY the app does not run
-    // at all — LoginScreen says so rather than pretending to work.
-    // =====================================================================
-    // Restore an existing session on load so a refresh does not bounce you out.
-    useEffect(() => {
-        if (!isSupabaseConfigured) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const profile = await repo.fetchCurrentProfile();
-                if (!cancelled && profile) {
-                    setCurrentUser(profile);
-                    setIsAuthenticated(true);
-                }
-            } catch {
-                /* not signed in */
-            } finally {
-                if (!cancelled) setRestoringSession(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, []);
-
-    // Hydrate every collection once, straight after sign-in.
-    useEffect(() => {
-        if (!isSupabaseConfigured || !isAuthenticated || serverLoaded) return;
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            try {
-                const all = await repo.loadAll();
-                if (cancelled) return;
-                setAppData(processStatuses(all.customers));
-                setPdcCheques(all.pdcCheques);
-                if (all.users.length) setUsers(all.users);
-                if (all.templates.length) setTemplates(all.templates);
-                if (all.companyProfile) setCompanyProfile(all.companyProfile);
-                source.applySettings(all.settings);
-                setServerLoaded(true);
-            } catch (e: any) {
-                if (!cancelled) setSyncMessage({ type: 'error', text: `Could not load data: ${e?.message || e}` });
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [isAuthenticated, serverLoaded]);
-
-    const syncEnabled = isSupabaseConfigured && isAuthenticated && serverLoaded;
 
     /** A form is open: the book must not be refreshed under it mid-edit. Filled in below, once every dialog's state exists. */
     const dialogOpenRef = useRef(false);
@@ -221,27 +175,6 @@ const App = () => {
     } = customers;
     dialogOpenRef.current = !!selectedCustomer || !!customers.customerDialog || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
 
-
-    const handleLogin = (user: User) => {
-        const fullUser: User = {
-            ...user,
-            permissions: {
-                ...(DEFAULT_ROLE_PERMISSIONS[user.role] || DEFAULT_ROLE_PERMISSIONS[UserRole.CRM]),
-                ...(user.permissions || {})
-            },
-            assignedCrms: user.assignedCrms || (user.role === UserRole.CRM ? [user.id] : undefined)
-        };
-        setCurrentUser(fullUser);
-        setIsAuthenticated(true);
-    };
-
-    const handleLogout = async () => {
-        try { await repo.signOut(); } catch { /* local sign-out is enough */ }
-        setServerLoaded(false);
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-        setTab('overview');
-    };
 
     /** Whole-book ageing; see ageingTotals(). */
     const portfolioAgeing = useMemo(() => ageingTotals(appData), [appData]);
@@ -634,13 +567,10 @@ const App = () => {
     };
 
     /**
-     * Hold the placeholder until the book has actually arrived.
-     *
-     * updateViewData() sets loading true and false again as soon as it has
-     * scoped whatever appData holds — which, on the first pass after sign-in, is
-     * nothing. The dashboard therefore painted "0 accounts with dues · ₹0
-     * outstanding" over a book worth eleven crore before the real figures
-     * replaced them a moment later.
+     * Hold the placeholder until the book has actually arrived: between
+     * sign-in and the server's answer appData is empty, and the dashboard
+     * used to paint "0 accounts with dues · ₹0 outstanding" over a book worth
+     * eleven crore before the real figures replaced them a moment later.
      */
     const showSkeleton = loading || (isSupabaseConfigured && isAuthenticated && !serverLoaded);
 
