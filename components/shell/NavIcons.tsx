@@ -84,60 +84,6 @@ export const PlugIcon = ({ className }: IconProps) => (
   </svg>
 );
 
-export const BuildingIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="M4 21V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v15" />
-    <path d="M15 10h3a2 2 0 0 1 2 2v9" />
-    <path d="M2.5 21h19M8 8h2M8 12h2M8 16h2" />
-  </svg>
-);
-
-export const SearchIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <circle cx="10.5" cy="10.5" r="6.5" />
-    <path d="m20 20-4.5-4.5" />
-  </svg>
-);
-
-export const RefreshIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
-    <path d="M20.5 4v5h-5" />
-  </svg>
-);
-
-export const SunIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <circle cx="12" cy="12" r="4" />
-    <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
-  </svg>
-);
-
-export const MoonIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
-  </svg>
-);
-
-export const MenuIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17" />
-  </svg>
-);
-
-export const CloseIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="m6 6 12 12M18 6 6 18" />
-  </svg>
-);
-
-export const LogoutIcon = ({ className }: IconProps) => (
-  <svg {...base(className)}>
-    <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
-    <path d="M10 8 6 12l4 4M6 12h10" />
-  </svg>
-);
-
 export const ChevronDown = ({ className }: IconProps) => (
   <svg {...base(className)}>
     <path d="m6 9.5 6 6 6-6" />

@@ -68,8 +68,6 @@ export const CHEQUE_STATES: Record<ChequeState, {
 /** The states in the order a person needs them: what needs doing first. */
 export const CHEQUE_STATE_ORDER: ChequeState[] = ['overdue', 'due', 'bounced', 'hold', 'upcoming', 'cleared'];
 
-export const chequeStateLabel = (state: ChequeState): string => CHEQUE_STATES[state].label;
-
 export const ChequeStateBadge = ({ state, className }: { state: ChequeState; className?: string }) => (
     <span
         title={CHEQUE_STATES[state].hint}

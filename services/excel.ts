@@ -12,7 +12,6 @@ import { Outstanding, FollowUpStatus, followUpStatusOf, getCustomerPaymentRank, 
 import { parseAmountAndType, netRollUp } from './googleSheetService';
 
 export const loadXlsx = () => import('xlsx');
-export type Xlsx = Awaited<ReturnType<typeof loadXlsx>>;
 
 /** The columns an uploaded workbook is read in, and the blank template's header row. */
 export const EXPECTED_HEADERS = ["ID","Company","Contact Person","Contact Number","Total Due","Ageing 1-45","Ageing 46-90","Ageing 91-135","Ageing >135","CRM Owner Name","Assigned Collector Name","Follow-up Date","Notes","Is Urgent","Creation Date"

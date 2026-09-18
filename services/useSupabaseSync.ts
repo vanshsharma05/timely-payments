@@ -78,8 +78,6 @@ export interface CollectionSync<T> {
     forget: (ids: string[]) => void;
 }
 
-export const IDLE_STATUS: SyncStatus = { saving: false, pending: 0, failed: [], lastSavedAt: null, retryAt: null };
-
 /** The reason as a person would say it: a dropped connection is not a "TypeError". */
 export const humanise = (e: unknown): string => {
     const raw = ((e as any)?.message || String(e)).replace(/^(TypeError|Error):\s*/, '');

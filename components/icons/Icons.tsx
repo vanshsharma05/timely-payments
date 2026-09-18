@@ -28,13 +28,6 @@ const Svg = ({ className = 'w-5 h-5', children }: IconProps & { children: React.
     </svg>
 );
 
-export const DollarSignIcon = ({ className = 'w-6 h-6' }: IconProps) => (
-    <Svg className={className}>
-        <path d="M12 6v12m3-9.75c0-.83-1.34-1.5-3-1.5s-3 .67-3 1.5 1.34 1.5 3 1.5 3 .67 3 1.5-1.34 1.5-3 1.5-3-.67-3-1.5" />
-        <circle cx="12" cy="12" r="9" />
-    </Svg>
-);
-
 export const CheckCircleIcon = ({ className = 'w-6 h-6' }: IconProps) => (
     <Svg className={className}>
         <path d="M9 12.75 11.25 15 15 9.75" />
@@ -71,12 +64,6 @@ export const WhatsAppIcon = ({ className = 'w-5 h-5 mr-2' }: IconProps) => (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M12.04 2.01C6.58 2.01 2.13 6.46 2.13 12c0 1.77.46 3.45 1.29 4.93L2.01 22l5.24-1.4c1.43.78 3.05 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91s-4.45-9.9-9.91-9.9zM12.04 20.14h-.01c-1.55 0-3.04-.42-4.33-1.16l-.31-.18-3.22.84.86-3.14-.2-.33c-.83-1.35-1.28-2.91-1.28-4.52 0-4.54 3.7-8.24 8.24-8.24 4.54 0 8.24 3.7 8.24 8.24s-3.7 8.24-8.24 8.24zm4.52-6.15c-.25-.12-1.47-.72-1.7-.81-.23-.09-.39-.12-.56.12-.17.25-.64.81-.79.97s-.29.19-.54.06c-.25-.12-1.06-.39-2.02-1.25-.75-.66-1.25-1.48-1.4-1.73s-.03-.38.09-.5c.11-.11.25-.29.37-.43s.17-.25.25-.42.04-.32-.02-.45c-.06-.12-.56-1.34-.76-1.84s-.4-.42-.56-.42h-.48c-.17 0-.45.06-.68.32s-.89.87-.89 2.12.92 2.46 1.04 2.64c.12.17 1.79 2.74 4.33 3.82.6.25 1.07.41 1.42.52.59.19 1.13.16 1.56.1.48-.06 1.47-.6 1.67-1.18s.21-1.09.15-1.18c-.06-.09-.12-.15-.25-.21z" />
     </svg>
-);
-
-export const CalendarIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0V11.25a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
-    </Svg>
 );
 
 export const UserPlusIcon = ({ className }: IconProps) => (
@@ -118,34 +105,8 @@ export const TrashIcon = ({ className }: IconProps) => (
 
 /** An actual bar chart. The old path drew an upward arrow, which is why the
  *  Overview and Reports tabs showed the same "upload" glyph. */
-export const ChartBarIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M3 20.25h18M6.75 20.25v-6.75m4.5 6.75V7.5m4.5 12.75v-9.75m4.5 9.75V4.5" />
-    </Svg>
-);
-
 /** Distinct mark for the Reports tab so it no longer duplicates Overview. */
-export const DocumentChartBarIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5A3.375 3.375 0 0 0 10.125 2.25H8.25m2.25 0H5.625A1.125 1.125 0 0 0 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        <path d="M8.25 18v-3m3.75 3v-6m3.75 6v-1.5" />
-    </Svg>
-);
-
 /** A real chain link. The old middle path was four sub-pixel dots. */
-export const LinkIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757" />
-        <path d="M10.81 15.312a4.5 4.5 0 0 1-1.242-7.244l4.5-4.5a4.5 4.5 0 0 1 6.364 6.364l-1.757 1.757" />
-    </Svg>
-);
-
-export const DocumentTextIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5A3.375 3.375 0 0 0 10.125 2.25H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625A1.125 1.125 0 0 0 4.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-    </Svg>
-);
-
 /** A clipboard with list rows. The old path was a filled rounded rectangle, so
  *  it rendered as a solid block with the list strokes invisible inside it. */
 export const ClipboardListIcon = ({ className }: IconProps) => (
@@ -165,12 +126,6 @@ export const ChequeIcon = ({ className }: IconProps) => (
     <Svg className={className}>
         <path d="M2.25 8.25h19.5M2.25 9V7.5a2.25 2.25 0 0 1 2.25-2.25h15A2.25 2.25 0 0 1 21.75 7.5v9a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 16.5V9Z" />
         <path d="M6 13.5h3m3 0h.75" />
-    </Svg>
-);
-
-export const CheckSquareIcon = ({ className }: IconProps) => (
-    <Svg className={className}>
-        <path d="M9 12.75 11.25 15 15 9.75M4.5 6.75A2.25 2.25 0 0 1 6.75 4.5h10.5a2.25 2.25 0 0 1 2.25 2.25v10.5a2.25 2.25 0 0 1-2.25 2.25H6.75a2.25 2.25 0 0 1-2.25-2.25V6.75Z" />
     </Svg>
 );
 

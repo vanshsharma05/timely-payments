@@ -4,7 +4,7 @@ import BalanceAmount from './BalanceAmount';
 import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
-import { formatCompact, formatINR, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
+import { formatCompact, formatINR, formatDate as formatDay, localIsoDate, followUpWhen, startOfToday } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -142,7 +142,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      */
     const isPhone = useIsPhone();
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
-    const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+    const today = useMemo(() => startOfToday(), []);
 
     /** How many rows are mounted. Grows as the reader reaches the bottom. */
     const PAGE = 60;

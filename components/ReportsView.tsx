@@ -6,7 +6,7 @@ const AiReportModal = lazy(() => import('./AiReportModal'));
 import { WhatsAppIcon, FireIcon, DownloadIcon, ChequeIcon, SparklesIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button } from './ui/Primitives';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen } from './ui/format';
+import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen, startOfToday } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 
@@ -78,11 +78,7 @@ export const ReportsView = ({
     useEffect(() => { setAgeingFilter(initialAgeingFilter); }, [initialAgeingFilter]);
     const [isAiReportOpen, setIsAiReportOpen] = useState<boolean>(false);
 
-    const today = useMemo(() => {
-        const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        return d;
-    }, []);
+    const today = useMemo(() => startOfToday(), []);
 
     // Strict access control / role-based scoping
     const canViewAll = seesWholeBook(currentUser);

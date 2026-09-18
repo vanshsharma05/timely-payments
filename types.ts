@@ -733,10 +733,6 @@ export const PDC_STATUS_CHOICES: { value: PdcStatus; label: string }[] = [
     { value: PdcStatus.Bounced, label: 'Bounced / returned' },
 ];
 
-/** A cheque still with us, whatever a stale stored status claims. */
-export const isInHand = (status: PdcStatus): boolean =>
-    status === PdcStatus.Pending || status === PdcStatus.DueToday;
-
 /**
  * Where a cheque stands today.
  *
