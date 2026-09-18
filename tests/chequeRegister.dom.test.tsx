@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The cheque register and its dialog: one vocabulary for where a cheque
- * stands, a strip whose cells are the filters and count what they list,
- * what needs doing first at the top, actions that fit the state, a delete
- * that names what goes, and a dialog that guesses nothing.
+ * stands, three lists (needs attention, coming up, finished) that between
+ * them hold the six states, the most urgent first, one obvious action per
+ * row with the rest behind a menu, cleared cheques that look finished, a
+ * delete that names what goes, and a dialog that guesses nothing.
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -11,7 +12,7 @@ import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-li
 
 vi.mock('../services/supabaseClient', () => ({ supabase: null, requireSupabase: () => { throw new Error('no client in tests'); }, isSupabaseConfigured: true }));
 
-import PdcChequesView, { normaliseStateFilter } from '../components/PdcChequesView';
+import PdcChequesView, { normaliseStateFilter, TAB_OF, whenLine } from '../components/PdcChequesView';
 import PdcModal from '../components/PdcModal';
 import { CHEQUE_STATES, sortCheques, stateOf } from '../components/ui/ChequeState';
 import { chequeWhen } from '../components/ui/format';
@@ -50,8 +51,10 @@ const open = (over: Partial<React.ComponentProps<typeof PdcChequesView>> = {}) =
 };
 const rows = () => screen.getAllByRole('row').slice(1);
 const rowOf = (num: string) => rows().find(r => r.textContent!.includes(`#${num}`))!;
-const cell = (label: RegExp) => screen.getAllByRole('button', { name: label }).find(b => b.getAttribute('aria-pressed') !== null)!;
-const listCount = () => screen.getByText(/^\d+ cheques?$/).textContent!;
+const tabOf = (label: RegExp) => screen.getByRole('tab', { name: label });
+const summary = () => (screen.getByText(/to deal with|in hand|cleared ·|Nothing needs attention/) as HTMLElement).textContent!;
+const menuOf = (num: string) => { fireEvent.click(within(rowOf(num)).getByRole('button', { name: `More for cheque ${num}` })); return screen.getByRole('menu'); };
+const menuItems = (num: string) => within(menuOf(num)).getAllByRole('menuitem').map(b => [...b.querySelectorAll('span')].map(x => x.textContent!.trim()).join(' '));
 
 describe('one vocabulary for where a cheque stands', () => {
     it('names the six states the same everywhere and works them out from the date', () => {
@@ -78,82 +81,134 @@ describe('one vocabulary for where a cheque stands', () => {
         expect(sorted.map(c => c.id)).toEqual(['c_overdue', 'c_due', 'c_upcoming', 'c_bounced', 'c_hold', 'c_cleared_new', 'c_cleared_old']);
     });
 
-    it('the old dashboard filter names map to states', () => {
-        expect(normaliseStateFilter('today')).toBe('due');
+    it('every state belongs to exactly one of the three lists, and the old filter names find them', () => {
+        expect(TAB_OF).toEqual({ overdue: 'attention', due: 'attention', bounced: 'attention', upcoming: 'upcoming', hold: 'upcoming', cleared: 'finished' });
+        expect(normaliseStateFilter('today')).toBe('attention');
         expect(normaliseStateFilter('Pending')).toBe('upcoming');
-        expect(normaliseStateFilter('Cleared')).toBe('cleared');
-        expect(normaliseStateFilter(null)).toBe('all');
+        expect(normaliseStateFilter('Cleared')).toBe('finished');
+        expect(normaliseStateFilter(null)).toBeNull();
     });
 });
 
-describe('the strip counts what its cells list', () => {
-    it('shows every state with its count and amount, and In hand is the four states still with us', () => {
+describe('three lists, and the one with work in it opens first', () => {
+    it('counts on the tabs: what needs attention (date passed, due today, bounced), coming up (upcoming, on hold), finished (cleared)', () => {
         open();
-        expect(cell(/^In hand/).textContent).toMatch(/In hand4/);           // overdue + due + upcoming + hold
-        expect(cell(/^Date passed/).textContent).toMatch(/Date passed1/);
-        expect(cell(/^Due today/).textContent).toMatch(/Due today1/);
-        expect(cell(/^Upcoming/).textContent).toMatch(/Upcoming1/);
-        expect(cell(/^Cleared/).textContent).toMatch(/Cleared2/);
-        expect(listCount()).toBe('7 cheques');
+        expect(tabOf(/^Needs attention/).textContent).toMatch(/Needs attention3/);
+        expect(tabOf(/^Coming up/).textContent).toMatch(/Coming up2/);
+        expect(tabOf(/^Finished/).textContent).toMatch(/Finished2/);
+        expect(tabOf(/^Needs attention/).getAttribute('aria-selected')).toBe('true');
+        expect(summary()).toBe('3 to deal with · ₹16,000');
+        // the most urgent first: the one whose date passed, then today's, then the bounced one
+        expect(rows().map(r => r.textContent!.match(/#C_[A-Z_]+/)![0])).toEqual(['#C_OVERDUE', '#C_DUE', '#C_BOUNCED']);
     });
 
-    it('Upcoming lists only cheques still waiting for their date — not the one due today or the one whose date passed', () => {
+    it('Coming up lists what is in hand for later and what is on hold, by date; Finished lists the cleared newest first, dimmed', () => {
         open();
-        fireEvent.click(cell(/^Upcoming/));
-        expect(listCount()).toBe('1 cheque');
-        expect(rows()[0].textContent).toContain('#C_UPCOMING');
-        fireEvent.click(cell(/^Upcoming/));                                  // again: back to all
-        expect(listCount()).toBe('7 cheques');
+        fireEvent.click(tabOf(/^Coming up/));
+        expect(rows().map(r => r.textContent!.match(/#C_[A-Z_]+/)![0])).toEqual(['#C_UPCOMING', '#C_HOLD']);
+        expect(summary()).toMatch(/^2 in hand · ₹9,000 · 1 due within a week$/);
+        fireEvent.click(tabOf(/^Finished/));
+        expect(rows().map(r => r.textContent!.match(/#C_[A-Z_]+/)![0])).toEqual(['#C_CLEARED_NEW', '#C_CLEARED_OLD']);
+        expect(summary()).toBe('2 cleared · ₹3,000');
+        expect(rows()[0].className).toMatch(/opacity-70/);
     });
 
-    it('arriving from Today with "today" opens on Due today', () => {
+    it('with nothing needing attention the register opens on Coming up and says so', () => {
+        open({ pdcCheques: register().filter(c => !['c_due', 'c_overdue', 'c_bounced'].includes(c.id)) });
+        expect(tabOf(/^Coming up/).getAttribute('aria-selected')).toBe('true');
+        fireEvent.click(tabOf(/^Needs attention/));
+        expect(screen.getAllByText('Nothing needs attention').length).toBe(2);   // the summary line, and the empty state
+        expect(screen.getByText(/1 cheque due within a week — ₹3,000/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'See what is coming up' }));
+        expect(tabOf(/^Coming up/).getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('arriving from Today with "today" opens on Needs attention; "cleared" on Finished', () => {
         open({ initialStatusFilter: 'today' });
-        expect(cell(/^Due today/).getAttribute('aria-pressed')).toBe('true');
-        expect(listCount()).toBe('1 cheque');
+        expect(tabOf(/^Needs attention/).getAttribute('aria-selected')).toBe('true');
+        cleanup();
+        open({ initialStatusFilter: 'cleared' });
+        expect(tabOf(/^Finished/).getAttribute('aria-selected')).toBe('true');
     });
 
-    it('arriving for one customer shows their chip, and ✕ widens the list again', () => {
+    it('arriving for one customer shows their chip, and × widens the list again', () => {
         open({ initialCustomerFilter: 'cust_b' });
-        expect(listCount()).toBe('1 cheque');
+        expect(tabOf(/^Needs attention/).textContent).toMatch(/Needs attention1/);
         expect(screen.getByText('BETA TRADERS', { selector: 'span' })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: "Show every customer's cheques" }));
-        expect(listCount()).toBe('7 cheques');
+        expect(tabOf(/^Needs attention/).textContent).toMatch(/Needs attention3/);
     });
 
-    it('the search finds a cheque by customer, number, bank, note or amount', () => {
+    it('the search finds a cheque by customer, number, bank, note or amount, across the current list', () => {
         open();
         const box = screen.getByLabelText('Find a cheque');
         fireEvent.change(box, { target: { value: 'monday' } });
-        expect(listCount()).toBe('1 cheque');
+        expect(rows().length).toBe(1);
         fireEvent.change(box, { target: { value: '7000' } });
         expect(rows()[0].textContent).toContain('BETA TRADERS');
         fireEvent.change(box, { target: { value: 'C_HOLD' } });
-        expect(listCount()).toBe('1 cheque');
+        expect(tabOf(/^Coming up/).textContent).toMatch(/Coming up1/);
+        expect(screen.getByText('No cheques match')).toBeTruthy();
+    });
+
+    it('the filters fold behind one button', () => {
+        open();
+        expect(screen.queryByLabelText('CRM owner')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /^Filter/ }));
+        fireEvent.change(screen.getByLabelText('Bank'), { target: { value: 'HDFC Bank' } });
+        expect(screen.getByRole('button', { name: /^Filter · 1/ })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+        expect(screen.getByRole('button', { name: /^Filter$/ })).toBeTruthy();
     });
 });
 
 describe('each row shows its state and offers what fits it', () => {
-    it('the badge and the dated line say the same thing as the strip', () => {
+    it('says when each cheque is for in plain words, with the state word only where it adds something', () => {
         open();
         expect(within(rowOf('C_OVERDUE')).getByText('Date passed')).toBeTruthy();
-        expect(within(rowOf('C_OVERDUE')).getByText(/3d ago/)).toBeTruthy();
-        expect(within(rowOf('C_DUE')).getByText('Due today')).toBeTruthy();
-        expect(within(rowOf('C_DUE')).getByText('Today')).toBeTruthy();
-        expect(within(rowOf('C_UPCOMING')).getByText(/in 5d/)).toBeTruthy();
+        expect(within(rowOf('C_OVERDUE')).getByText(/^Dated .*, 3 days ago$/)).toBeTruthy();
+        expect(within(rowOf('C_DUE')).getByText('Due today')).toBeTruthy();        // the line itself; no tag repeating it
+        expect(within(rowOf('C_BOUNCED')).getByText('Bounced')).toBeTruthy();
+        fireEvent.click(tabOf(/^Coming up/));
+        expect(within(rowOf('C_UPCOMING')).getByText(/^In 5 days, /)).toBeTruthy();
+        expect(within(rowOf('C_UPCOMING')).queryByText('Upcoming')).toBeNull();
+        expect(within(rowOf('C_HOLD')).getByText('On hold')).toBeTruthy();
+        fireEvent.click(tabOf(/^Finished/));
+        expect(within(rowOf('C_CLEARED_NEW')).getByText(/^Cleared /)).toBeTruthy();
+        expect(within(rowOf('C_CLEARED_NEW')).queryByText('Cleared', { exact: true })).toBeNull();
+        const t = new Date();
+        expect(whenLine({ chequeDate: day(1), state: 'upcoming' }, t)).toMatch(/^Tomorrow, /);
+        expect(whenLine({ chequeDate: day(-1), state: 'overdue' }, t)).toMatch(/, yesterday$/);
+        expect(whenLine({ chequeDate: day(-10), clearedDate: day(-2), state: 'cleared' }, t)).toBe(`Cleared ${day(-2).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`);
     });
 
-    it('in hand: Clear, Hold, Bounce; on hold: Release; bounced: Back to pending; cleared: only Undo', () => {
-        const { onUpdatePdcStatus } = open();
-        const names = (num: string) => within(rowOf(num).querySelector('td:last-child') as HTMLElement).getAllByRole('button').map(b => b.textContent!.trim()).filter(Boolean);
-        expect(names('C_DUE')).toEqual(['Clear', 'Hold', 'Bounce']);
-        expect(names('C_HOLD')).toEqual(['Clear', 'Release', 'Bounce']);
-        expect(names('C_BOUNCED')).toEqual(['Clear', 'Back to pending']);
-        expect(names('C_CLEARED_NEW')).toEqual(['Undo']);
-        fireEvent.click(within(rowOf('C_DUE')).getByRole('button', { name: 'Clear' }));
+    it('one obvious action per row, the rest behind the menu; a cleared cheque has nothing to press', () => {
+        const { onUpdatePdcStatus, onEditPdc } = open();
+        const primary = (num: string) => within(rowOf(num).querySelector('td:last-child') as HTMLElement).queryAllByRole('button').filter(b => !/^More for/.test(b.getAttribute('aria-label') || '')).map(b => b.textContent!.trim());
+        expect(primary('C_DUE')).toEqual(['Mark cleared']);
+        expect(primary('C_OVERDUE')).toEqual(['Mark cleared']);
+        expect(primary('C_BOUNCED')).toEqual(['Mark cleared']);
+        expect(menuItems('C_DUE')).toEqual(['Bounced Returned unpaid by the bank', 'Put on hold Do not present it for now', 'Edit details', 'Delete…']);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(menuItems('C_BOUNCED')).toEqual(['Not bounced after all Back in hand, waiting for its date', 'Put on hold Do not present it again for now', 'Edit details', 'Delete…']);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        fireEvent.click(within(rowOf('C_DUE')).getByRole('button', { name: 'Mark cleared' }));
         expect(onUpdatePdcStatus).toHaveBeenLastCalledWith('c_due', PdcStatus.Cleared);
-        fireEvent.click(within(rowOf('C_HOLD')).getByRole('button', { name: 'Release' }));
+
+        fireEvent.click(tabOf(/^Coming up/));
+        expect(primary('C_UPCOMING')).toEqual([]);
+        expect(primary('C_HOLD')).toEqual(['Release hold']);
+        expect(menuItems('C_UPCOMING')).toEqual(['Mark cleared The bank paid it early', 'Put on hold Do not present it on its date', 'Bounced Returned unpaid by the bank', 'Edit details', 'Delete…']);
+        fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Edit details/ }));
+        expect(onEditPdc).toHaveBeenCalledWith(expect.objectContaining({ id: 'c_upcoming' }));
+        expect(screen.queryByRole('menu')).toBeNull();
+        fireEvent.click(within(rowOf('C_HOLD')).getByRole('button', { name: 'Release hold' }));
         expect(onUpdatePdcStatus).toHaveBeenLastCalledWith('c_hold', PdcStatus.Pending);
-        fireEvent.click(within(rowOf('C_CLEARED_NEW')).getByRole('button', { name: 'Undo' }));
+
+        fireEvent.click(tabOf(/^Finished/));
+        expect(primary('C_CLEARED_NEW')).toEqual([]);
+        expect(menuItems('C_CLEARED_NEW')).toEqual(['Not cleared after all Back in hand, waiting for its date', 'Edit details', 'Delete…']);
+        fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: /Not cleared after all/ }));
         expect(onUpdatePdcStatus).toHaveBeenLastCalledWith('c_cleared_new', PdcStatus.Pending);
     });
 
@@ -168,20 +223,21 @@ describe('each row shows its state and offers what fits it', () => {
         open({ currentUser: { ...adminUser(), id: 'VIEWER', name: 'Viewer', role: UserRole.Viewer, permissions: DEFAULT_ROLE_PERMISSIONS[UserRole.Viewer] }, onBulkPdcStatus: undefined, onBulkDeletePdc: undefined });
         expect(screen.queryByRole('button', { name: /Record a cheque/ })).toBeNull();
         expect(screen.queryAllByRole('checkbox')).toEqual([]);
-        expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Mark cleared' })).toBeNull();
+        expect(screen.queryByRole('button', { name: /^More for cheque/ })).toBeNull();
     });
 
     it('a refused save is said on the row', () => {
         open({ unsaved: [{ id: 'c_due', message: 'permission denied for table pdc_cheques' }] });
         expect(within(rowOf('C_DUE')).getByText(/Not saved, retrying/)).toBeTruthy();
-        expect(within(rowOf('C_UPCOMING')).queryByText(/Not saved/)).toBeNull();
+        expect(within(rowOf('C_OVERDUE')).queryByText(/Not saved/)).toBeNull();
     });
 });
 
 describe('deleting names what goes, and waits to be told', () => {
     it('one cheque: the question carries its number, bank, amount, date and customer; Cancel does nothing', () => {
         const { onDeletePdc } = open();
-        fireEvent.click(within(rowOf('C_OVERDUE')).getByRole('button', { name: /Delete cheque C_OVERDUE/ }));
+        fireEvent.click(within(menuOf('C_OVERDUE')).getByRole('menuitem', { name: 'Delete…' }));
         const dialog = screen.getByRole('alertdialog');
         expect(dialog.textContent).toMatch(/#C_OVERDUE/);
         expect(dialog.textContent).toMatch(/HDFC Bank/);
@@ -195,29 +251,32 @@ describe('deleting names what goes, and waits to be told', () => {
 
     it('the button that deletes says "Delete cheque"; Esc is no', () => {
         const { onDeletePdc } = open();
-        fireEvent.click(within(rowOf('C_OVERDUE')).getByRole('button', { name: /Delete cheque C_OVERDUE/ }));
+        fireEvent.click(within(menuOf('C_OVERDUE')).getByRole('menuitem', { name: 'Delete…' }));
         fireEvent.keyDown(window, { key: 'Escape' });
         expect(screen.queryByRole('alertdialog')).toBeNull();
-        fireEvent.click(within(rowOf('C_OVERDUE')).getByRole('button', { name: /Delete cheque C_OVERDUE/ }));
+        fireEvent.click(within(menuOf('C_OVERDUE')).getByRole('menuitem', { name: 'Delete…' }));
         fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete cheque' }));
         expect(onDeletePdc).toHaveBeenCalledWith('c_overdue');
     });
 
-    it('a selection: the bulk bar offers the four states and a delete that names the total', () => {
+    it('a selection: mark cleared or put on hold in one go, or a delete that names the total; nothing to select among the finished', () => {
         const { onBulkPdcStatus, onBulkDeletePdc } = open();
         fireEvent.click(within(rowOf('C_DUE')).getByRole('checkbox'));
-        fireEvent.click(within(rowOf('C_UPCOMING')).getByRole('checkbox'));
-        expect(screen.getByText('2 cheques selected')).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: 'Mark cleared' }));
-        expect(onBulkPdcStatus).toHaveBeenCalledWith(['c_due', 'c_upcoming'], PdcStatus.Cleared);
+        fireEvent.click(within(rowOf('C_OVERDUE')).getByRole('checkbox'));
+        expect(screen.getByText('2 selected')).toBeTruthy();
+        expect(screen.getAllByRole('button', { name: 'Mark cleared' }).length).toBe(4);   // the bar's, and one per row
+        fireEvent.click(screen.getAllByRole('button', { name: 'Mark cleared' })[0]);
+        expect(onBulkPdcStatus).toHaveBeenCalledWith(['c_due', 'c_overdue'], PdcStatus.Cleared);
         fireEvent.click(within(rowOf('C_DUE')).getByRole('checkbox'));
-        fireEvent.click(within(rowOf('C_UPCOMING')).getByRole('checkbox'));
+        fireEvent.click(within(rowOf('C_OVERDUE')).getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: 'Delete…' }));
         const dialog = screen.getByRole('alertdialog');
         expect(dialog.textContent).toMatch(/Delete 2 cheques\?/);
-        expect(dialog.textContent).toMatch(/7,000 across 2 cheques/);
+        expect(dialog.textContent).toMatch(/9,000 across 2 cheques/);
         fireEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 cheques' }));
-        expect(onBulkDeletePdc).toHaveBeenCalledWith(['c_due', 'c_upcoming']);
+        expect(onBulkDeletePdc).toHaveBeenCalledWith(['c_due', 'c_overdue']);
+        fireEvent.click(tabOf(/^Finished/));
+        expect(screen.queryAllByRole('checkbox')).toEqual([]);
     });
 });
 
@@ -233,12 +292,12 @@ describe('loading, empty, and pages', () => {
         open();
         fireEvent.change(screen.getByLabelText('Find a cheque'), { target: { value: 'zzz' } });
         expect(screen.getByText('No cheques match')).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
-        expect(listCount()).toBe('7 cheques');
+        fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+        expect(rows().length).toBe(3);
     });
 
     it('fifty rows at a time', () => {
-        const many = Array.from({ length: 120 }, (_, i) => cheque(`c_${i}`, { chequeDate: day(i + 1) }));
+        const many = Array.from({ length: 120 }, (_, i) => cheque(`c_${i}`, { chequeDate: day(-(i + 1)) }));
         open({ pdcCheques: many });
         expect(rows().length).toBe(50);
         fireEvent.click(screen.getByRole('button', { name: /Show more — 70 left/ }));
@@ -299,7 +358,7 @@ describe('the dialog guesses nothing', () => {
         openDialog({ preselectedCustomerId: customerA().id });
         const past = day(-3); const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-${String(past.getDate()).padStart(2, '0')}`;
         fireEvent.change(screen.getByLabelText('Dated'), { target: { value: iso } });
-        expect(document.body.textContent).toMatch(/3d ago .* it will show as “Date passed”/);
+        expect(document.body.textContent).toMatch(/3d ago .* it will need attention until it is cleared/);
     });
 
     it('records with the same payload shape as before, the status as chosen, and one id for retries', async () => {
@@ -309,6 +368,8 @@ describe('the dialog guesses nothing', () => {
         fireEvent.change(screen.getByPlaceholderText('e.g. 50000'), { target: { value: '15000' } });
         fireEvent.change(screen.getByLabelText('Bank'), { target: { value: 'SBI' } });
         fireEvent.change(screen.getByLabelText('Dated'), { target: { value: '2026-12-01' } });
+        expect(screen.queryByRole('radio', { name: 'On hold' })).toBeNull();          // folded away for a new cheque
+        fireEvent.click(screen.getByRole('button', { name: /^More/ }));
         fireEvent.click(screen.getByRole('radio', { name: 'On hold' }));
         fireEvent.click(screen.getByRole('button', { name: 'Record cheque' }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -329,7 +390,8 @@ describe('the dialog guesses nothing', () => {
         expect((screen.getByPlaceholderText('e.g. 004821') as HTMLInputElement).value).toBe('4242');
         expect((screen.getByLabelText('Bank') as HTMLInputElement).value).toBe('Canara Bank');
         expect((screen.getByLabelText('Dated') as HTMLInputElement).value).toBe('2026-10-10');
-        expect(screen.getByRole('radio', { name: 'On hold' }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('radio', { name: 'On hold' }).getAttribute('aria-checked')).toBe('true');   // open, since it is not simply in hand
+        expect(screen.getByText(/On hold · dated 10 Oct 2026/)).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
         expect((onSave.mock.calls[0][0] as any)).toMatchObject({ id: 'c_edit', addedBy: 'Rawat', remarks: 'from the director' });

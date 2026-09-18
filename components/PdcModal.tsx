@@ -4,6 +4,7 @@ import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
 import { DialogShell } from './ui/DialogShell';
 import { Button } from './ui/Primitives';
 import { ChequeIcon } from './icons/Icons';
+import { Disclosure } from './ui/Disclosure';
 import { formatCompact, formatINR, chequeWhen, localIsoDate } from './ui/format';
 
 interface PdcModalProps {
@@ -38,13 +39,13 @@ const COMMON_BANKS = [
     'HSBC',
 ];
 
-/** What each choice means, under the segmented control. */
-const STATUS_HINT: Record<PdcStatus, string> = {
-    [PdcStatus.Pending]: 'In hand — it will come up as due on its date.',
-    [PdcStatus.Hold]: 'Deliberately not presented, usually at the customer\'s request.',
-    [PdcStatus.Cleared]: 'The bank has paid it.',
-    [PdcStatus.Bounced]: 'Returned unpaid by the bank.',
-    [PdcStatus.DueToday]: 'In hand.',
+/** Each choice in the register's words, with what it means. */
+const STATUS_WORDS: Record<PdcStatus, { label: string; hint: string }> = {
+    [PdcStatus.Pending]: { label: 'In hand', hint: 'Comes up on its date' },
+    [PdcStatus.Hold]: { label: 'On hold', hint: 'Not to be presented for now' },
+    [PdcStatus.Cleared]: { label: 'Cleared', hint: 'The bank paid it' },
+    [PdcStatus.Bounced]: { label: 'Bounced', hint: 'Returned unpaid' },
+    [PdcStatus.DueToday]: { label: 'In hand', hint: 'Comes up on its date' },
 };
 
 const FIELD = 'w-full h-10 px-3 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-[13.5px] text-gray-900 dark:text-white focus:ring-2 focus:ring-accent/40 focus:outline-none max-md:h-11';
@@ -243,7 +244,7 @@ const PdcModal: React.FC<PdcModalProps> = ({
     return (
         <DialogShell
             title={chequeToEdit ? `Edit cheque #${chequeToEdit.chequeNumber}` : 'Record a cheque'}
-            subtitle={chequeToEdit ? 'Correct what was recorded; the register updates for everyone.' : 'A post-dated cheque a customer has given. It comes up in the register on its date.'}
+            subtitle={chequeToEdit ? `${STATUS_WORDS[chequeToEdit.status].label} · dated ${new Date(chequeToEdit.chequeDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Comes up in the register on its date.'}
             icon={<ChequeIcon className="w-5 h-5" />}
             size="md"
             onClose={onClose}
@@ -391,61 +392,67 @@ const PdcModal: React.FC<PdcModalProps> = ({
                                     className={FIELD}
                                     required
                                 />
-                                <p className={`text-[12px] mt-1 ${datePassed && status === PdcStatus.Pending ? 'text-dang font-semibold' : 'text-label-3'}`}>
-                                    {datedText
-                                        ? (datePassed && status === PdcStatus.Pending ? `${datedText} — it will show as “Date passed” until it is cleared` : datedText)
-                                        : 'The date written on the cheque'}
-                                </p>
+                                {datedText && (
+                                    <p className={`text-[12px] mt-1 ${datePassed && status === PdcStatus.Pending ? 'text-dang font-semibold' : 'text-label-3'}`}>
+                                        {datePassed && status === PdcStatus.Pending ? `${datedText} — it will need attention until it is cleared` : datedText}
+                                    </p>
+                                )}
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <span className={LABEL} id="pdcStatusLabel">Where it stands</span>
-                                <div className="grid grid-cols-4 rounded-xl bg-card-2 p-1 gap-1" role="radiogroup" aria-labelledby="pdcStatusLabel">
-                                    {PDC_STATUS_CHOICES.map(o => (
-                                        <button
-                                            key={o.value}
-                                            type="button"
-                                            role="radio"
-                                            aria-checked={status === o.value}
-                                            onClick={() => setStatus(o.value)}
-                                            title={STATUS_HINT[o.value]}
-                                            className={`h-8 rounded-lg text-[12px] font-bold whitespace-nowrap transition-colors max-md:h-10 ${
-                                                status === o.value ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2 hover:bg-hover hover:text-label'
-                                            }`}
-                                        >
-                                            {o.value === PdcStatus.Pending ? 'Pending' : o.value === PdcStatus.Hold ? 'On hold' : o.value === PdcStatus.Cleared ? 'Cleared' : 'Bounced'}
-                                        </button>
-                                    ))}
+                        <Disclosure
+                            title="More"
+                            summary={[status !== PdcStatus.Pending ? STATUS_WORDS[status].label : '', remarks.trim() ? 'note' : ''].filter(Boolean).join(' · ') || 'handling state, date received, a note'}
+                            defaultOpen={!!chequeToEdit && chequeToEdit.status !== PdcStatus.Pending}
+                        >
+                            <div className="space-y-4">
+                                <div>
+                                    <span className={LABEL} id="pdcStatusLabel">Where it stands</span>
+                                    <div className="grid grid-cols-4 rounded-xl bg-card-2 p-1 gap-1" role="radiogroup" aria-labelledby="pdcStatusLabel">
+                                        {PDC_STATUS_CHOICES.map(o => (
+                                            <button
+                                                key={o.value}
+                                                type="button"
+                                                role="radio"
+                                                aria-checked={status === o.value}
+                                                onClick={() => setStatus(o.value)}
+                                                title={STATUS_WORDS[o.value].hint}
+                                                className={`h-8 rounded-lg text-[12px] font-bold whitespace-nowrap transition-colors max-md:h-10 ${
+                                                    status === o.value ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2 hover:bg-hover hover:text-label'
+                                                }`}
+                                            >
+                                                {STATUS_WORDS[o.value].label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-[12px] text-label-3 mt-1">{STATUS_WORDS[status].hint}</p>
                                 </div>
-                                <p className="text-[12px] text-label-3 mt-1">{STATUS_HINT[status]}</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label htmlFor="pdcReceived" className={LABEL}>Received on</label>
+                                        <input
+                                            id="pdcReceived"
+                                            aria-label="Received on"
+                                            type="date"
+                                            value={receivedDate}
+                                            onChange={(e) => setReceivedDate(e.target.value)}
+                                            className={FIELD}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="pdcNote" className={LABEL}>Note</label>
+                                        <input
+                                            id="pdcNote"
+                                            type="text"
+                                            placeholder="e.g. against invoice 1042"
+                                            value={remarks}
+                                            onChange={(e) => setRemarks(e.target.value)}
+                                            className={FIELD}
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label htmlFor="pdcReceived" className={LABEL}>Received on</label>
-                                <input
-                                    id="pdcReceived"
-                                    aria-label="Received on"
-                                    type="date"
-                                    value={receivedDate}
-                                    onChange={(e) => setReceivedDate(e.target.value)}
-                                    className={FIELD}
-                                />
-                                <p className="text-[12px] text-label-3 mt-1">The day the cheque came into our hands</p>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label htmlFor="pdcNote" className={LABEL}>Note <span className="normal-case font-semibold text-label-3">(optional)</span></label>
-                            <input
-                                id="pdcNote"
-                                type="text"
-                                placeholder="e.g. Against invoice 1042 · given by the director"
-                                value={remarks}
-                                onChange={(e) => setRemarks(e.target.value)}
-                                className={FIELD}
-                            />
-                        </div>
+                        </Disclosure>
                     </div>
 
         </DialogShell>
