@@ -151,7 +151,7 @@ Scope: the Data source page (Settings → Data source), the sync review dialog, 
 
 **Visual QA (local, every write aborted, the reset never confirmed) at 1366×768, 1440×900, 1024×768 and 390×844:** no horizontal overflow; the sections in order with the fresh start last and its button inside its own red section; *Check the sheet* answers with the reachable line and the *Next sync* line; *Review and update* opens the review on the check (no re-read), the four tiles show, the button names the rows, rows = changed + new + unchanged; Esc closes; *Sync balances* opens the same review and *Cancel* writes nothing (0 requests attempted); *Import customers…* asks in the app; Excel mode shows the upload with the table folded; *Start a fresh start…* opens the confirmation with *Reset the book* disabled, closed with Cancel; no RPC was ever called. 0 findings (two QA-script artefacts fixed on the way: state carried across viewports without a reload; the page not yet loaded after a reload).
 
-## Phase 4, batch 5 — whole-app consistency, accessibility and performance (2026-09-18, committed locally, not deployed)
+## Phase 4, batch 5 — whole-app consistency, accessibility and performance (2026-09-18, deployed 12:14 IST)
 
 Scope: every screen and dialog, small systemic fixes only. No workflow redesigned; no business rule, formula, permission or schema touched.
 
