@@ -12,28 +12,27 @@ import { useCheques } from './hooks/useCheques';
 import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
 import { useCustomers } from './hooks/useCustomers';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, isBadDebt } from './types';
-import { getOutstandingForUser, processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
+import { processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
-import CrmPerformanceTable from './components/CrmPerformanceTable';
 import LoginScreen from './components/LoginScreen';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
 const LiveStockView = lazy(() => import('./components/LiveStockView'));
 import { useLiveStock, LIVE_STOCK_SHEET_URL } from './services/liveStock';
-import { formatCompact, formatDateShort, formatINR, relativeDays, startOfToday } from './components/ui/format';
+import { formatCompact, startOfToday } from './components/ui/format';
 import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
-import { Stat, Card, SectionHeader, AgeingBar, AgeingLegend, AGE_BANDS, Badge, Button, EmptyState, LoadingList } from './components/ui/Primitives';
+import { Card, LoadingList } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
-import { BadDebtStrip } from './components/ui/BadDebtStrip';
 import { CheckCircleIcon, ExclamationTriangleIcon } from './components/icons/Icons';
 import FollowUpModal from './components/FollowUpModal';
 import AlertsView from './components/AlertsView';
 const UserModal = lazy(() => import('./components/UserModal'));
 const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'));
 const TemplateModal = lazy(() => import('./components/TemplateModal'));
-import NotificationBanner from './components/NotificationBanner';
+import { CompanyToday } from './components/pages/CompanyToday';
+import { PersonalToday } from './components/pages/PersonalToday';
 import type { FollowUpCategoryFilter, AgeingReportFilter } from './components/ReportsView';
 const ReportsView = lazy(() => import('./components/ReportsView'));
 const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
@@ -44,8 +43,6 @@ import PdcModal from './components/PdcModal';
 import { TeamView } from './components/TeamView';
 import { TemplatesView } from './components/TemplatesView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
-
-
 
 /**
  * Supabase is the master record and the only one: state is loaded from it on
@@ -58,18 +55,24 @@ const App = () => {
 
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    /** The collections have been read from the server since sign-in; nothing syncs before that. */
+    const [serverLoaded, setServerLoaded] = useState(false);
+    const [restoringSession, setRestoringSession] = useState(isSupabaseConfigured);
 
     /** The screen the app is on; mirrored to the URL hash (hooks/useTab.ts). */
     const [tab, setTab] = useTab(isAuthenticated);
 
-    // This state holds the"Master" data for the application
+    /** The whole book. Every change lands here and the persistence hook carries it to the server. */
     const [appData, setAppData] = useState<Outstanding[]>([]);
-    
-    // This state holds the filtered data for the current view
-    const [outstandingData, setOutstandingData] = useState<Outstanding[]>([]);
-    
+    /**
+     * This person's slice of the book — the whole of it for whoever reads
+     * the whole book, their own accounts for everyone else. Derived, not
+     * kept: it used to be recomputed into state by an effect, one tick after
+     * every change, with a loading flag that blinked the skeleton each time.
+     */
+    const outstandingData = useMemo(() => (currentUser ? processStatuses(scopeTo(currentUser, appData)) : []), [currentUser, appData]);
+    /** The book is on its way from the server. */
     const [loading, setLoading] = useState<boolean>(false);
-    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     /** Live stock's own term: a customer searched in the book must not empty the stock list (services/search.ts). */
     const [stockSearch, setStockSearch] = useState('');
@@ -79,7 +82,7 @@ const App = () => {
     // team table) and an ageing band (the portfolio card). 'ALL' / 'all' = no filter.
     const [reportCrm, setReportCrm] = useState<string>('ALL');
     const [reportAgeing, setReportAgeing] = useState<AgeingReportFilter>('all');
-    
+
 
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
     /**
@@ -88,19 +91,9 @@ const App = () => {
      * destructive answer, and looked nothing like the rest of the app.
      */
     const [ask, setAsk] = useState<{ title: string; body: React.ReactNode; confirmLabel: string; tone?: 'danger' | 'primary'; run: () => void } | null>(null);
-    // PDC (Post Dated Cheques) State
     const [pdcCheques, setPdcCheques] = useState<PdcCheque[]>([]);
 
-    // Company Profile state
     const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
-
-
-    const handleSaveCompanyProfile = (updated: CompanyProfile) => {
-        setCompanyProfile(updated);
-        setSyncMessage({ type: 'success', text: 'Company profile details updated successfully.' });
-        setTimeout(() => setSyncMessage(null), 4000);
-    };
-
     const [templates, setTemplates] = useState<Template[]>([DEFAULT_TEMPLATE]);
     const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string, action?: { label: string; run: () => void } } | null>(null);
 
@@ -109,6 +102,11 @@ const App = () => {
         setSyncMessage({ type, text });
         window.setTimeout(() => setSyncMessage(null), type === 'error' ? 12000 : 5000);
     }, []);
+    const handleSaveCompanyProfile = (updated: CompanyProfile) => {
+        setCompanyProfile(updated);
+        setSyncMessage({ type: 'success', text: 'Company profile details updated successfully.' });
+        setTimeout(() => setSyncMessage(null), 4000);
+    };
     /** Where the balances come from, and everything that reads or resets them (hooks/useDataSource.tsx). */
     const source = useDataSource({
         appData, setAppData, pdcCheques, templates, companyProfile,
@@ -122,7 +120,7 @@ const App = () => {
         handleGoogleSync, handleCustomerMasterSync,
     } = source;
 
-    // State for notifications
+    /** The Today list's filters: the attention banner's, the unattended shortcut's, and whether the banner shows. */
     const [priorityFilter, setPriorityFilter] = useState(false);
     const [unattendedFilter, setUnattendedFilter] = useState(false);
     const [showNotificationBanner, setShowNotificationBanner] = useState(true);
@@ -135,9 +133,6 @@ const App = () => {
     // Without VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY the app does not run
     // at all — LoginScreen says so rather than pretending to work.
     // =====================================================================
-    const [serverLoaded, setServerLoaded] = useState(false);
-    const [restoringSession, setRestoringSession] = useState(isSupabaseConfigured);
-
     // Restore an existing session on load so a refresh does not bounce you out.
     useEffect(() => {
         if (!isSupabaseConfigured) return;
@@ -231,27 +226,6 @@ const App = () => {
     dialogOpenRef.current = !!selectedCustomer || !!customers.customerDialog || !!cheques.chequeDialog || !!resetPlan || !!pendingSync;
 
 
-
-
-    // Update the view when Current User changes or Master Data changes
-    const updateViewData = useCallback(async () => {
-        if (!currentUser) return;
-        setLoading(true);
-        try {
-            // Filter the master data based on user role
-            const userViewData = await getOutstandingForUser(currentUser, appData);
-            setOutstandingData(userViewData);
-        } catch (err) {
-            setError('Failed to process data view.');
-        } finally {
-            setLoading(false);
-        }
-    }, [currentUser, appData]);
-
-    useEffect(() => {
-        if (isAuthenticated && currentUser) updateViewData();
-    }, [updateViewData, currentUser, isAuthenticated]);
-
     /**
      * Filters belong to the person looking, not to the data.
      *
@@ -294,7 +268,6 @@ const App = () => {
         setServerLoaded(false);
         setIsAuthenticated(false);
         setCurrentUser(null);
-        setOutstandingData([]);
         setTab('overview');
     };
 
@@ -351,7 +324,7 @@ const App = () => {
             setPriorityFilter(true);
         }
     };
-    
+
     /** Whole-book ageing; see ageingTotals(). */
     const portfolioAgeing = useMemo(() => ageingTotals(appData), [appData]);
 
@@ -414,224 +387,15 @@ const App = () => {
 
 
     const cashFlowForecastMetrics = useMemo(() => cashFlowForecast(outstandingData, startOfToday()), [outstandingData]);
-    
+
     const notificationSummary = useMemo(() => attentionCounts(outstandingData, startOfToday()), [outstandingData]);
 
 
     /** Per-CRM collection workload; see crmPerformance(). */
     const crmPerformanceStats = useMemo(() => crmPerformance(outstandingData, users, startOfToday()), [outstandingData, users]);
 
-
-
     /** Cheques this person is responsible for, and where they stand today; see chequeSummary(). */
     const todayPdcMetrics = useMemo(() => chequeSummary(pdcCheques, currentUser, appData, new Date()), [pdcCheques, currentUser, appData]);
-
-    // Shared dashboard view for Admin
-    const renderAdminOverviewCards = () => (
-        /* Whoever reads the whole book without running the team gets the same
-           one-screen treatment as everybody else; the cards scroll inside the
-           page rather than the page scrolling under them. */
-        <div className={`flex flex-col gap-7 ${!rights.runsTheTeam && fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5 lg:overflow-y-auto lg:pr-1.5' : ''}`}>
-            {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
-                <NotificationBanner
-                    urgentCount={notificationSummary.urgentCount}
-                    overdueCount={notificationSummary.overdueCount}
-                    onView={handleViewPriorityItems}
-                    onDismiss={() => setShowNotificationBanner(false)}
-                />
-            )}
-
-            {/* ---------- worklist ---------- */}
-            <section>
-                <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5">
-                    <div>
-                        <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">Worklist</h2>
-                        <p className="text-[13.5px] text-label-3 mt-1">The whole company's follow-ups. Press a card to see those accounts in Reports.</p>
-                    </div>
-                    {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter || reportCrm !== 'ALL' || reportAgeing !== 'all') && (
-                        <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
-                    )}
-                </div>
-
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    <Stat
-                        label="Overdue"
-                        tone="dang"
-                        active={categoryFilter === 'overdue'}
-                        onClick={() => openReport({ category: 'overdue' })}
-                        value={fourBoxesSummary.overdueCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.overdueAmount)}</span> past the promised date</>}
-                    />
-                    <Stat
-                        label="Due today"
-                        tone="brand"
-                        active={categoryFilter === 'today'}
-                        onClick={() => openReport({ category: 'today' })}
-                        value={fourBoxesSummary.todayCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.todayAmount)}</span> to chase today</>}
-                    />
-                    <Stat
-                        label="No follow-up"
-                        tone="warn"
-                        active={categoryFilter === 'no_follow_up'}
-                        onClick={() => openReport({ category: 'no_follow_up' })}
-                        value={fourBoxesSummary.noFollowUpCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.noFollowUpAmount)}</span> with nothing planned</>}
-                    />
-                    <Stat
-                        label="Upcoming"
-                        tone="pos"
-                        active={categoryFilter === 'future'}
-                        onClick={() => openReport({ category: 'future' })}
-                        value={fourBoxesSummary.futureCount}
-                        sub={<><span className="num font-semibold text-label-2">{formatCompact(fourBoxesSummary.futureAmount)}</span> promised for a later date</>}
-                    />
-                </div>
-                <BadDebtStrip
-                    className="mt-3.5"
-                    count={fourBoxesSummary.badDebtCount}
-                    amount={fourBoxesSummary.badDebtAmount}
-                    active={categoryFilter === 'bad_debt'}
-                    onClick={() => openReport({ category: 'bad_debt' })}
-                />
-            </section>
-
-            {/* ---------- team: who is on top of their book, and who is not ---------- */}
-            {rights.runsTheTeam && (
-                <CrmPerformanceTable
-                    stats={crmPerformanceStats}
-                    onSelectCrm={(crmId, category) => openReport({ crm: crmId.toUpperCase(), category: category ?? 'all' })}
-                />
-            )}
-
-            {/* ---------- portfolio ageing ---------- */}
-            <Card className="p-6">
-                <SectionHeader
-                    title="Portfolio ageing"
-                    subtitle="How much of the book is still healthy, and how much has gone cold. Press a band to see its accounts in Reports."
-                    actions={<AgeingLegend />}
-                />
-
-                <div className="flex flex-wrap items-end gap-x-12 gap-y-5 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
-                    <div>
-                        <p className="label">Outstanding</p>
-                        <p className="num text-[40px] font-semibold text-label leading-none mt-2.5 tracking-[-0.04em]">
-                            {formatCompact(portfolioAgeing.total)}
-                        </p>
-                        <p className="text-[13px] text-label-3 mt-2.5">{formatINR(portfolioAgeing.total)}</p>
-                    </div>
-                    <button type="button" className="text-left rounded-[12px] -m-2 p-2 hover:bg-hover transition-colors" onClick={() => openReport({ ageing: 'dueOver45' })} title="Accounts with money more than 45 days overdue — open in Reports">
-                        <p className="label">Past 45 days</p>
-                        <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
-                            {formatCompact(portfolioAgeing.over45)}
-                        </p>
-                        <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct45}% of the book</p>
-                    </button>
-                    <button type="button" className="text-left rounded-[12px] -m-2 p-2 hover:bg-hover transition-colors" onClick={() => openReport({ ageing: 'over90' })} title="Accounts with money more than 90 days overdue — open in Reports">
-                        <p className="label">Past 90 days</p>
-                        <p className="num text-[26px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
-                            {formatCompact(portfolioAgeing.over90)}
-                        </p>
-                        <p className="text-[13px] text-label-3 mt-2.5">{portfolioAgeing.pct90}% of the book</p>
-                    </button>
-                </div>
-
-                <AgeingBar parts={portfolioAgeing} height={12} className="mt-7" />
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
-                    {AGE_BANDS.map(band => {
-                        const amount = portfolioAgeing[band.key];
-                        const pct = portfolioAgeing.total > 0 ? Math.round((amount / portfolioAgeing.total) * 100) : 0;
-                        const reportBand = ({ a1: '1-45', a2: '46-90', a3: '91-135', a4: 'over135' } as const)[band.key];
-                        return (
-                            <button key={band.key} type="button" onClick={() => openReport({ ageing: reportBand })} title={`Accounts with money ${band.label} overdue — open in Reports`} className="bg-card-2 rounded-[14px] px-4 py-3.5 text-left hover:bg-hover transition-colors">
-                                <span className="flex items-center gap-2">
-                                    <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: band.varName }} aria-hidden="true" />
-                                    <span className="text-[13px] font-medium text-label-2">{band.label}</span>
-                                </span>
-                                <p className="num text-[19px] font-semibold text-label mt-2">{formatCompact(amount)}</p>
-                                <p className="text-[12.5px] text-label-3 mt-1">{pct}% of book</p>
-                            </button>
-                        );
-                    })}
-                </div>
-            </Card>
-
-            {/* ---------- cheques + commitments ---------- */}
-            <div className="grid lg:grid-cols-2 gap-3.5">
-                <Card className="p-6 flex flex-col">
-                    <SectionHeader
-                        title="Cheques to present today"
-                        subtitle="Post-dated cheques whose date has arrived."
-                    />
-                    <div className="flex items-end gap-10 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
-                        <div>
-                            <p className="label">Due today</p>
-                            <p className="num text-[32px] font-semibold text-label leading-none mt-2.5 tracking-[-0.03em]">
-                                {todayPdcMetrics.todayCount}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="label">Value</p>
-                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
-                                {formatCompact(todayPdcMetrics.todayAmount)}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="label">Held in hand</p>
-                            <p className="num text-[22px] font-semibold leading-none mt-2.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
-                                {formatCompact(todayPdcMetrics.activeAmount)}
-                            </p>
-                            <p className="text-[12.5px] text-label-3 mt-2">{todayPdcMetrics.activeCount} cheques</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-2.5 mt-auto pt-7 max-md:[&>button]:flex-1 max-md:[&>button]:h-11">
-                        <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
-                            {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => handleOpenAddPdc()}>Record a cheque</Button>
-                    </div>
-                </Card>
-
-                <Card className="p-6 flex flex-col">
-                    <SectionHeader
-                        title="Committed collections"
-                        subtitle="What customers have promised, and by when."
-                    />
-                    <div className="flex items-end gap-10 mt-7 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
-                        <div>
-                            <p className="label">Today</p>
-                            <p className="num text-[32px] font-semibold leading-none mt-2.5 tracking-[-0.03em]" style={{ color: 'var(--age-1-ink)' }}>
-                                {formatCompact(cashFlowForecastMetrics.todayForecast)}
-                            </p>
-                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.todayCount} commitments</p>
-                        </div>
-                        <div>
-                            <p className="label">Next 7 days</p>
-                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
-                                {formatCompact(cashFlowForecastMetrics.weekForecast)}
-                            </p>
-                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.weekCount} commitments</p>
-                        </div>
-                        <div>
-                            <p className="label">All open</p>
-                            <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 tracking-[-0.02em]">
-                                {formatCompact(cashFlowForecastMetrics.totalForecast)}
-                            </p>
-                            <p className="text-[12.5px] text-label-3 mt-2">{cashFlowForecastMetrics.totalCount} accounts</p>
-                        </div>
-                    </div>
-                    {cashFlowForecastMetrics.totalCount === 0 && (
-                        <p className="text-[13px] text-label-3 mt-auto pt-7 leading-relaxed">
-                            No commitments recorded yet. They appear here once a CRM logs an expected
-                            amount and date on a follow-up.
-                        </p>
-                    )}
-                </Card>
-            </div>
-
-        </div>
-    );
 
     const renderCustomerListView = () => (
         <CustomerDashboardView
@@ -673,440 +437,6 @@ const App = () => {
             globalSearch={stockSearch}
         />
     );
-
-    const renderUserDashboard = () => {
-        // Use lifted state
-        const activeTab = tab;
-
-        return (
-            <>
-                {activeTab === 'overview' && (
-                    /* One screen, no page scroll: the summary above stays put and the
-                       account list below takes whatever height is left. Only from lg —
-                       a phone scrolls, because none of this fits a phone. */
-                    <div className={`flex flex-col gap-7 ${fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5' : ''}`}>
-                        {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
-                            <NotificationBanner
-                                urgentCount={notificationSummary.urgentCount}
-                                overdueCount={notificationSummary.overdueCount}
-                                onView={handleViewPriorityItems}
-                                onDismiss={() => setShowNotificationBanner(false)}
-                            />
-                        )}
-
-                        {/* ---------- my worklist ---------- */}
-                        <section>
-                            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5 lg:mb-2.5">
-                                <div>
-                                    <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">My worklist</h2>
-                                    <p className="text-[13.5px] text-label-3 mt-1">Tap a card to filter the accounts below.</p>
-                                </div>
-                                {(categoryFilter !== 'all' || statusFilter || priorityFilter || unattendedFilter) && (
-                                    <Button size="sm" variant="ghost" onClick={handleClearFilters}>Clear filters</Button>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                                <Stat
-                                    label="Due today"
-                                    tone="brand"
-                                    active={categoryFilter === 'today'}
-                                    onClick={() => handleCategoryBoxClick('today')}
-                                    value={userBoxMetrics.todayCount}
-                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.todayAmount)}</span> to chase</>}
-                                />
-                                <Stat
-                                    label="Overdue"
-                                    tone="dang"
-                                    active={categoryFilter === 'overdue'}
-                                    onClick={() => handleCategoryBoxClick('overdue')}
-                                    value={userBoxMetrics.overdueCount}
-                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.overdueAmount)}</span> past promised date</>}
-                                />
-                                <Stat
-                                    label="No follow-up"
-                                    tone="warn"
-                                    active={categoryFilter === 'no_follow_up'}
-                                    onClick={() => handleCategoryBoxClick('no_follow_up')}
-                                    value={userBoxMetrics.noFollowUpCount}
-                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.noFollowUpAmount)}</span> unattended</>}
-                                />
-                                <Stat
-                                    label="Scheduled"
-                                    tone="pos"
-                                    active={categoryFilter === 'future'}
-                                    onClick={() => handleCategoryBoxClick('future')}
-                                    value={userBoxMetrics.futureCount}
-                                    sub={<><span className="num font-semibold text-label-2">{formatCompact(userBoxMetrics.futureAmount)}</span> committed</>}
-                                />
-                            </div>
-                            <BadDebtStrip
-                                className="mt-3.5 lg:mt-2.5"
-                                count={userBoxMetrics.badDebtCount}
-                                amount={userBoxMetrics.badDebtAmount}
-                                active={categoryFilter === 'bad_debt'}
-                                onClick={() => handleCategoryBoxClick('bad_debt')}
-                            />
-                        </section>
-
-                        {/* ---------- my book, and the accounts beside it ----------
-                            Stacked, this ran to about a screen and a half and the
-                            account list was the part pushed off the bottom — which is
-                            the part the day is actually worked from. On a desktop the
-                            summary takes the left column and the list takes the right,
-                            full height, so nothing needs scrolling to be seen. */}
-                        <div className={`flex flex-col gap-7 lg:grid lg:grid-cols-12 lg:gap-4 ${fitsOneScreen ? 'lg:flex-1 lg:min-h-0' : ''}`}>
-                        {/* Scrolls only if the screen is too short to hold both cards —
-                            on anything normal there is no scrollbar here at all, and
-                            nothing is ever cut off on a short one. */}
-                        <div className={`flex flex-col gap-3.5 lg:col-span-5 lg:gap-4 ${fitsOneScreen ? 'lg:min-h-0 lg:overflow-y-auto lg:pr-1' : ''}`}>
-                            <Card className="p-6 lg:p-5 flex flex-col">
-                                <SectionHeader
-                                    title="My book"
-                                    subtitle={<span className="lg:hidden">Everything assigned to you, by age.</span>}
-                                    actions={<AgeingLegend />}
-                                />
-                                <div className="flex flex-wrap items-end gap-x-10 gap-y-5 mt-7 lg:mt-4 max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
-                                    <div>
-                                        <p className="label">Outstanding</p>
-                                        <p className="num text-[34px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.04em]">
-                                            {formatCompact(myAgeing.total)}
-                                        </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{userBoxMetrics.totalCount} accounts</p>
-                                    </div>
-                                    <div>
-                                        <p className="label">Past 45 days</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]" style={{ color: 'var(--age-2-ink)' }}>
-                                            {formatCompact(myAgeing.over45)}
-                                        </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{myAgeing.pct45}% of your book</p>
-                                    </div>
-                                    <div>
-                                        <p className="label">Past 90 days</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]" style={{ color: 'var(--age-3-ink)' }}>
-                                            {formatCompact(myAgeing.over90)}
-                                        </p>
-                                        <p className="text-[13px] text-label-3 mt-2.5 lg:mt-1">{myAgeing.pct90}% of your book</p>
-                                    </div>
-                                </div>
-                                <div className="mt-auto pt-7 lg:pt-4">
-                                    <AgeingBar parts={myAgeing} height={12} />
-                                </div>
-                            </Card>
-
-                            <Card className="p-6 lg:p-5 flex flex-col">
-                                <SectionHeader
-                                    title="Cheques and commitments"
-                                    subtitle={<span className="lg:hidden">Cheques to present, and what customers promised you.</span>}
-                                />
-                                <div className="flex items-end gap-10 mt-7 lg:mt-4 flex-wrap max-md:grid max-md:grid-cols-2 max-md:gap-x-4 max-md:gap-y-5 max-md:[&>*:first-child]:col-span-2">
-                                    <div>
-                                        <p className="label">Cheques today</p>
-                                        <p className="num text-[32px] lg:text-[27px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.03em]">
-                                            {todayPdcMetrics.todayCount}
-                                        </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{formatCompact(todayPdcMetrics.todayAmount)}</p>
-                                    </div>
-                                    <div>
-                                        <p className="label">Held in hand</p>
-                                        <p className="num text-[22px] font-semibold leading-none mt-2.5 lg:mt-1.5 tracking-[-0.02em]" style={{ color: 'var(--age-1-ink)' }}>
-                                            {formatCompact(todayPdcMetrics.activeAmount)}
-                                        </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{todayPdcMetrics.activeCount} cheques</p>
-                                    </div>
-                                    <div>
-                                        <p className="label">Promised today</p>
-                                        <p className="num text-[22px] font-semibold text-label leading-none mt-2.5 lg:mt-1.5 tracking-[-0.02em]">
-                                            {formatCompact(cashFlowForecastMetrics.todayForecast)}
-                                        </p>
-                                        <p className="text-[12.5px] text-label-3 mt-2 lg:mt-1">{cashFlowForecastMetrics.todayCount} commitments</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2.5 mt-auto pt-7 lg:pt-4 max-md:[&>button]:flex-1 max-md:[&>button]:h-11">
-                                    <Button size="sm" variant="primary" onClick={handleOpenTodayPdc} disabled={todayPdcMetrics.todayCount === 0}>
-                                        {todayPdcMetrics.todayCount > 0 ? 'Review cheques' : 'Nothing due today'}
-                                    </Button>
-                                    {rights.canManagePdc && (
-                                        <Button size="sm" variant="secondary" onClick={() => handleOpenAddPdc()}>Record a cheque</Button>
-                                    )}
-                                </div>
-                            </Card>
-                        </div>
-
-                        {/* ---------- the accounts themselves ---------- */}
-                        <Card className={`p-6 lg:col-span-7 ${fitsOneScreen ? 'lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden' : ''}`}>
-                            <SectionHeader
-                                title={
-                                    categoryFilter === 'today' ? 'Due today'
-                                        : categoryFilter === 'overdue' ? 'Past their promised date'
-                                        : categoryFilter === 'no_follow_up' ? 'No follow-up planned'
-                                        : categoryFilter === 'future' ? 'Scheduled'
-                                        : categoryFilter === 'bad_debt' ? 'Bad debt — the recovery list'
-                                        : 'My accounts'
-                                }
-                                subtitle={`${filteredData.length} account${filteredData.length === 1 ? '' : 's'}${searchTerm ? ' matching your search' : ''}`}
-                                actions={
-                                    <Button size="sm" variant="quiet" onClick={() => setTab('customers')}>
-                                        Open full list
-                                    </Button>
-                                }
-                            />
-
-                            {filteredData.length === 0 ? (
-                                <EmptyState
-                                    title="Nothing here"
-                                    hint="No account matches the current filter."
-                                    action={<Button size="sm" variant="secondary" onClick={handleClearFilters}>Show all my accounts</Button>}
-                                />
-                            ) : (
-                                <div className={`mt-6 flex flex-col gap-2.5 ${fitsOneScreen ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5' : ''}`}>
-                                    {filteredData.slice(0, 40).map(customer => {
-                                        const cat = getFollowUpCategory(customer, startOfToday());
-                                        const due = relativeDays(customer.followUpDate);
-                                        return (
-                                            <div
-                                                key={customer.id}
-                                                className="rounded-[14px] bg-card-2 px-4 py-3.5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5"
-                                            >
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <button
-                                                            onClick={() => handleOpenFollowUp(customer)}
-                                                            className="text-[15px] font-bold text-label hover:text-accent text-left truncate max-w-[380px]"
-                                                        >
-                                                            {customer.company}
-                                                        </button>
-                                                        {isBadDebt(customer) && <Badge tone="dang">Bad debt</Badge>}
-                                                        {customer.isUrgent && <Badge tone="dang">Urgent</Badge>}
-                                                        {cat === 'overdue' && <Badge tone="dang">{due?.text || 'Overdue'}</Badge>}
-                                                        {cat === 'today' && <Badge tone="brand">Due today</Badge>}
-                                                        {cat === 'future' && <Badge tone="pos">{due?.text || 'Scheduled'}</Badge>}
-                                                        {cat === 'no_follow_up' && <Badge tone="warn">No follow-up</Badge>}
-                                                    </div>
-                                                    <p className="text-[13px] text-label-3 mt-1.5 truncate">
-                                                        {customer.contactPerson || 'No contact'}
-                                                        {customer.contactNumber ? ` · ${customer.contactNumber}` : ''}
-                                                        {customer.notes?.length ? ` · ${customer.notes[customer.notes.length - 1]}` : ''}
-                                                    </p>
-                                                </div>
-
-                                                <div className="flex items-center gap-4 md:gap-5 flex-none max-md:justify-between">
-                                                    <div className="text-right max-md:text-left">
-                                                        <p className="num text-[16px] font-semibold text-label">
-                                                            {formatCompact(customer.total)}
-                                                        </p>
-                                                        <p className="text-[12px] text-label-3 mt-0.5">
-                                                            {customer.followUpDate ? formatDateShort(customer.followUpDate) : 'not scheduled'}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <Button size="sm" variant="quiet" onClick={() => handleSendWhatsApp(customer)}>
-                                                            WhatsApp
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="primary"
-                                                            onClick={() => handleOpenFollowUp(customer)}
-                                                            disabled={!rights.canEditFollowUp}
-                                                            title={rights.canEditFollowUp ? 'Log a follow-up' : 'Your role cannot record follow-ups'}
-                                                        >
-                                                            Follow up
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredData.length > 40 && (
-                                        <button
-                                            onClick={() => setTab('customers')}
-                                            className="text-[13.5px] font-semibold text-accent hover:underline self-start mt-1"
-                                        >
-                                            {filteredData.length - 40} more in the full list
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </Card>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'pdc' && (
-                    <Card className="p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
-                        <PdcChequesView
-                            pdcCheques={pdcCheques}
-                            customers={appData}
-                            users={users}
-                            currentUser={currentUser!}
-                            onAddPdc={() => handleOpenAddPdc()}
-                            onEditPdc={handleOpenEditPdc}
-                            onDeletePdc={handleDeletePdc}
-                            onUpdatePdcStatus={handleUpdatePdcStatus}
-                            onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
-                            onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
-                            onOpenCustomerFollowUp={handleOpenFollowUp}
-                            initialCustomerFilter={pdcInitialCustomerFilter || undefined}
-                            initialStatusFilter={pdcInitialStatusFilter || undefined}
-                            loading={!serverLoaded}
-                            unsaved={syncStatuses.cheques?.failed ?? []}
-                        />
-                    </Card>
-                )}
-
-                {activeTab === 'reports' && (
-                    <ReportsView
-                        data={appData}
-                        users={users}
-                        currentUser={currentUser!}
-                        initialCrmFilter={currentUser?.role === UserRole.CRM ? currentUser.id : reportCrm}
-                        initialCategoryFilter={categoryFilter}
-                        initialAgeingFilter={reportAgeing}
-                        globalSearch={searchTerm}
-                        onGlobalSearch={setSearchTerm}
-                        onFollowUp={handleOpenFollowUp}
-                        onWhatsApp={handleSendWhatsApp}
-                        onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
-                        onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
-                        onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
-                        pdcCheques={pdcCheques}
-                        onOpenPdcForCustomer={handleOpenPdcForCustomer}
-                    />
-                )}
-
-                {activeTab === 'customers' && renderCustomerListView()}
-
-                {activeTab === 'stock' && renderLiveStock()}
-            </>
-        );
-    };
-
-
-
-    const renderCompanyDashboard = () => {
-        // Use lifted state
-        const activeTab = tab;
-
-        return (
-             <>
-                {activeTab === 'overview' && renderAdminOverviewCards()}
-                
-                {activeTab === 'customers' && renderCustomerListView()}
-
-                {activeTab === 'pdc' && (
-                    <Card className="p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
-                        <PdcChequesView
-                            pdcCheques={pdcCheques}
-                            customers={appData}
-                            users={users}
-                            currentUser={currentUser!}
-                            onAddPdc={() => handleOpenAddPdc()}
-                            onEditPdc={handleOpenEditPdc}
-                            onDeletePdc={handleDeletePdc}
-                            onUpdatePdcStatus={handleUpdatePdcStatus}
-                            onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
-                            onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
-                            onOpenCustomerFollowUp={handleOpenFollowUp}
-                            initialCustomerFilter={pdcInitialCustomerFilter || undefined}
-                            initialStatusFilter={pdcInitialStatusFilter || undefined}
-                            loading={!serverLoaded}
-                            unsaved={syncStatuses.cheques?.failed ?? []}
-                        />
-                    </Card>
-                )}
-
-                {activeTab === 'stock' && renderLiveStock()}
-
-                {/* The setup pages bring their own cards; only the reports keep the
-                    frame, which steps out of the way on a phone where they bring theirs. */}
-                {activeTab === 'users' && rights.isAdmin && (
-                    <TeamView
-                        users={users}
-                        onAdd={() => handleOpenUserModal(null)}
-                        onEdit={handleOpenUserModal}
-                        onRemove={handleDeleteUser}
-                        companyProfile={companyProfile}
-                        onSaveCompanyProfile={handleSaveCompanyProfile}
-                    />
-                )}
-                {activeTab === 'alerts' && rights.canSyncSheets && (
-                    <AlertsView canEdit={rights.canSyncSheets} />
-                )}
-                {activeTab === 'reports' && (
-                    <div className="bg-card rounded-lg shadow-md p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
-                        <ReportsView
-                            data={appData}
-                            users={users}
-                            currentUser={currentUser!}
-                            companyProfile={companyProfile}
-                            initialCrmFilter={reportCrm}
-                            initialCategoryFilter={categoryFilter}
-                            initialAgeingFilter={reportAgeing}
-                            globalSearch={searchTerm}
-                            onGlobalSearch={setSearchTerm}
-                            onFollowUp={handleOpenFollowUp}
-                            onWhatsApp={handleSendWhatsApp}
-                            onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
-                            onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
-                            onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
-                            pdcCheques={pdcCheques}
-                            onOpenPdcForCustomer={handleOpenPdcForCustomer}
-                        />
-                    </div>
-                )}
-                {activeTab === 'templates' && rights.canSyncSheets && (
-                    <TemplatesView
-                        templates={templates}
-                        onAdd={() => handleOpenTemplateModal(null)}
-                        onEdit={handleOpenTemplateModal}
-                        onRemove={handleDeleteTemplate}
-                    />
-                )}
-                {activeTab === 'source' && rights.canSyncSheets && (
-                    <DataSourceView
-                        isAdmin={rights.isAdmin}
-                        dataSourceMode={dataSourceMode}
-                        onDataSourceMode={source.setDataSourceMode}
-                        googleSheetUrl={googleSheetUrl}
-                        onGoogleSheetUrl={source.setGoogleSheetUrl}
-                        officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
-                        customerMasterSheetUrl={customerMasterSheetUrl}
-                        onCustomerMasterSheetUrl={source.setCustomerMasterSheetUrl}
-                        officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
-                        liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
-                        lastSyncTime={lastSyncTime}
-                        sheetUpdatedTillDate={sheetUpdatedTillDate}
-                        accountsWithDues={appData.filter(hasOutstanding).length}
-                        isSyncing={isSyncing}
-                        sheetCheck={source.sheetCheck}
-                        onSync={() => handleGoogleSync()}
-                        onCheckSheet={source.handleCheckSheet}
-                        onReviewCheck={source.handleReviewCheck}
-                        onFileChange={source.handleFileChange}
-                        expectedHeaders={EXPECTED_HEADERS}
-                        onDownloadTemplate={downloadTemplate}
-                        onCopyHeaders={source.copyHeaders}
-                        onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
-                        crmConflicts={source.crmConflicts}
-                        onExportCrmAssignments={source.handleExportCrmAssignments}
-                        onFreshStart={source.handleResetAllDataAndUsers}
-                    />
-                )}
-            </>
-        );
-    }
-
-    /**
-     * Which dashboard someone sees follows from what they can see, not from
-     * their job title: anyone who reads the whole book gets the company view
-     * (Admin, Manager, Viewer), anyone who owns a slice of it gets the personal
-     * one (CRM, Collector). Switching on the role name is what left Manager and
-     * Viewer staring at an "invalid role" page.
-     */
-    const renderDashboard = () => {
-        if (!currentUser) return null;
-        return rights.seesWholeBook ? renderCompanyDashboard() : renderUserDashboard();
-    };
 
     // Don't flash the login screen while an existing session is being restored.
     if (restoringSession) {
@@ -1198,6 +528,192 @@ const App = () => {
 
     const totalBook = (wholeBook ? appData : outstandingData)
         .reduce((s, r) => s + (r.totalType === 'Cr' ? 0 : (r.total || 0)), 0);
+
+    /**
+     * The screen for the tab. Today is the one screen that differs by who is
+     * looking: anyone who reads the whole book gets the company view (Admin,
+     * Manager, Viewer), anyone who owns a slice of it gets the personal one
+     * (CRM, Collector) — decided by what they can see, not their job title,
+     * which is what once left Manager and Viewer on an "invalid role" page.
+     * Every other tab is the same component for everyone; the setup tabs
+     * render only for the roles whose navigation offers them.
+     */
+    const renderTab = () => {
+        if (!currentUser) return null;
+        const filtersActive = categoryFilter !== 'all' || !!statusFilter || priorityFilter || unattendedFilter;
+        return (
+            <>
+                {safeKey === 'overview' && (wholeBook ? (
+                    <CompanyToday
+                        fourBoxesSummary={fourBoxesSummary}
+                        portfolioAgeing={portfolioAgeing}
+                        todayPdcMetrics={todayPdcMetrics}
+                        cashFlowForecastMetrics={cashFlowForecastMetrics}
+                        crmPerformanceStats={crmPerformanceStats}
+                        notificationSummary={notificationSummary}
+                        runsTheTeam={rights.runsTheTeam}
+                        scrollInside={!rights.runsTheTeam && fitsOneScreen}
+                        showNotificationBanner={showNotificationBanner}
+                        onViewPriority={handleViewPriorityItems}
+                        onDismissBanner={() => setShowNotificationBanner(false)}
+                        categoryFilter={categoryFilter}
+                        filtersActive={filtersActive || reportCrm !== 'ALL' || reportAgeing !== 'all'}
+                        onClearFilters={handleClearFilters}
+                        openReport={openReport}
+                        onOpenTodayPdc={handleOpenTodayPdc}
+                        onAddPdc={() => handleOpenAddPdc()}
+                    />
+                ) : (
+                    <PersonalToday
+                        userBoxMetrics={userBoxMetrics}
+                        myAgeing={myAgeing}
+                        todayPdcMetrics={todayPdcMetrics}
+                        cashFlowForecastMetrics={cashFlowForecastMetrics}
+                        notificationSummary={notificationSummary}
+                        filteredData={filteredData}
+                        searchTerm={searchTerm}
+                        fitsOneScreen={fitsOneScreen}
+                        showNotificationBanner={showNotificationBanner}
+                        onViewPriority={handleViewPriorityItems}
+                        onDismissBanner={() => setShowNotificationBanner(false)}
+                        categoryFilter={categoryFilter}
+                        filtersActive={filtersActive}
+                        onCategory={handleCategoryBoxClick}
+                        onClearFilters={handleClearFilters}
+                        onOpenFullList={() => setTab('customers')}
+                        onFollowUp={handleOpenFollowUp}
+                        onWhatsApp={handleSendWhatsApp}
+                        onOpenTodayPdc={handleOpenTodayPdc}
+                        onAddPdc={() => handleOpenAddPdc()}
+                        canManagePdc={rights.canManagePdc}
+                        canEditFollowUp={rights.canEditFollowUp}
+                    />
+                ))}
+
+                {safeKey === 'customers' && renderCustomerListView()}
+
+                {safeKey === 'pdc' && (
+                    <Card className="p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
+                        <PdcChequesView
+                            pdcCheques={pdcCheques}
+                            customers={appData}
+                            users={users}
+                            currentUser={currentUser!}
+                            onAddPdc={() => handleOpenAddPdc()}
+                            onEditPdc={handleOpenEditPdc}
+                            onDeletePdc={handleDeletePdc}
+                            onUpdatePdcStatus={handleUpdatePdcStatus}
+                            onBulkPdcStatus={rights.canManagePdc ? handleBulkPdcStatus : undefined}
+                            onBulkDeletePdc={rights.canManagePdc ? handleBulkDeletePdc : undefined}
+                            onOpenCustomerFollowUp={handleOpenFollowUp}
+                            initialCustomerFilter={pdcInitialCustomerFilter || undefined}
+                            initialStatusFilter={pdcInitialStatusFilter || undefined}
+                            loading={!serverLoaded}
+                            unsaved={syncStatuses.cheques?.failed ?? []}
+                        />
+                    </Card>
+                )}
+
+                {safeKey === 'stock' && renderLiveStock()}
+
+                {/* The setup pages bring their own cards; only the reports keep the
+                    frame, which steps out of the way on a phone where they bring theirs. */}
+                {safeKey === 'users' && rights.isAdmin && (
+                    <TeamView
+                        users={users}
+                        onAdd={() => handleOpenUserModal(null)}
+                        onEdit={handleOpenUserModal}
+                        onRemove={handleDeleteUser}
+                        companyProfile={companyProfile}
+                        onSaveCompanyProfile={handleSaveCompanyProfile}
+                    />
+                )}
+                {safeKey === 'alerts' && rights.canSyncSheets && (
+                    <AlertsView canEdit={rights.canSyncSheets} />
+                )}
+                {/* Reports keep the frame for whoever reads the whole book; it steps out of the way on a phone, and the personal view brings its own. */}
+                {safeKey === 'reports' && (wholeBook ? (
+                    <div className="bg-card rounded-lg shadow-md p-6 max-md:p-0 max-md:bg-transparent max-md:shadow-none">
+                        <ReportsView
+                            data={appData}
+                            users={users}
+                            currentUser={currentUser!}
+                            companyProfile={companyProfile}
+                            initialCrmFilter={!wholeBook && currentUser?.role === UserRole.CRM ? currentUser.id : reportCrm}
+                            initialCategoryFilter={categoryFilter}
+                            initialAgeingFilter={reportAgeing}
+                            globalSearch={searchTerm}
+                            onGlobalSearch={setSearchTerm}
+                            onFollowUp={handleOpenFollowUp}
+                            onWhatsApp={handleSendWhatsApp}
+                            onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+                            onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
+                            onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
+                            pdcCheques={pdcCheques}
+                            onOpenPdcForCustomer={handleOpenPdcForCustomer}
+                        />
+                    </div>
+                ) : (
+                    <ReportsView
+                        data={appData}
+                        users={users}
+                        currentUser={currentUser!}
+                        companyProfile={companyProfile}
+                        initialCrmFilter={!wholeBook && currentUser?.role === UserRole.CRM ? currentUser.id : reportCrm}
+                        initialCategoryFilter={categoryFilter}
+                        initialAgeingFilter={reportAgeing}
+                        globalSearch={searchTerm}
+                        onGlobalSearch={setSearchTerm}
+                        onFollowUp={handleOpenFollowUp}
+                        onWhatsApp={handleSendWhatsApp}
+                        onBulkSetRank={rights.canEditCustomer ? handleBulkSetRank : undefined}
+                        onBulkReassignCrm={rights.canReassignCrm ? handleBulkReassignCrm : undefined}
+                        onBulkSetFollowUp={rights.isAdmin ? handleBulkSetFollowUp : undefined}
+                        pdcCheques={pdcCheques}
+                        onOpenPdcForCustomer={handleOpenPdcForCustomer}
+                    />
+                ))}
+                {safeKey === 'templates' && rights.canSyncSheets && (
+                    <TemplatesView
+                        templates={templates}
+                        onAdd={() => handleOpenTemplateModal(null)}
+                        onEdit={handleOpenTemplateModal}
+                        onRemove={handleDeleteTemplate}
+                    />
+                )}
+                {safeKey === 'source' && rights.canSyncSheets && (
+                    <DataSourceView
+                        isAdmin={rights.isAdmin}
+                        dataSourceMode={dataSourceMode}
+                        onDataSourceMode={source.setDataSourceMode}
+                        googleSheetUrl={googleSheetUrl}
+                        onGoogleSheetUrl={source.setGoogleSheetUrl}
+                        officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
+                        customerMasterSheetUrl={customerMasterSheetUrl}
+                        onCustomerMasterSheetUrl={source.setCustomerMasterSheetUrl}
+                        officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
+                        liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
+                        lastSyncTime={lastSyncTime}
+                        sheetUpdatedTillDate={sheetUpdatedTillDate}
+                        accountsWithDues={appData.filter(hasOutstanding).length}
+                        isSyncing={isSyncing}
+                        sheetCheck={source.sheetCheck}
+                        onSync={() => handleGoogleSync()}
+                        onCheckSheet={source.handleCheckSheet}
+                        onReviewCheck={source.handleReviewCheck}
+                        onFileChange={source.handleFileChange}
+                        expectedHeaders={EXPECTED_HEADERS}
+                        onDownloadTemplate={downloadTemplate}
+                        onCopyHeaders={source.copyHeaders}
+                        onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
+                        crmConflicts={source.crmConflicts}
+                        onExportCrmAssignments={source.handleExportCrmAssignments}
+                        onFreshStart={source.handleResetAllDataAndUsers}
+                    />
+                )}
+            </>
+        );
+    };
 
     /**
      * Hold the placeholder until the book has actually arrived.
@@ -1346,16 +862,11 @@ const App = () => {
                         <LoadingList label="Loading the collections book" rows={9} />
                     </Card>
                 </div>
-            ) : error ? (
-                <div className="bg-dang-bg border border-dang text-dang rounded-xl px-5 py-4">
-                    <p className="text-[15px] font-bold">Something went wrong</p>
-                    <p className="text-[14px] mt-1 opacity-90">{error}</p>
-                </div>
             ) : (
                 /* The tab views arrive as their own chunks the first time they
                    are opened; until then the same list placeholder the book uses. */
                 <Suspense fallback={<Card className="overflow-hidden"><LoadingList label="Loading" rows={6} /></Card>}>
-                    {renderDashboard()}
+                    {renderTab()}
                 </Suspense>
             )}
         </AppShell>

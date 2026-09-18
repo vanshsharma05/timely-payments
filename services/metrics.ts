@@ -258,13 +258,30 @@ export function attentionCounts(rows: Outstanding[], today: Date): { urgentCount
 
 /* ------------------------------ the team table ---------------------------- */
 
+/** One row of the team table. */
 export interface CrmStat {
-    crmId: string; crmName: string; totalAssigned: number; followUpDone: number;
-    todayFollowUp: number; overdue: number; unattended: number; timelyCount: number;
-    noDues: number; badDebt: number;
-    /** Reports filters by CRM owner, so only a CRM's row (or the unassigned row) opens there. */
-    drillable?: boolean;
+    crmId: string;
+    crmName: string;
+    totalAssigned: number;
+    followUpDone: number;
+    todayFollowUp: number;
+    overdue: number;
+    /** Overdue, or nothing planned. */
+    unattended: number;
+    /** Completed, due today or upcoming: what the score is made of. */
+    timelyCount?: number;
+    /** Percentage of timely follow-ups. */
     score: number;
+    /** On this CRM's books but owing nothing — counted separately, never chased. */
+    noDues?: number;
+    /** Declared defaulters on this CRM's books — on the recovery list, outside the score. */
+    badDebt?: number;
+    /**
+     * Whether Reports can show this person's accounts. A CRM owns accounts, so
+     * Reports can filter to them; a collector's row counts accounts handed to
+     * them, which Reports has no filter for — that row stays a number.
+     */
+    drillable?: boolean;
 }
 
 /**
@@ -278,7 +295,7 @@ export interface CrmStat {
  * the collector chasing it.
  */
 export function crmPerformance(rows: Outstanding[], users: User[], today: Date): CrmStat[] {
-    type Stat = Omit<CrmStat, 'score'>;
+    type Stat = Omit<CrmStat, 'score'> & { timelyCount: number; noDues: number; badDebt: number };
     const statsMap = new Map<string, Stat>();
 
     const blank = (crmId: string, crmName: string): Stat => ({

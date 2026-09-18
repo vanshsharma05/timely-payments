@@ -362,7 +362,7 @@ export async function deletePdcCheque(id: string): Promise<void> {
 /**
  * `User.id` is deliberately the profile's `legacy_id` (the CRM code from the
  * accounts sheet, e.g. 'ANKUR'), not the auth UUID. That keeps every existing
- * ownership comparison in getOutstandingForUser() working unchanged.
+ * ownership comparison in scopeTo() working unchanged.
  */
 export const rowToUser = (r: any): User & { authId: string } => ({
     authId: r.id,

@@ -2,27 +2,9 @@
 
 
 import type { FollowUpCategoryFilter } from './ReportsView';
+import type { CrmStat } from '../services/metrics';
 
-export interface CrmStat {
-    crmId: string;
-    crmName: string;
-    totalAssigned: number;
-    followUpDone: number;
-    todayFollowUp: number;
-    overdue: number;
-    unattended: number; // Pending or Overdue > 7 days
-    score: number; // Percentage of timely follow-ups
-    /** On this CRM's books but owing nothing — counted separately, never chased. */
-    noDues?: number;
-    /** Declared defaulters on this CRM's books — on the recovery list, outside the score. */
-    badDebt?: number;
-    /**
-     * Whether Reports can show this person's accounts. A CRM owns accounts, so
-     * Reports can filter to them; a collector's row counts accounts handed to
-     * them, which Reports has no filter for — that row stays a number.
-     */
-    drillable?: boolean;
-}
+export type { CrmStat } from '../services/metrics';
 
 interface CrmPerformanceTableProps {
     stats: CrmStat[];

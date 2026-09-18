@@ -9,7 +9,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
  * book also gets a line per CRM, so a manager can see where the work is stuck
  * without opening the app.
  *
- * The scoping rules are the same ones getOutstandingForUser() applies in the
+ * The scoping rules are the same ones scopeTo() applies in the
  * browser, restated here against the database's column names.
  */
 
@@ -180,7 +180,7 @@ function seesWholeBook(r: Recipient): boolean {
 const key = (v?: string | null): string => (v || '').trim().toUpperCase();
 
 /**
- * Mirrors getOutstandingForUser() in the browser: an account reaches someone's
+ * Mirrors scopeTo() in the browser: an account reaches someone's
  * digest if they own it as CRM or are the collector working it. Scoping on one
  * field only means a handover silently empties somebody's morning email.
  */

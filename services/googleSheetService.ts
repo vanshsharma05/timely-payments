@@ -1,4 +1,4 @@
-import { Outstanding, FollowUpStatus, User, BalanceType, PaymentRank, ownerKey, companyKey, scopeTo, normaliseCategory, hasOutstanding } from '../types';
+import { Outstanding, FollowUpStatus, BalanceType, PaymentRank, ownerKey, companyKey, normaliseCategory, hasOutstanding } from '../types';
 import { authHeaders } from './repository';
 
 
@@ -473,8 +473,6 @@ export const processStatuses = (data: Outstanding[]): Outstanding[] =>
  * the CRM hands it over and it vanishes for a colleague whose role happens not
  * to be Collector, or the other way round.
  */
-export const getOutstandingForUser = (user: User, allData: Outstanding[]): Promise<Outstanding[]> =>
-    Promise.resolve(processStatuses(scopeTo(user, allData)));
 
 
 // Helper to fetch Google Sheet data reliably using backend proxy or direct fallback
