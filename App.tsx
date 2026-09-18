@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { EXPECTED_HEADERS, parseExcelRows, readWorkbookRows, downloadTemplate, exportCustomersExcel, exportCrmAssignments } from './services/excel';
+import { EXPECTED_HEADERS, downloadTemplate, exportCustomersExcel } from './services/excel';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import * as repo from './services/repository';
 import { SyncPassResult, SaveOutcome, outcomeFor } from './services/useSupabaseSync';
@@ -8,19 +8,9 @@ import { replaceOrAdd } from './services/refresh';
 import { searchScopeFor } from './services/search';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
 import { usePersistence } from './hooks/usePersistence';
-import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
-import {
-    getOutstandingForUser,
-    processStatuses,
-    mergeWithExistingFollowUps,
-    fetchGoogleSheetData,
-    OFFICIAL_TRANSACTIONS_SHEET_URL,
-    OFFICIAL_CUSTOMER_MASTER_URL,
-    fetchCustomerMasterSheetData,
-    mergeCustomerMasterIntoAppData,
-    summariseUnlisted,
-    countNewNames,
-} from './services/googleSheetService';
+import { useDataSource } from './hooks/useDataSource';
+import { Outstanding, User, UserRole, FollowUpStatus, Template, PdcCheque, PdcStatus, CompanyProfile, TeamMemberDraft, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, DEFAULT_ROLE_PERMISSIONS, getFollowUpCategory, can, permissionsOf, seesWholeBook, hasOutstanding, PAYMENT_RANK_LABELS, PaymentRank, findOwner, isBadDebt } from './types';
+import { getOutstandingForUser, processStatuses, OFFICIAL_TRANSACTIONS_SHEET_URL, OFFICIAL_CUSTOMER_MASTER_URL } from './services/googleSheetService';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
 import { CustomerEditModal } from './components/CustomerEditModal';
 import CrmPerformanceTable from './components/CrmPerformanceTable';
@@ -45,10 +35,7 @@ import type { FollowUpCategoryFilter, AgeingReportFilter } from './components/Re
 const ReportsView = lazy(() => import('./components/ReportsView'));
 const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
 const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
-import type { SheetCheck } from './components/DataSourceView';
 const DataSourceView = lazy(() => import('./components/DataSourceView'));
-import { previewSync, describePreview } from './services/syncPreview';
-import { buildResetPlan, resetBook, backupFileContents, backupFileName, ResetPlan } from './services/reset';
 const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
 import PdcModal from './components/PdcModal';
 import { TeamView } from './components/TeamView';
@@ -56,27 +43,6 @@ import { TemplatesView } from './components/TemplatesView';
 import WhatsAppReminderModal from './components/WhatsAppReminderModal';
 
 
-const DEFAULT_TEMPLATE: Template = {
-    id: 'template_default',
-    name: 'Standard Reminder',
-    content: `Hello {{contactPerson}},
-
-This is a friendly reminder from Timely Payment regarding your outstanding balance for {{companyName}}.
-
-Total Due: {{totalDue}}
-
-Ageing Details:
-- 1-45 days: {{ageing1_45}}
-- 46-90 days: {{ageing46_90}}
-- 91-135 days: {{ageing91_135}}
-- >135 days: {{ageingOver135}}
-
-Total overdue beyond 90 days: {{totalOver90}}
-
-Please let us know when we can expect the payment.
-
-Thank you!`
-};
 
 /**
  * Supabase is the master record and the only one: state is loaded from it on
@@ -157,40 +123,23 @@ const App = () => {
         setSyncMessage({ type, text });
         window.setTimeout(() => setSyncMessage(null), type === 'error' ? 12000 : 5000);
     }, []);
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [sheetUpdatedTillDate, setSheetUpdatedTillDate] = useState<string>('');
-    const [lastSyncTime, setLastSyncTime] = useState<string>('');
-
-    /** A fresh start waiting for its confirmation: the sheet has been read and the plan computed; nothing is written yet. */
-    const [resetPlan, setResetPlan] = useState<ResetPlan | null>(null);
-
-    // Pending sync data waiting for Admin reconciliation
-    const [pendingSync, setPendingSync] = useState<{
-        records: Outstanding[];
-        updatedTillDate?: string;
-        sourceName: string;
-    } | null>(null);
-
-    /**
-     * Accounts where the CRM set here and the CRM in the master sheet disagree.
-     *
-     * The app's answer wins — reassigning an account has to survive the next
-     * import — so the disagreement is recorded rather than resolved, and shown
-     * in Settings with the export that puts it right in the sheet.
-     */
-    const [crmConflicts, setCrmConflicts] = useState<{ company: string; appCrm: string; sheetCrm: string }[]>([]);
-    /** What "Check the sheet" found: reachable or not, and what the next sync would do. */
-    const [sheetCheck, setSheetCheck] = useState<SheetCheck | null>(null);
+    /** Where the balances come from, and everything that reads or resets them (hooks/useDataSource.tsx). */
+    const source = useDataSource({
+        appData, setAppData, pdcCheques, templates, companyProfile,
+        isAdmin: currentUser?.role === UserRole.Admin,
+        setSyncMessage, ask: setAsk,
+        onReset: () => setServerLoaded(false),
+    });
+    const {
+        dataSourceMode, googleSheetUrl, customerMasterSheetUrl, sheetUpdatedTillDate, lastSyncTime,
+        isSyncing, pendingSync, resetPlan,
+        handleGoogleSync, handleCustomerMasterSync,
+    } = source;
 
     // State for notifications
     const [priorityFilter, setPriorityFilter] = useState(false);
     const [unattendedFilter, setUnattendedFilter] = useState(false);
     const [showNotificationBanner, setShowNotificationBanner] = useState(true);
-
-    // Data Source State - default to Google Sheet
-    const [dataSourceMode, setDataSourceMode] = useState<'excel' | 'google'>('google');
-    const [googleSheetUrl, setGoogleSheetUrl] = useState(OFFICIAL_TRANSACTIONS_SHEET_URL);
-    const [customerMasterSheetUrl, setCustomerMasterSheetUrl] = useState(OFFICIAL_CUSTOMER_MASTER_URL);
 
     // Customer Add / Edit State
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -257,7 +206,6 @@ const App = () => {
     };
 
     const handleExportCustomerExcel = (rowsToExport: Outstanding[] = appData) => exportCustomersExcel(rowsToExport, appData.length);
-    const handleExportCrmAssignments = () => exportCrmAssignments(appData, crmConflicts);
 
 
 
@@ -307,11 +255,7 @@ const App = () => {
                 if (all.users.length) setUsers(all.users);
                 if (all.templates.length) setTemplates(all.templates);
                 if (all.companyProfile) setCompanyProfile(all.companyProfile);
-                if (all.settings.dataSourceMode) setDataSourceMode(all.settings.dataSourceMode);
-                if (all.settings.googleSheetUrl) setGoogleSheetUrl(all.settings.googleSheetUrl);
-                if (all.settings.customerMasterSheetUrl) setCustomerMasterSheetUrl(all.settings.customerMasterSheetUrl);
-                if (all.settings.sheetUpdatedTillDate) setSheetUpdatedTillDate(all.settings.sheetUpdatedTillDate);
-                if (all.settings.lastSyncTime) setLastSyncTime(all.settings.lastSyncTime);
+                source.applySettings(all.settings);
                 setServerLoaded(true);
             } catch (e: any) {
                 if (!cancelled) setSyncMessage({ type: 'error', text: `Could not load data: ${e?.message || e}` });
@@ -586,90 +530,6 @@ const App = () => {
         });
     };
 
-    /**
-     * Factory reset. With a backend this rewrites the shared dataset for
-     * everyone — customers, cheques, templates and the company profile — but
-     * deliberately leaves logins alone: those are real accounts, and they are
-     * removed one at a time in Team & access.
-     */
-    /**
-     * "Complete fresh start", step one: read the sheet and work out the plan.
-     *
-     * Nothing in the tab or the database changes here. The sheet is read
-     * first because a reset that could not re-import it has nothing to reset
-     * to — the old version emptied the cheques, templates and profile in
-     * memory *before* trying the sheet, and the sync hooks wrote that
-     * through even when the fetch then failed. The plan is shown as counts
-     * in a dialog that asks for a backup copy and a typed phrase; the reset
-     * itself is one database transaction (services/reset.ts, supabase/reset.sql).
-     */
-    const handleResetAllDataAndUsers = async () => {
-        if (!rights.isAdmin) {
-            setSyncMessage({ type: 'error', text: 'Only an Admin can reset the book.' });
-            return;
-        }
-        setIsSyncing(true);
-        setSyncMessage({ type: 'success', text: 'Reading the live sheet before anything changes…' });
-        try {
-            const parsed = await fetchGoogleSheetData(OFFICIAL_TRANSACTIONS_SHEET_URL);
-            if (!parsed.records || parsed.records.length === 0) {
-                throw new Error('The sheet returned no rows.');
-            }
-            setResetPlan(buildResetPlan(appData, parsed.records, pdcCheques, parsed.updatedTillDate));
-            setSyncMessage(null);
-        } catch (err: any) {
-            setSyncMessage({
-                type: 'error',
-                text: `Could not read the sheet, so nothing was reset: ${err?.message || err}`,
-            });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    /** The copy of the book the dialog asks the person to keep, from what this tab has loaded. */
-    const handleDownloadResetBackup = () => {
-        const blob = new Blob([backupFileContents(appData, pdcCheques, templates, companyProfile)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = backupFileName();
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-    };
-
-    /**
-     * Step two: the database applies the plan in one transaction, then this
-     * tab reloads everything from the server. Dropping `serverLoaded` is the
-     * same path sign-out uses: the sync hooks forget their baselines and
-     * re-seed from the reloaded data without writing anything back.
-     */
-    const handleConfirmReset = async (phrase: string) => {
-        if (!resetPlan) return;
-        const result = await resetBook(resetPlan, {
-            templates: [DEFAULT_TEMPLATE],
-            profile: DEFAULT_COMPANY_PROFILE,
-            settings: {
-                data_source_mode: 'google',
-                google_sheet_url: OFFICIAL_TRANSACTIONS_SHEET_URL,
-                sheet_updated_till_date: resetPlan.updatedTillDate || '',
-                last_sync_time: new Date().toISOString(),
-            },
-        }, phrase);
-        setResetPlan(null);
-        setServerLoaded(false);
-        setSyncMessage({
-            type: 'success',
-            text: `Fresh start done: ${result.cheques_deleted} cheque${result.cheques_deleted === 1 ? '' : 's'} removed, `
-                + `${result.accounts_updated} account${result.accounts_updated === 1 ? '' : 's'} re-imported (${result.accounts_settled} settled), `
-                + `${result.accounts_added} added. Owners, collectors, contacts and activity history were kept. `
-                + `Snapshot ${String(result.backup_id).slice(0, 8)} is saved in the database.`,
-        });
-        setTimeout(() => setSyncMessage(null), 12000);
-    };
-
     // Template Modal Handlers
     const handleOpenTemplateModal = (template: Template | null) => {
         setEditingTemplate(template);
@@ -848,193 +708,6 @@ const App = () => {
             await repo.addActivities(entries, currentUser);
         } catch (e: any) {
             notify('error', `The dates are saved, but the activity note could not be written: ${e?.message || e}`);
-        }
-    };
-
-    // Sync Reconciliation Handlers
-    const handleConfirmSyncReconciliation = (reconciledRecords: Outstanding[]) => {
-        // The same preview the review showed, so the message says what the
-        // sync did — "Balances updated for 4,027 accounts" counted the whole
-        // book on a morning when nine had moved.
-        const done = pendingSync ? previewSync(appData, pendingSync.records) : null;
-        const settled = pendingSync ? summariseUnlisted(appData, pendingSync.records) : { count: 0, amount: 0 };
-        const added = pendingSync ? countNewNames(appData, pendingSync.records) : 0;
-        const processed = processStatuses(reconciledRecords);
-        setAppData(processed);
-        const nowIso = new Date().toISOString();
-        setLastSyncTime(nowIso);
-        if (pendingSync?.updatedTillDate) {
-            setSheetUpdatedTillDate(pendingSync.updatedTillDate);
-        }
-        setSyncMessage({
-            type: 'success',
-            text:
-                (done ? `Sync done: ${describePreview(done)}.` : `Balances updated for ${reconciledRecords.length} accounts.`) +
-                (added
-                    ? ` The ${added} new customer${added === 1 ? '' : 's'} need a CRM — they are under "Unassigned" in the customer book.`
-                    : '') +
-                (settled.count
-                    ? ` ${formatCompact(settled.amount)} settled to zero on ${settled.count} account${settled.count === 1 ? '' : 's'} the sheet no longer lists.`
-                    : '') +
-                (pendingSync?.updatedTillDate ? ` Sheet updated till ${pendingSync.updatedTillDate}.` : '')
-        });
-        setPendingSync(null);
-        setSheetCheck(null);
-        checkedRecords.current = null;
-        setTimeout(() => setSyncMessage(null), 7000);
-    };
-
-    const handleCancelSyncReconciliation = () => {
-        setPendingSync(null);
-    };
-
-    /**
-     * "Check the sheet": read it and say what a sync would do, without opening
-     * the review or writing anything. The answer stays on the page until the
-     * next check or sync, so a manager can see the source is healthy and what
-     * the next sync changes before pressing anything.
-     */
-    const handleCheckSheet = async () => {
-        const url = (googleSheetUrl || OFFICIAL_TRANSACTIONS_SHEET_URL).trim();
-        setIsSyncing(true);
-        setSyncMessage(null);
-        try {
-            const { records, updatedTillDate } = await fetchGoogleSheetData(url);
-            if (records.length === 0) throw new Error('The sheet has no customer rows.');
-            setSheetCheck({ at: new Date().toISOString(), url, rows: records.length, updatedTillDate, preview: previewSync(appData, records) });
-            // Kept for "Review and update", so the review opens on exactly what was checked.
-            checkedRecords.current = { records, updatedTillDate };
-        } catch (err) {
-            setSheetCheck({ at: new Date().toISOString(), url, error: err instanceof Error ? err.message : String(err) });
-            checkedRecords.current = null;
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-    const checkedRecords = useRef<{ records: Outstanding[]; updatedTillDate: string } | null>(null);
-    const handleReviewCheck = () => {
-        const c = checkedRecords.current;
-        if (!c) { void handleGoogleSync(); return; }
-        setPendingSync({ records: c.records, updatedTillDate: c.updatedTillDate, sourceName: 'Transactions Google Sheet' });
-    };
-
-    // Google Sheet Sync Logic (Transactions)
-    const handleGoogleSync = async (overrideUrl?: string) => {
-        const urlToUse = (typeof overrideUrl === 'string' && overrideUrl.trim()) 
-            ? overrideUrl.trim() 
-            : (googleSheetUrl || OFFICIAL_TRANSACTIONS_SHEET_URL).trim();
-
-        if (overrideUrl && typeof overrideUrl === 'string') {
-            setGoogleSheetUrl(overrideUrl);
-        }
-        
-        setIsSyncing(true);
-        setSyncMessage(null);
-
-        try {
-            const { records, updatedTillDate } = await fetchGoogleSheetData(urlToUse);
-            
-            if (records.length === 0) {
-                 throw new Error("No customer records found in the provided Google Sheet.");
-            }
-
-            if (appData.length > 0) {
-                // Nothing is written and nothing is stamped until the review is
-                // confirmed. Recording the sync time here marked the book as
-                // freshly synced even when the review was cancelled.
-                setPendingSync({
-                    records,
-                    updatedTillDate,
-                    sourceName: 'Transactions Google Sheet'
-                });
-            } else {
-                if (updatedTillDate) {
-                    setSheetUpdatedTillDate(updatedTillDate);
-                }
-                // Already runs processStatuses() on the way out.
-                setAppData(mergeWithExistingFollowUps(appData, records));
-                setLastSyncTime(new Date().toISOString());
-                setSyncMessage({
-                    type: 'success',
-                    text:
-                        `Loaded ${records.length} accounts from the outstanding sheet. ` +
-                        `None of them have a CRM yet — run the one-time customer import, or assign owners from the customer list.` +
-                        (updatedTillDate ? ` Sheet updated till: ${updatedTillDate}` : ''),
-                });
-            }
-
-        } catch (err) {
-            const msg = err instanceof Error ? err.message :"Unknown error during sync";
-            setSyncMessage({ type: 'error', text: msg, action: { label: 'Retry official sheet', run: () => handleGoogleSync(OFFICIAL_TRANSACTIONS_SHEET_URL) } });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    /**
-     * The one-time customer import.
-     *
-     * The customer database lives in the app — new customers are added here and
-     * their details maintained here — so this is a seeding step, not something
-     * to run daily. It fills in what is missing and overwrites nothing, but it
-     * is still a few thousand rows landing on the book at once, so it asks
-     * first.
-     */
-    const handleCustomerMasterSync = async (overrideUrl?: string, opts: { confirmed?: boolean } = {}) => {
-        const urlToUse = (typeof overrideUrl === 'string' && overrideUrl.trim())
-            ? overrideUrl.trim()
-            : (customerMasterSheetUrl || OFFICIAL_CUSTOMER_MASTER_URL).trim();
-
-        if (overrideUrl && typeof overrideUrl === 'string') {
-            setCustomerMasterSheetUrl(overrideUrl);
-        }
-
-        // The Data source page asks in its own dialog, naming what the import
-        // does; the browser confirm() below is only for any other caller.
-        if (appData.length > 0 && !opts.confirmed) {
-            setAsk({
-                title: 'Import customers from the master sheet?',
-                confirmLabel: 'Import customers',
-                tone: 'primary',
-                body: <p>Customers already on file keep every detail recorded here; blanks are filled in and names not on file are added. No balances change.</p>,
-                run: () => { void handleCustomerMasterSync(urlToUse, { confirmed: true }); },
-            });
-            return;
-        }
-
-        setIsSyncing(true);
-        setSyncMessage(null);
-
-        try {
-            const { records } = await fetchCustomerMasterSheetData(urlToUse);
-            if (records.length === 0) {
-                throw new Error("No customer records found in the Customer Master Google Sheet.");
-            }
-
-            const { updatedData, enrichedCount, newAccountsCount, categorisedCount, crmConflicts } = mergeCustomerMasterIntoAppData(appData, records);
-            setAppData(updatedData);
-            setCrmConflicts(crmConflicts);
-
-            // Deliberately does not touch lastSyncTime: that is "balances last
-            // refreshed from the sheet", and this import brings no balances.
-            // Stamping it here made the book look freshly priced when it was not.
-
-            setSyncMessage({
-                type: 'success',
-                text:
-                    `Customer import done: ${newAccountsCount} new customer${newAccountsCount === 1 ? '' : 's'} added, ` +
-                    `${enrichedCount} already on file were left as they are (blanks filled in only).` +
-                    (categorisedCount ? ` ${categorisedCount} got a category from the sheet.` : '') +
-                    (crmConflicts.length
-                        ? ` ${crmConflicts.length} kept the CRM set here rather than the one in the sheet.`
-                        : '')
-            });
-            setTimeout(() => setSyncMessage(null), 6000);
-        } catch (err) {
-            const msg = err instanceof Error ? err.message :"Unknown error during customer master sync";
-            setSyncMessage({ type: 'error', text: msg });
-        } finally {
-            setIsSyncing(false);
         }
     };
 
@@ -1772,59 +1445,6 @@ const App = () => {
         // Use lifted state
         const activeTab = tab;
 
-        const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-
-            setIsSyncing(true);
-            setSyncMessage(null);
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const parsedData = parseExcelRows(await readWorkbookRows(e.target?.result as string | ArrayBuffer));
-                    if (appData.length > 0) {
-                        // Stamped on confirm, not here — a cancelled review must
-                        // not leave the book looking freshly synced.
-                        setPendingSync({
-                            records: parsedData,
-                            sourceName: file.name || 'Excel File'
-                        });
-                    } else {
-                        setLastSyncTime(new Date().toISOString());
-                        // Same path as every other import, so an upload into an
-                        // empty book obeys the same rules as one into a full one.
-                        const processedData = mergeWithExistingFollowUps([], parsedData);
-                        setAppData(processedData);
-                        setSyncMessage({
-                            type: 'success',
-                            text: `Loaded ${parsedData.length} records. They have no CRM against them yet — assign owners from the customer list.`,
-                        });
-                    }
-                } catch (err) {
-                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during file processing.';
-                     setSyncMessage({ type: 'error', text: `File load failed: ${errorMessage}` });
-                } finally {
-                     setIsSyncing(false);
-                     setTimeout(() => setSyncMessage(null), 5000);
-                     // Reset file input
-                     event.target.value = '';
-                }
-            };
-            reader.onerror = () => {
-                 setSyncMessage({ type: 'error', text: `Failed to read file.` });
-                 setIsSyncing(false);
-            };
-            reader.readAsBinaryString(file);
-        };
-        
-        const copyHeaders = () => {
-            navigator.clipboard.writeText(EXPECTED_HEADERS.join('\t'));
-            alert("Column headers copied to clipboard! Paste them into the first row of your Excel or Google Sheet.");
-        };
-
-
-
         return (
              <>
                 {activeTab === 'overview' && renderAdminOverviewCards()}
@@ -1904,30 +1524,30 @@ const App = () => {
                     <DataSourceView
                         isAdmin={rights.isAdmin}
                         dataSourceMode={dataSourceMode}
-                        onDataSourceMode={setDataSourceMode}
+                        onDataSourceMode={source.setDataSourceMode}
                         googleSheetUrl={googleSheetUrl}
-                        onGoogleSheetUrl={setGoogleSheetUrl}
+                        onGoogleSheetUrl={source.setGoogleSheetUrl}
                         officialSheetUrl={OFFICIAL_TRANSACTIONS_SHEET_URL}
                         customerMasterSheetUrl={customerMasterSheetUrl}
-                        onCustomerMasterSheetUrl={setCustomerMasterSheetUrl}
+                        onCustomerMasterSheetUrl={source.setCustomerMasterSheetUrl}
                         officialMasterUrl={OFFICIAL_CUSTOMER_MASTER_URL}
                         liveStockSheetUrl={LIVE_STOCK_SHEET_URL}
                         lastSyncTime={lastSyncTime}
                         sheetUpdatedTillDate={sheetUpdatedTillDate}
                         accountsWithDues={appData.filter(hasOutstanding).length}
                         isSyncing={isSyncing}
-                        sheetCheck={sheetCheck}
+                        sheetCheck={source.sheetCheck}
                         onSync={() => handleGoogleSync()}
-                        onCheckSheet={handleCheckSheet}
-                        onReviewCheck={handleReviewCheck}
-                        onFileChange={handleFileChange}
+                        onCheckSheet={source.handleCheckSheet}
+                        onReviewCheck={source.handleReviewCheck}
+                        onFileChange={source.handleFileChange}
                         expectedHeaders={EXPECTED_HEADERS}
                         onDownloadTemplate={downloadTemplate}
-                        onCopyHeaders={copyHeaders}
+                        onCopyHeaders={source.copyHeaders}
                         onImportCustomers={() => handleCustomerMasterSync(undefined, { confirmed: true })}
-                        crmConflicts={crmConflicts}
-                        onExportCrmAssignments={handleExportCrmAssignments}
-                        onFreshStart={handleResetAllDataAndUsers}
+                        crmConflicts={source.crmConflicts}
+                        onExportCrmAssignments={source.handleExportCrmAssignments}
+                        onFreshStart={source.handleResetAllDataAndUsers}
                     />
                 )}
             </>
@@ -2264,9 +1884,9 @@ const App = () => {
             {resetPlan && (
                 <ResetConfirmModal
                     plan={resetPlan}
-                    onDownloadBackup={handleDownloadResetBackup}
-                    onConfirm={handleConfirmReset}
-                    onCancel={() => setResetPlan(null)}
+                    onDownloadBackup={source.handleDownloadResetBackup}
+                    onConfirm={source.handleConfirmReset}
+                    onCancel={() => source.setResetPlan(null)}
                 />
             )}
             {pendingSync && (
@@ -2275,8 +1895,8 @@ const App = () => {
                     incomingRecords={pendingSync.records}
                     updatedTillDate={pendingSync.updatedTillDate}
                     sourceName={pendingSync.sourceName}
-                    onConfirm={handleConfirmSyncReconciliation}
-                    onCancel={handleCancelSyncReconciliation}
+                    onConfirm={source.handleConfirmSyncReconciliation}
+                    onCancel={source.handleCancelSyncReconciliation}
                 />
             )}
             {isWhatsAppModalOpen && whatsAppCustomer && (

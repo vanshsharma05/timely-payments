@@ -683,6 +683,29 @@ export interface Template {
     content: string;
 }
 
+/** The one template a fresh book starts with; a fresh start puts it back. */
+export const DEFAULT_TEMPLATE: Template = {
+    id: 'template_default',
+    name: 'Standard Reminder',
+    content: `Hello {{contactPerson}},
+
+This is a friendly reminder from Timely Payment regarding your outstanding balance for {{companyName}}.
+
+Total Due: {{totalDue}}
+
+Ageing Details:
+- 1-45 days: {{ageing1_45}}
+- 46-90 days: {{ageing46_90}}
+- 91-135 days: {{ageing91_135}}
+- >135 days: {{ageingOver135}}
+
+Total overdue beyond 90 days: {{totalOver90}}
+
+Please let us know when we can expect the payment.
+
+Thank you!`
+};
+
 /**
  * What somebody has decided about a cheque — never what the calendar says.
  *
