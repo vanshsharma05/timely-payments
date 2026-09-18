@@ -494,9 +494,9 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         </select>
                     </div>
                     <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
-                        <label htmlFor="pdcBank" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Bank</label>
+                        <label htmlFor="pdcBankFilter" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Bank</label>
                         <select
-                            id="pdcBank"
+                            id="pdcBankFilter"
                             aria-label="Filter by bank"
                             value={bankFilter}
                             onChange={(e) => setBankFilter(e.target.value)}

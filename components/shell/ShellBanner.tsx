@@ -46,7 +46,7 @@ export const ShellBanner = ({ message, saveStatus, onRetry, onDismiss }: ShellBa
                         ? <CheckCircleIcon className="w-[18px] h-[18px]" />
                         : <ExclamationTriangleIcon className="w-[18px] h-[18px]" />}
                 </span>
-                <p className="text-[14px] font-medium flex-1 leading-snug">{bannerMessage.text}</p>
+                <p className="text-[14px] font-medium flex-1 leading-snug break-words min-w-0">{bannerMessage.text}</p>
                 {bannerMessage.action && (
                     <button
                         onClick={bannerMessage.action.run}

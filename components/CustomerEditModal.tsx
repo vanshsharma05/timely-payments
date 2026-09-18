@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { sentence, type SaveOutcome } from '../services/useSupabaseSync';
 import { DialogShell } from './ui/DialogShell';
 import { Button } from './ui/Primitives';
+import { localIsoDate } from './ui/format';
 import { Outstanding, User, UserRole, AdditionalContact, BalanceType, FollowUpStatus, PaymentRank, can, CUSTOMER_CATEGORIES, normaliseCategory, findOwner } from '../types';
 
 interface CustomerEditModalProps {
@@ -105,7 +106,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             // An owner saved under an older spelling still has to select its own
             // option, or opening the form would quietly reset it to blank.
             const owner = findOwner(crmUsers, customerToEdit.crmOwnerId)?.id || customerToEdit.crmOwnerId || '';
-            const followUp = customerToEdit.followUpDate ? new Date(customerToEdit.followUpDate).toISOString().split('T')[0] : '';
+            const followUp = customerToEdit.followUpDate && !isNaN(new Date(customerToEdit.followUpDate).getTime()) ? localIsoDate(new Date(customerToEdit.followUpDate)) : '';
             const money = {
                 total: customerToEdit.total || 0,
                 totalType: customerToEdit.totalType || 'Dr',
@@ -154,7 +155,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
             setA46_90(0);
             setA91_135(0);
             setAOver135(0);
-            setFollowUpDate(new Date().toISOString().split('T')[0]);
+            setFollowUpDate(localIsoDate());
             setIsUrgent(false);
             setAdditionalContacts([]);
             setInitialNote('');

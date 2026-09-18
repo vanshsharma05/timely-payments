@@ -97,13 +97,13 @@ const PdcModal: React.FC<PdcModalProps> = ({
             const cDate = chequeToEdit.chequeDate instanceof Date
                 ? chequeToEdit.chequeDate
                 : new Date(chequeToEdit.chequeDate);
-            setChequeDate(isNaN(cDate.getTime()) ? '' : cDate.toISOString().split('T')[0]);
+            setChequeDate(isNaN(cDate.getTime()) ? '' : localIsoDate(cDate));
             setAmount(chequeToEdit.amount);
             setStatus(chequeToEdit.status === PdcStatus.DueToday ? PdcStatus.Pending : chequeToEdit.status);
             const rDate = chequeToEdit.receivedDate instanceof Date
                 ? chequeToEdit.receivedDate
                 : new Date(chequeToEdit.receivedDate);
-            setReceivedDate(isNaN(rDate.getTime()) ? localIsoDate() : rDate.toISOString().split('T')[0]);
+            setReceivedDate(isNaN(rDate.getTime()) ? localIsoDate() : localIsoDate(rDate));
             setRemarks(chequeToEdit.remarks || '');
         } else {
             // A new cheque: the customer it came from, if we were opened from

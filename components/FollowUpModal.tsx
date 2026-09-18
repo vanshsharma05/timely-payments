@@ -12,6 +12,7 @@ import { Disclosure } from './ui/Disclosure';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { DialogShell } from './ui/DialogShell';
 import { Button } from './ui/Primitives';
+import { localIsoDate } from './ui/format';
 import { ChequeStateBadge, stateOf } from './ui/ChequeState';
 import StatusBadge from './StatusBadge';
 import { followUpStatusOf } from '../types';
@@ -59,7 +60,7 @@ const FollowUpModal = ({
         if (customer.followUpDate) {
             try {
                 const d = new Date(customer.followUpDate);
-                return d.toISOString().split('T')[0];
+                return isNaN(d.getTime()) ? '' : localIsoDate(d);
             } catch {
                 return '';
             }
@@ -96,14 +97,15 @@ const FollowUpModal = ({
         if (customer.forecastDate) {
             try {
                 const d = new Date(customer.forecastDate);
-                return d.toISOString().split('T')[0];
+                return isNaN(d.getTime()) ? '' : localIsoDate(d);
             } catch {
                 return '';
             }
         }
         if (customer.followUpDate) {
             try {
-                return new Date(customer.followUpDate).toISOString().split('T')[0];
+                const d = new Date(customer.followUpDate);
+                return isNaN(d.getTime()) ? '' : localIsoDate(d);
             } catch {
                 return '';
             }
