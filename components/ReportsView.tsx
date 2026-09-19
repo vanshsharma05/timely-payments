@@ -487,7 +487,7 @@ export const ReportsView = ({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                             </svg>
                             {searchTerm && (
-                                <button type="button" onClick={() => setSearchTerm('')} className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 text-sm font-bold" aria-label="Clear search">✕</button>
+                                <button type="button" onClick={() => setSearchTerm('')} className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 max-md:w-10 max-md:h-10 grid place-items-center rounded-full text-gray-400 hover:text-gray-600 text-sm font-bold" aria-label="Clear search">✕</button>
                             )}
                         </div>
                     </div>
@@ -544,12 +544,14 @@ export const ReportsView = ({
                     still on screen at 1024 px. */}
                 <div className="bg-card rounded-[16px] shadow-e1 px-5 pt-3.5 pb-3 max-md:px-3 max-md:pt-3 max-md:pb-2">
                     <AgeingBar parts={{ a1: boxMetrics.ageing1_45Amount, a2: boxMetrics.ageing46_90Amount, a3: boxMetrics.ageing91_135Amount, a4: boxMetrics.over135Amount }} height={8} />
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:-mx-3 max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>*]:min-w-[152px] max-md:[&>*]:snap-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:-mx-3 max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>*]:min-w-[124px] max-md:[&>*]:snap-start">
                         <div className="px-2 py-1.5 min-w-0">
                             <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">Outstanding</span>
                             <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5" title={formatINR(boxMetrics.totalAmount)}>{formatCompact(boxMetrics.totalAmount)}</span>
                             <span className="block text-[12px] text-label-3 mt-0.5 truncate" title="Share of accounts with dues that are completed, due today or upcoming">
-                                {boxMetrics.totalCount.toLocaleString('en-IN')} accounts · timely score <span className="num font-semibold text-label-2">{boxMetrics.performanceScore}%</span>
+                                {isPhone
+                                    ? `${boxMetrics.totalCount.toLocaleString('en-IN')} accounts`
+                                    : <>{boxMetrics.totalCount.toLocaleString('en-IN')} accounts · timely score <span className="num font-semibold text-label-2">{boxMetrics.performanceScore}%</span></>}
                             </span>
                         </div>
                         {([
@@ -572,7 +574,9 @@ export const ReportsView = ({
                                 </span>
                                 <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5">{formatCompact(amount)}</span>
                                 <span className="block text-[12px] text-label-3 mt-0.5 truncate">
-                                    {boxMetrics.totalAmount > 0 ? Math.round((amount / boxMetrics.totalAmount) * 100) : 0}% of the book · {count} accounts
+                                    {isPhone
+                                        ? `${count} accounts`
+                                        : `${boxMetrics.totalAmount > 0 ? Math.round((amount / boxMetrics.totalAmount) * 100) : 0}% of the book · ${count} accounts`}
                                 </span>
                             </button>
                         ))}

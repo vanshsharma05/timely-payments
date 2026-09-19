@@ -51,7 +51,7 @@ export const SaveStatus: React.FC<SaveStatusProps> = ({ status, refreshedAt, ref
         state = (
             <span className="inline-flex items-center gap-2 text-dang font-semibold" role="alert" title={failed.map(f => `${f.id}: ${f.message}`).join('\n')}>
                 {n} change{n === 1 ? '' : 's'} not saved
-                <button type="button" onClick={onRetry} disabled={saving} className="underline underline-offset-2 font-bold disabled:opacity-60 max-md:inline-flex max-md:items-center max-md:min-h-[32px] max-md:px-1">
+                <button type="button" onClick={onRetry} disabled={saving} className="underline underline-offset-2 font-bold disabled:opacity-60 max-md:inline-flex max-md:items-center max-md:min-h-[40px] max-md:px-2">
                     {saving ? 'Retrying…' : 'Retry now'}
                 </button>
             </span>
@@ -77,7 +77,7 @@ export const SaveStatus: React.FC<SaveStatusProps> = ({ status, refreshedAt, ref
                 type="button"
                 onClick={onRefresh}
                 disabled={!!refreshing}
-                className="text-label-2 underline underline-offset-2 font-semibold disabled:opacity-60 max-md:inline-flex max-md:items-center max-md:min-h-[32px] max-md:px-1"
+                className="text-label-2 underline underline-offset-2 font-semibold disabled:opacity-60 max-md:inline-flex max-md:items-center max-md:min-h-[40px] max-md:px-2"
                 title="Re-read the book from the server. Nothing you have not yet saved is lost."
             >
                 {refreshing ? 'Refreshing…' : 'Refresh'}

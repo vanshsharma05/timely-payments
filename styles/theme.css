@@ -403,6 +403,11 @@ table { font-variant-numeric: tabular-nums; }
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--label-4); background-clip: content-box; }
 
+/* A table that scrolls sideways inside its card keeps its overflow to itself.
+   Without this, the team table at exactly 768px let the page scroll 6px
+   sideways even though the card around it clips. */
+.scroller-x { overflow-x: auto; contain: paint; }
+
 /* A phone turned sideways is about 390px tall and gets the wide layout: the
    page heading alone would be the whole screen, so it gives the room back. */
 @media (max-height: 500px) {

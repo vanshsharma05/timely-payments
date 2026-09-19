@@ -784,7 +784,7 @@ export const LiveStockView = ({
                                 />
                                 <svg className="absolute left-3 top-3 w-4 h-4 text-label-3 max-md:top-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
                                 {search && (
-                                    <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-2 w-6 h-6 grid place-items-center rounded-full text-label-3 hover:bg-hover">×</button>
+                                    <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 max-md:w-10 max-md:h-10 grid place-items-center rounded-full text-label-3 hover:bg-hover">×</button>
                                 )}
                             </div>
 

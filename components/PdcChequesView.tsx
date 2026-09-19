@@ -511,7 +511,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     {customer && onOpenCustomerFollowUp ? (
-                                                        <button type="button" onClick={() => onOpenCustomerFollowUp(customer)} className={cx('text-[15px] leading-snug text-left break-words hover:text-accent max-md:min-h-[32px] max-md:py-1', done ? 'font-semibold text-label-2' : 'font-bold text-label')}>
+                                                        <button type="button" onClick={() => onOpenCustomerFollowUp(customer)} className={cx('text-[15px] leading-snug text-left break-words hover:text-accent max-md:min-h-[40px] max-md:py-2', done ? 'font-semibold text-label-2' : 'font-bold text-label')}>
                                                             {c.customerName}
                                                         </button>
                                                     ) : (

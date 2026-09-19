@@ -290,12 +290,18 @@ Scope: every screen and dialog **below `md` (767 px)**, plus two things that hel
 
 The saving is the follow-up sheet, the customer form, the WhatsApp sheet, the cheque form and the team, templates and alerts pages, which now arrive as their own chunks when they are opened; the four a working day opens are fetched quietly once the app is idle, so the first tap waits for nothing. A dialog that is still arriving shows a spinner rather than nothing. **One bug found and fixed on the way:** the customer form sat outside every Suspense boundary, so making it lazy blanked the whole app when it opened — it is inside the dialogs' boundary now.
 
+**Three fixes after the owner's review (2026-09-19):**
+
+1. **No actionable control on a phone is under 40 px any more** — 28 were left after the first pass, and the sweep now counts **0** across all 22 screens and dialogs: *Refresh* and *Retry now* in the status line, the team card's name and its four counts on Today, the book's *More filters*, *Edit details* and the designation field in the follow-up sheet, the alerts switch and its tick box, the cheque card's customer name, and the clear-search buttons in the app bar, Reports and Live stock.
+2. **The report's ageing strip no longer cuts its small print.** A phone gets the shorter line — "644 accounts", "302 accounts" — instead of "644 accounts · timely score 94 %" and "27 % of the book · 302 accounts" ending in an ellipsis. The score is on the tiles above and the share is what the bar draws, so nothing is lost; the line is rendered short rather than hidden, so the laptop's DOM is unchanged.
+3. **The team page no longer scrolls 6 px sideways at 768 px.** The table's own scroller now keeps its overflow to itself (`.scroller-x` — `overflow-x: auto` plus `contain: paint`, in `theme.css`); the table, its columns and every width above and below are untouched. Confirmed by scrolling the page right and measuring: `scrollX` 6 → **0**.
+
 **QA (dev server for the workflows, the production build for the timings; every write aborted at the network layer, 0 attempted):**
 
-- Phone workflow QA (`m-flow.cjs`) at **320×700, 360×800, 390×844, 412×915**: 0 findings each.
+- Phone workflow QA (`m-flow.cjs`) at **320×700, 360×800, 390×844, 412×915**: 0 findings each (re-run after the three fixes).
 - Screen-by-screen tour (`m-tour.cjs`) at 390: 22 screens and dialogs, 0 page errors, no sideways scroll anywhere.
 - Sideways-scroll sweep (`m-overflow.cjs`) over all nine pages at 320, 360, **768 (tablet)** and **1366**: 0 (the one 6 px on Team at 768 predates this batch and is unchanged).
 - Stress (`m-stress.cjs`): text at 125 %, landscape 844×390, reduced motion, and the follow-up sheet's focus trap (0/40 tabs escaped, Cancel returns to the list): 0 findings.
-- Accessibility sweep at **320, 390, 412** and **1366**: 21 screens each, 0 overflow / 0 low-contrast / 0 unnamed controls; every dialog keeps focus and closes on Esc.
+- Accessibility sweep at **320, 360, 390, 412, 768 and 1366**: 21 screens each, 0 overflow / 0 low-contrast / 0 unnamed controls; every dialog keeps focus and closes on Esc.
 - Desktop regression: cheque QA at 1366 (0 findings), CRM workflow QA at 1366 and 390 (0), manager QA at 1366 and 390 (0), data-source QA (0), both interception probes identical in shape to the production records.
 - `tsc` clean; **315/315**; build clean; `check:classes` back to the two known false positives; `check:empty` clean.

@@ -899,7 +899,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         type="button"
                         onClick={() => setShowMoreFilters(v => !v)}
                         aria-expanded={showMoreFilters}
-                        className="inline-flex items-center gap-1.5 h-8 px-1 -mx-1 text-[13.5px] font-semibold text-label-2 hover:text-label transition-colors"
+                        className="inline-flex items-center gap-1.5 h-8 max-md:h-11 px-1 -mx-1 max-md:px-2 max-md:-mx-2 text-[13.5px] font-semibold text-label-2 hover:text-label transition-colors"
                     >
                         <svg className={`w-4 h-4 transition-transform ${showMoreFilters ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9.5 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         {showMoreFilters ? 'Fewer filters' : 'More filters'}

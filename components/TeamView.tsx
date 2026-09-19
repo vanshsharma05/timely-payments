@@ -157,7 +157,7 @@ export const TeamView = ({ users, onAdd, onEdit, onRemove, companyProfile, onSav
                         ))}
                     </div>
 
-                    <div className="overflow-x-auto max-md:hidden">
+                    <div className="scroller-x max-md:hidden">
                         <table className="w-full text-left border-collapse text-xs">
                             <thead className="bg-card-2 text-[11.5px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-separator">
                                 <tr>

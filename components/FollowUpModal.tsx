@@ -432,7 +432,7 @@ const FollowUpModal = ({
                     <span>Owner <strong className="text-label">{findOwner(users, customer.crmOwnerId)?.name || customer.crmOwnerId || 'Unassigned'}</strong></span>
                     {customer.email && customer.email.includes('@') && <span>{customer.email}</span>}
                     {onEditCustomer && (
-                        <button type="button" onClick={() => onEditCustomer(customer)} className="text-accent font-semibold underline underline-offset-2 max-md:inline-flex max-md:items-center max-md:min-h-[32px]">
+                        <button type="button" onClick={() => onEditCustomer(customer)} className="text-accent font-semibold underline underline-offset-2 max-md:inline-flex max-md:items-center max-md:min-h-[40px] max-md:px-1">
                             Edit details
                         </button>
                     )}
@@ -728,7 +728,7 @@ const FollowUpModal = ({
                                         value={primaryPost}
                                         onChange={e => setPrimaryPost(e.target.value)}
                                         placeholder="Post / Designation"
-                                        className="px-2 py-1 text-xs border rounded bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 max-w-[140px]"
+                                        className="px-2 py-1 max-md:h-11 text-xs border rounded bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 max-w-[140px]"
                                         title="Primary Contact Post/Designation"
                                     />
                                 </div>

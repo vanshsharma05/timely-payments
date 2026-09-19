@@ -141,7 +141,7 @@ export const AlertsView = ({ canEdit }: { canEdit: boolean }) => {
                     title="Daily reminder email"
                     subtitle="Sent at 9:00 am India time, to each person, listing only what they have to chase."
                     actions={
-                        <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
+                        <label className="inline-flex items-center gap-2.5 cursor-pointer select-none max-md:min-h-[44px]">
                             <input
                                 type="checkbox"
                                 checked={settings.dailyEmail}
@@ -187,7 +187,7 @@ export const AlertsView = ({ canEdit }: { canEdit: boolean }) => {
                                         checked={on}
                                         disabled={!canEdit || saving}
                                         onChange={() => toggleRole(role)}
-                                        className="w-4 h-4 mt-0.5 rounded"
+                                        className="w-4 h-4 max-md:w-5 max-md:h-5 mt-0.5 rounded"
                                     />
                                     <span>
                                         <span className="block text-[14px] font-semibold text-label">{role}</span>
@@ -205,7 +205,7 @@ export const AlertsView = ({ canEdit }: { canEdit: boolean }) => {
                         checked={settings.skipWhenEmpty}
                         disabled={!canEdit || saving}
                         onChange={e => save({ ...settings, skipWhenEmpty: e.target.checked })}
-                        className="w-4 h-4 mt-0.5 rounded"
+                        className="w-4 h-4 max-md:w-5 max-md:h-5 mt-0.5 rounded"
                     />
                     <span>
                         <span className="block text-[14px] font-semibold text-label">

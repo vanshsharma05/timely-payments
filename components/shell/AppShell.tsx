@@ -393,7 +393,7 @@ export const AppShell = ({
                 <button
                   onClick={() => { setDraft(''); onSearch(''); }}
                   aria-label="Clear search"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover transition-colors text-[17px] leading-none"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 max-md:w-10 max-md:h-10 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover transition-colors text-[17px] leading-none"
                 >
                   &times;
                 </button>

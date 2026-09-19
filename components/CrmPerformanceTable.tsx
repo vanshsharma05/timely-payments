@@ -69,7 +69,7 @@ const CrmPerformanceTable = ({ stats, onSelectCrm }: CrmPerformanceTableProps) =
                                 <div className="flex items-center gap-2 min-w-0">
                                     <span className={`w-2 h-2 rounded-full flex-none ${unassigned ? 'bg-red-500' : 'bg-emerald-500'}`} />
                                     {drill(stat) ? (
-                                        <button type="button" onClick={drill(stat)} className={`font-bold text-[15px] truncate text-left hover:underline underline-offset-2 ${unassigned ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                                        <button type="button" onClick={drill(stat)} className={`font-bold text-[15px] truncate text-left hover:underline underline-offset-2 max-md:min-h-[40px] max-md:py-1.5 max-md:px-1 max-md:-mx-1 ${unassigned ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
                                             {stat.crmName}
                                         </button>
                                     ) : (
@@ -95,7 +95,7 @@ const CrmPerformanceTable = ({ stats, onSelectCrm }: CrmPerformanceTableProps) =
                                     const open = drill(stat, col.category);
                                     const Tile: any = open ? 'button' : 'div';
                                     return (
-                                        <Tile key={col.key} type={open ? 'button' : undefined} onClick={open} className={`rounded-[10px] bg-gray-50 dark:bg-gray-800/70 px-1 py-2 ${open ? 'hover:bg-gray-100 dark:hover:bg-gray-800' : ''}`}>
+                                        <Tile key={col.key} type={open ? 'button' : undefined} onClick={open} className={`rounded-[10px] bg-gray-50 dark:bg-gray-800/70 px-1 py-2 max-md:min-h-[52px] ${open ? 'hover:bg-gray-100 dark:hover:bg-gray-800' : ''}`}>
                                             <span className={`block num text-[15px] font-bold ${col.tone}`}>{stat[col.key]}</span>
                                             <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mt-0.5">{col.short}</span>
                                         </Tile>
