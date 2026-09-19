@@ -767,8 +767,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                             <svg className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400 max-md:top-3.5 max-md:left-3.5 max-md:w-4 max-md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m20 20-4.5-4.5" strokeLinecap="round" /></svg>
                             {searchTerm && (
                                 <button
+                                    type="button"
                                     onClick={() => { setSearchDraft(''); setSearchTerm(''); }}
-                                    className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold"
+                                    aria-label="Clear the search"
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 max-md:w-10 max-md:h-10 grid place-items-center rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold"
                                 >
                                     ✕
                                 </button>

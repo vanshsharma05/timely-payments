@@ -61,7 +61,7 @@ const NotificationBanner = ({ urgentCount, overdueCount, onView, onDismiss }: No
         <button
           onClick={onDismiss}
           aria-label="Dismiss"
-          className={`w-9 h-9 grid place-items-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 ${
+          className={`w-9 h-9 max-md:w-11 max-md:h-11 grid place-items-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 ${
             critical ? 'text-dang' : 'text-warn'
           }`}
         >
