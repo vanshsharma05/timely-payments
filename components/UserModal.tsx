@@ -323,7 +323,7 @@ const UserModal = ({ userToEdit, onSave, onClose, existingCrms = KNOWN_CRMS }: U
                                                     type="button"
                                                     onClick={() => handleToggleCrm(crm)}
                                                     aria-pressed={isSelected}
-                                                    className={cx('h-8 px-3 rounded-full text-[12.5px] font-bold font-mono transition-colors', isSelected ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator hover:bg-hover')}
+                                                    className={cx('h-8 max-md:h-11 px-3 max-md:px-4 rounded-full text-[12.5px] font-bold font-mono transition-colors', isSelected ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator hover:bg-hover')}
                                                 >
                                                     {crm}
                                                 </button>

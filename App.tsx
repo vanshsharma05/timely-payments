@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { Outstanding, UserRole, Template, PdcCheque, CompanyProfile, DEFAULT_COMPANY_PROFILE, DEFAULT_TEMPLATE, can, permissionsOf, seesWholeBook, scopeTo, hasOutstanding } from './types';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { SyncPassResult } from './services/useSupabaseSync';
@@ -9,6 +9,7 @@ import { searchScopeFor } from './services/search';
 import { ageingTotals, worklistSummary, filterWorklist, cashFlowForecast, attentionCounts, crmPerformance, chequeSummary } from './services/metrics';
 import { useSession } from './hooks/useSession';
 import { useTab, useFitsOneScreen } from './hooks/useTab';
+import { useIsPhone } from './components/ui/usePhone';
 import { usePersistence } from './hooks/usePersistence';
 import { useDataSource, Question } from './hooks/useDataSource';
 import { useCustomers } from './hooks/useCustomers';
@@ -17,7 +18,7 @@ import { useTeam } from './hooks/useTeam';
 import { useTemplates } from './hooks/useTemplates';
 import { useWorklistFilters } from './hooks/useWorklistFilters';
 import { formatCompact, startOfToday } from './components/ui/format';
-import { Card, LoadingList } from './components/ui/Primitives';
+import { Card, LoadingList, Spinner, cx } from './components/ui/Primitives';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import AppShell, { NavGroup, NavItem } from './components/shell/AppShell';
 import { TodayIcon, BookIcon, ChequeNavIcon, ChartIcon, StockIcon, TeamIcon, MessageIcon, PlugIcon, BellIcon } from './components/shell/NavIcons';
@@ -27,14 +28,21 @@ import LoginScreen from './components/LoginScreen';
 import { CompanyToday } from './components/pages/CompanyToday';
 import { PersonalToday } from './components/pages/PersonalToday';
 import { CustomerDashboardView } from './components/CustomerDashboardView';
-import { TeamView } from './components/TeamView';
-import { TemplatesView } from './components/TemplatesView';
-import AlertsView from './components/AlertsView';
-import { CustomerEditModal } from './components/CustomerEditModal';
-import FollowUpModal from './components/FollowUpModal';
-import PdcModal from './components/PdcModal';
-import WhatsAppReminderModal from './components/WhatsAppReminderModal';
-// The tab views and the setup dialogs arrive as their own chunks the first time they are opened.
+/**
+ * Everything that is not the first screen arrives as its own chunk the first
+ * time it is opened. On a phone that is the difference between waiting for the
+ * follow-up dialog, the customer form, the WhatsApp sheet, the cheque form and
+ * three setup pages before the book can be read, and waiting for none of them.
+ * The follow-up dialog is fetched quietly once the app goes idle (below), so
+ * the tap that opens it still has nothing to wait for.
+ */
+const TeamView = lazy(() => import('./components/TeamView').then(m => ({ default: m.TeamView })));
+const TemplatesView = lazy(() => import('./components/TemplatesView').then(m => ({ default: m.TemplatesView })));
+const AlertsView = lazy(() => import('./components/AlertsView'));
+const CustomerEditModal = lazy(() => import('./components/CustomerEditModal').then(m => ({ default: m.CustomerEditModal })));
+const FollowUpModal = lazy(() => import('./components/FollowUpModal'));
+const PdcModal = lazy(() => import('./components/PdcModal'));
+const WhatsAppReminderModal = lazy(() => import('./components/WhatsAppReminderModal'));
 const ReportsView = lazy(() => import('./components/ReportsView'));
 const PdcChequesView = lazy(() => import('./components/PdcChequesView'));
 const LiveStockView = lazy(() => import('./components/LiveStockView'));
@@ -44,6 +52,14 @@ const TemplateModal = lazy(() => import('./components/TemplateModal'));
 const ChangePasswordModal = lazy(() => import('./components/ChangePasswordModal'));
 const SyncReconciliationModal = lazy(() => import('./components/SyncReconciliationModal'));
 const ResetConfirmModal = lazy(() => import('./components/ResetConfirmModal'));
+
+/** What a working day opens most, fetched while the phone is idle. */
+const prefetchWorkDialogs = () => {
+    void import('./components/FollowUpModal');
+    void import('./components/WhatsAppReminderModal');
+    void import('./components/CustomerEditModal');
+    void import('./components/PdcModal');
+};
 
 /**
  * The root: who is signed in, the book and the other collections, and the
@@ -77,8 +93,20 @@ const App = () => {
     });
     const { users, setUsers, currentUser, setCurrentUser, isAuthenticated, serverLoaded, restoringSession, loading, syncEnabled, handleLogin, handleLogout } = session;
 
+    // Once the book is on screen and the phone has nothing else to do, fetch
+    // the two dialogs a working day opens most, so the first tap waits for
+    // nothing. Idle work only: it never delays the first paint.
+    useEffect(() => {
+        if (!serverLoaded) return;
+        const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+        if (w.requestIdleCallback) { w.requestIdleCallback(prefetchWorkDialogs, { timeout: 4000 }); return; }
+        const t = window.setTimeout(prefetchWorkDialogs, 2500);
+        return () => window.clearTimeout(t);
+    }, [serverLoaded]);
+
     /** The screen the app is on; mirrored to the URL hash (hooks/useTab.ts). */
     const [tab, setTab] = useTab(isAuthenticated);
+    const isPhone = useIsPhone();
 
     /** The whole book. Every change lands here and the persistence hook carries it to the server. */
     const [appData, setAppData] = useState<Outstanding[]>([]);
@@ -602,8 +630,8 @@ const App = () => {
                                     <span>in stock</span>
                                 </>
                             )}
-                            <span className="text-label-3">&middot;</span>
-                            <span className={liveStock.error ? 'text-warn font-semibold' : 'text-pos font-semibold'}>
+                            <span className="text-label-3 max-md:hidden">&middot;</span>
+                            <span className={cx('max-md:hidden', liveStock.error ? 'text-warn font-semibold' : 'text-pos font-semibold')}>
                                 {liveStock.error ? 'sheet unreachable' : liveStock.fromCache ? 'last read' : 'live from the stores sheet'}
                             </span>
                         </span>
@@ -617,10 +645,11 @@ const App = () => {
                     <span className="text-label-3">Loading the book…</span>
                 ) : (
                 <span className="inline-flex items-center gap-2 flex-wrap">
-                    <span>{scopeLabel}</span>
+                    <span className="max-md:hidden">{scopeLabel}</span>
+                    <span className="md:hidden">{withDues.toLocaleString('en-IN')} with dues</span>
                     <span className="text-label-3">&middot;</span>
                     <span className="num font-semibold text-label-2">{formatCompact(totalBook)}</span>
-                    <span>outstanding</span>
+                    <span className="max-md:hidden">outstanding</span>
                 </span>
                 )
             }
@@ -628,13 +657,19 @@ const App = () => {
             onSearch={searchScopeFor(safeKey) === 'stock' ? setStockSearch : setSearchTerm}
             searchPlaceholder={safeKey === 'stock' ? 'Search stock by item, brand, category' : undefined}
             searchPlaceholderShort={safeKey === 'stock' ? 'Search stock' : undefined}
+            // Team, templates, alerts and the data source have nothing the box
+            // can find; on a phone that is a third of the app bar wasted.
+            searchEnabled={['overview', 'customers', 'pdc', 'reports', 'stock'].includes(safeKey)}
             onSync={rights.canSyncSheets ? () => handleGoogleSync() : undefined}
             isSyncing={isSyncing}
             readOnly={rights.isViewer}
             dataAsOf={safeKey === 'stock' ? undefined : sheetUpdatedTillDate}
             lastSyncTime={safeKey === 'stock' ? undefined : lastSyncTime}
             banner={<ShellBanner message={syncMessage} saveStatus={saveStatus} onRetry={retryAllSaves} onDismiss={() => setSyncMessage(null)} />}
-            saveStatus={syncEnabled ? (
+            // The stock page is the stores sheet, not the book: on a phone,
+            // where this line has room for two things, the book's save state is
+            // not one of them there.
+            saveStatus={syncEnabled && !(isPhone && safeKey === 'stock') ? (
                 <SaveStatus status={saveStatus} refreshedAt={refreshedAt} refreshing={refreshing} onRetry={retryAllSaves} onRefresh={() => { void refreshBook(); }} />
             ) : undefined}
         >
@@ -664,7 +699,13 @@ const App = () => {
                 </Suspense>
             )}
         </AppShell>
-        <Suspense fallback={null}>
+        <Suspense fallback={
+            // A tap on a phone should never look ignored while its chunk arrives.
+            <div className="fixed inset-0 z-50 grid place-items-center bg-black/30" role="status" aria-live="polite">
+                <span className="sr-only">Opening</span>
+                <Spinner className="w-7 h-7 text-card" />
+            </div>
+        }>
 
             {liveSelectedCustomer && (
                 <FollowUpModal
@@ -754,7 +795,9 @@ const App = () => {
                     onClose={customers.closeWhatsApp}
                 />
             )}
-        </Suspense>
+            {/* Inside the boundary with the rest: a dialog that arrives as its
+                own chunk must have one, or the page it opened from is what
+                React replaces while the chunk is fetched. */}
             {customers.customerDialog && (
                 <CustomerEditModal
                     customerToEdit={customers.customerDialog.customer}
@@ -764,6 +807,7 @@ const App = () => {
                     users={users}
                 />
             )}
+        </Suspense>
         </>
     );
 };

@@ -48,7 +48,7 @@ export const PersonalToday = ({
     /* One screen, no page scroll: the summary above stays put and the
        account list below takes whatever height is left. Only from lg —
        a phone scrolls, because none of this fits a phone. */
-    <div className={`flex flex-col gap-7 ${fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5' : ''}`}>
+    <div className={`flex flex-col gap-7 max-md:gap-4 ${fitsOneScreen ? 'lg:h-full lg:min-h-0 lg:gap-5' : ''}`}>
         {showNotificationBanner && (notificationSummary.urgentCount > 0 || notificationSummary.overdueCount > 0) && (
             <NotificationBanner
                 urgentCount={notificationSummary.urgentCount}
@@ -63,7 +63,7 @@ export const PersonalToday = ({
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-3.5 lg:mb-2.5">
                 <div>
                     <h2 className="text-[19px] font-extrabold text-label tracking-[-0.025em]">My worklist</h2>
-                    <p className="text-[13.5px] text-label-3 mt-1">Tap a card to filter the accounts below.</p>
+                    <p className="text-[13.5px] text-label-3 mt-1 max-md:hidden">Tap a card to filter the accounts below.</p>
                 </div>
                 {filtersActive && (
                     <Button size="sm" variant="ghost" onClick={onClearFilters}>Clear filters</Button>
@@ -124,7 +124,7 @@ export const PersonalToday = ({
             on anything normal there is no scrollbar here at all, and
             nothing is ever cut off on a short one. */}
         <div className={`flex flex-col gap-3.5 lg:col-span-5 lg:gap-4 ${fitsOneScreen ? 'lg:min-h-0 lg:overflow-y-auto lg:pr-1' : ''}`}>
-            <Card className="p-6 lg:p-5 flex flex-col">
+            <Card className="p-6 max-md:p-4 lg:p-5 flex flex-col">
                 <SectionHeader
                     title="My book"
                     subtitle={<span className="lg:hidden">Everything assigned to you, by age.</span>}
@@ -158,7 +158,7 @@ export const PersonalToday = ({
                 </div>
             </Card>
 
-            <Card className="p-6 lg:p-5 flex flex-col">
+            <Card className="p-6 max-md:p-4 lg:p-5 flex flex-col">
                 <SectionHeader
                     title="Cheques and commitments"
                     subtitle={<span className="lg:hidden">Cheques to present, and what customers promised you.</span>}

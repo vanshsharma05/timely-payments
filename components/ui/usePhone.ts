@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 
+/** The line Tailwind's `md` breakpoint draws, shared so nobody writes it twice. */
+export const PHONE_QUERY = '(max-width: 767px)';
+
 /**
  * Whether this is a phone-sized window — the same line Tailwind's `md`
  * breakpoint draws, so a component can switch what it *renders* below it
@@ -7,8 +10,6 @@ import { useEffect, useState } from 'react';
  * *look*. The two must agree or a phone would get a table styled for a phone
  * and a laptop a list styled for a laptop.
  */
-const PHONE_QUERY = '(max-width: 767px)';
-
 export function useIsPhone(): boolean {
   const [phone, setPhone] = useState<boolean>(
     () => typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches,

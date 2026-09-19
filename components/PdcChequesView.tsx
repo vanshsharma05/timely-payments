@@ -225,6 +225,8 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
 
     const isPhone = useIsPhone();
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+    /** Picking several cheques at once is a desk job; on a phone it waits behind "Select". */
+    const [phoneSelecting, setPhoneSelecting] = useState(false);
     /** Fifty at a time, on a phone and a laptop alike; the register was 150 rows and eleven screens. */
     const [visibleCount, setVisibleCount] = useState(PAGE);
     useEffect(() => { setVisibleCount(PAGE); }, [stateFilter, selectedCrm, selectedCustomer, bankFilter, dateRange, searchTerm]);
@@ -333,7 +335,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
     return (
         <div className="space-y-3">
             {/* ---------- where the register stands: six tiles, each the filter it names ---------- */}
-            <div className="grid grid-cols-3 lg:grid-cols-6 gap-2.5 max-md:gap-2" role="group" aria-label="Where the cheques stand">
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-2.5 max-md:grid-cols-3 max-md:gap-1.5" role="group" aria-label="Where the cheques stand">
                 {TILE_ORDER.map(state => {
                     const m = byState[state];
                     const s = CHEQUE_STATES[state];
@@ -346,14 +348,17 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             aria-pressed={on}
                             onClick={() => setStateFilter(on ? 'all' : state)}
                             title={`${s.hint}. Press to list them, again for every cheque.`}
-                            className={cx('text-left bg-card rounded-[14px] px-3.5 py-2.5 max-md:px-3 max-md:py-2 min-w-0 transition-all duration-150 active:scale-[.99]', on ? 'shadow-e2 ring-2 ring-accent' : 'shadow-e1 ring-1 ring-separator hover:shadow-e2')}
+                            className={cx('text-left bg-card rounded-[14px] px-3.5 py-2.5 max-md:px-2 max-md:py-2 max-md:min-h-[62px] min-w-0 transition-all duration-150 active:scale-[.99]', on ? 'shadow-e2 ring-2 ring-accent' : 'shadow-e1 ring-1 ring-separator hover:shadow-e2')}
                         >
                             <span className="flex items-center gap-1.5 min-w-0">
                                 <span className="w-2 h-2 rounded-full flex-none max-md:hidden" style={{ background: s.dot }} aria-hidden="true" />
-                                <span className="label truncate max-md:text-[11px]">{s.label}</span>
+                                <span className="label truncate max-md:text-[10.5px] max-md:tracking-normal">{s.label}</span>
                             </span>
-                            <span className={cx('num block text-[20px] max-md:text-[18px] font-semibold leading-none mt-1.5 tracking-[-0.02em]', alarm ? 'text-dang' : m.count === 0 ? 'text-label-3' : 'text-label')}>{m.count}</span>
-                            <span className="num block text-[12px] text-label-3 mt-0.5 truncate" title={m.count ? formatINR(m.amount) : undefined}>{m.count ? formatCompact(m.amount) : '—'}</span>
+                            {/* Side by side on a phone, stacked where there is width. */}
+                            <span className="md:block flex items-baseline gap-1.5 min-w-0 max-md:mt-0.5">
+                                <span className={cx('num block text-[20px] max-md:text-[17px] font-semibold leading-none mt-1.5 max-md:mt-0 tracking-[-0.02em]', alarm ? 'text-dang' : m.count === 0 ? 'text-label-3' : 'text-label')}>{m.count}</span>
+                                <span className="num block text-[12px] max-md:text-[11px] text-label-3 md:mt-0.5 truncate" title={m.count ? formatINR(m.amount) : undefined}>{m.count ? formatCompact(m.amount) : '—'}</span>
+                            </span>
                         </button>
                     );
                 })}
@@ -439,7 +444,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                         )}
                     </div>
                     {selected.length > 0 && canManagePdc ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5 max-md:[&>button]:min-h-[40px]">
                             <span className="text-[12.5px] font-bold text-label mr-1">{selected.length} selected</span>
                             <Button size="sm" variant="primary" onClick={() => applyBulk(PdcStatus.Cleared)} title="The bank paid them">Mark cleared</Button>
                             <Button size="sm" variant="quiet" onClick={() => applyBulk(PdcStatus.Hold)} title="Do not present them for now">Put on hold</Button>
@@ -475,11 +480,18 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                     /* Phone: a card per cheque — the customer, the amount and the status on top, the cheque under it, the actions for where it stands sized for a thumb. */
                     <div className="divide-y divide-separator">
                         {canManagePdc && (
-                            <div className="px-3.5 py-2 flex items-center justify-end">
-                                <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-label-2 min-h-[32px]">
-                                    <input type="checkbox" checked={allSelected} onChange={e => toggleAll(e.target.checked)} aria-label="Select all cheques in view" className="w-5 h-5 rounded text-accent focus:ring-accent" />
-                                    Select all
-                                </label>
+                            <div className="px-3.5 py-1.5 flex items-center justify-end gap-3 text-[12.5px]">
+                                {phoneSelecting ? (
+                                    <>
+                                        <label className="inline-flex items-center gap-2 font-semibold text-label-2 min-h-[40px]">
+                                            <input type="checkbox" checked={allSelected} onChange={e => toggleAll(e.target.checked)} aria-label="Select all cheques in view" className="w-5 h-5 rounded text-accent focus:ring-accent" />
+                                            All
+                                        </label>
+                                        <button type="button" onClick={() => { setPhoneSelecting(false); setSelectedIds([]); }} className="min-h-[40px] px-2 font-bold text-accent">Done</button>
+                                    </>
+                                ) : (
+                                    <button type="button" onClick={() => setPhoneSelecting(true)} className="min-h-[40px] px-2 font-semibold text-label-2">Select</button>
+                                )}
                             </div>
                         )}
                         {filtered.slice(0, visibleCount).map(c => {
@@ -488,10 +500,10 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                             const done = c.state === 'cleared';
                             const note = datedNote(c.state, c.chequeDate);
                             return (
-                                <div key={c.id} className={cx('px-3.5 py-3', selected.includes(c.id) && 'bg-accent-tint/60')}>
+                                <div key={c.id} className={cx('px-3.5 py-2.5', selected.includes(c.id) && 'bg-accent-tint/60')}>
                                     <div className="flex gap-3">
-                                        {canManagePdc && (
-                                            <label className="flex-none pt-0.5">
+                                        {canManagePdc && phoneSelecting && (
+                                            <label className="flex-none pt-0.5 min-h-[44px] flex items-start">
                                                 <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleRow(c.id)} aria-label={`Select cheque ${c.chequeNumber || ''} for ${c.customerName}`} className="w-5 h-5 rounded text-accent focus:ring-accent" />
                                             </label>
                                         )}
@@ -499,7 +511,7 @@ const PdcChequesView: React.FC<PdcChequesViewProps> = ({
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     {customer && onOpenCustomerFollowUp ? (
-                                                        <button type="button" onClick={() => onOpenCustomerFollowUp(customer)} className={cx('text-[15px] leading-snug text-left break-words hover:text-accent', done ? 'font-semibold text-label-2' : 'font-bold text-label')}>
+                                                        <button type="button" onClick={() => onOpenCustomerFollowUp(customer)} className={cx('text-[15px] leading-snug text-left break-words hover:text-accent max-md:min-h-[32px] max-md:py-1', done ? 'font-semibold text-label-2' : 'font-bold text-label')}>
                                                             {c.customerName}
                                                         </button>
                                                     ) : (

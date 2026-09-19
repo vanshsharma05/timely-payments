@@ -516,7 +516,7 @@ const LoginScreen = ({ onLogin }: LoginScreenProps) => {
             <button
               onClick={sendReset}
               disabled={busy}
-              className="h-9 px-3.5 rounded-full text-[13.5px] font-semibold text-accent hover:bg-accent-tint transition-colors disabled:opacity-50"
+              className="h-9 max-md:h-11 px-3.5 rounded-full text-[13.5px] font-semibold text-accent hover:bg-accent-tint transition-colors disabled:opacity-50"
             >
               Forgot password
             </button>

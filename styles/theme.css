@@ -403,6 +403,16 @@ table { font-variant-numeric: tabular-nums; }
 }
 *::-webkit-scrollbar-thumb:hover { background: var(--label-4); background-clip: content-box; }
 
+/* A phone turned sideways is about 390px tall and gets the wide layout: the
+   page heading alone would be the whole screen, so it gives the room back. */
+@media (max-height: 500px) {
+  .heading-short { padding-top: 12px; padding-bottom: 8px; }
+  .heading-short-title { font-size: 22px; }
+  .heading-short-meta { font-size: 12.5px; max-height: 18px; overflow: hidden; margin-top: 4px; }
+  .heading-short-bar { height: 56px; }
+  .heading-short-tabs { padding-bottom: 6px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .01ms !important;

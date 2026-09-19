@@ -4,7 +4,7 @@ import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile,
 import StatusBadge from './StatusBadge';
 const AiReportModal = lazy(() => import('./AiReportModal'));
 import { WhatsAppIcon, FireIcon, DownloadIcon, ChequeIcon, SparklesIcon } from './icons/Icons';
-import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button } from './ui/Primitives';
+import { AgeingBar, AgeingLegend, AGE_BANDS, Stat, Button, cx } from './ui/Primitives';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { formatINR, formatCompact, formatDate as formatDay, localIsoDate, followUpWhen, startOfToday } from './ui/format';
 import { useIsPhone } from './ui/usePhone';
@@ -342,6 +342,8 @@ export const ReportsView = ({
      * thousand pixels tall on a phone.
      */
     const isPhone = useIsPhone();
+    /** On a phone the report's controls fold behind one button; the search stays out. */
+    const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
     const PHONE_PAGE = 50;
     const [phoneVisible, setPhoneVisible] = useState(PHONE_PAGE);
     useEffect(() => { setPhoneVisible(PHONE_PAGE); }, [selectedCrm, categoryFilter, ageingFilter, searchTerm, settlementFilter]);
@@ -427,16 +429,16 @@ export const ReportsView = ({
         <div className="space-y-5">
             {/* Who and which half of the book — the same controls, in the same
                 order and words, as the customer book. */}
-            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col xl:flex-row xl:items-end justify-between gap-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)] gap-2 items-end flex-1">
-                    <div>
+            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 max-md:px-3 max-md:py-3 flex flex-col xl:flex-row xl:items-end justify-between gap-3 max-md:gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1fr)_auto_minmax(220px,1fr)] gap-2 items-end flex-1 max-md:flex max-md:flex-col">
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
                         <label htmlFor="crmSelect" className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">CRM owner</label>
                         <select
                             aria-label="Filter by CRM owner"
                             id="crmSelect"
                             value={selectedCrm}
                             onChange={(e) => setSelectedCrm(e.target.value)}
-                            className="w-full h-9 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white"
+                            className="w-full h-9 max-md:h-11 px-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] font-semibold text-gray-900 dark:text-white"
                         >
                             <option value="ALL">All CRMs ({data.length.toLocaleString('en-IN')})</option>
                             {crmOwners.map(crm => (
@@ -447,16 +449,16 @@ export const ReportsView = ({
                             <option value="UNASSIGNED">Unassigned ({data.filter(d => !d.crmOwnerId || d.crmOwnerId.toUpperCase() === 'UNASSIGNED').length})</option>
                         </select>
                     </div>
-                    <div>
+                    <div className={phoneFiltersOpen ? '' : 'max-md:hidden'}>
                         <span className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Accounts</span>
-                        <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1" role="group" aria-label="Report on accounts with dues, settled accounts, or all">
+                        <div className="inline-flex rounded-xl bg-card-2 p-1 gap-1 max-md:flex max-md:w-full" role="group" aria-label="Report on accounts with dues, settled accounts, or all">
                             {(['withDues', 'settled', 'all'] as SettlementFilter[]).map(key => (
                                 <button
                                     key={key}
                                     type="button"
                                     onClick={() => setSettlementFilter(key)}
                                     aria-pressed={settlementFilter === key}
-                                    className={`h-7 px-3 rounded-lg text-[12.5px] font-bold whitespace-nowrap transition-colors ${
+                                    className={`h-7 max-md:h-10 max-md:flex-1 px-3 rounded-lg text-[12.5px] font-bold whitespace-nowrap transition-colors ${
                                         settlementFilter === key
                                             ? 'bg-accent text-on-accent shadow-e1'
                                             : 'text-label-2 hover:bg-hover hover:text-label'
@@ -471,14 +473,15 @@ export const ReportsView = ({
                         </div>
                     </div>
                     <div>
-                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5">Search</label>
+                        <label className="block text-[11.5px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-0.5 max-md:hidden">Search</label>
                         <div className="relative">
                             <input
-                                type="text"
+                                type="search"
                                 placeholder="Search by name, contact, mobile, note…"
+                                aria-label="Search this report"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/40"
+                                className="w-full h-9 max-md:h-11 pl-8 pr-8 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-[13px] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/40"
                             />
                             <svg className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -489,7 +492,23 @@ export const ReportsView = ({
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-none">
+                <div className="md:hidden flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setPhoneFiltersOpen(v => !v)}
+                        aria-expanded={phoneFiltersOpen}
+                        className="flex-1 h-11 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2 flex items-center justify-center gap-2"
+                    >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                        {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
+                        {(selectedCrm !== 'ALL' || settlementFilter !== 'withDues') && (
+                            <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
+                                {[selectedCrm !== 'ALL', settlementFilter !== 'withDues'].filter(Boolean).length}
+                            </span>
+                        )}
+                    </button>
+                </div>
+                <div className={cx('flex items-center gap-2 flex-none max-md:[&>button]:flex-1 max-md:[&>button]:min-h-[44px]', phoneFiltersOpen ? 'max-md:flex' : 'max-md:hidden')}>
                     {canExport && (
                         <Button size="sm" variant="secondary" onClick={() => setIsAiReportOpen(true)} title="An AI-written credit summary of the accounts in this report">
                             <SparklesIcon className="w-4 h-4" />
@@ -523,9 +542,9 @@ export const ReportsView = ({
                 {/* How old the money is: the bar for shape, the four bands as the
                     filters. One short card rather than five tiles, so the list is
                     still on screen at 1024 px. */}
-                <div className="bg-card rounded-[16px] shadow-e1 px-5 pt-3.5 pb-3">
+                <div className="bg-card rounded-[16px] shadow-e1 px-5 pt-3.5 pb-3 max-md:px-3 max-md:pt-3 max-md:pb-2">
                     <AgeingBar parts={{ a1: boxMetrics.ageing1_45Amount, a2: boxMetrics.ageing46_90Amount, a3: boxMetrics.ageing91_135Amount, a4: boxMetrics.over135Amount }} height={8} />
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:-mx-3 max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>*]:min-w-[152px] max-md:[&>*]:snap-start">
                         <div className="px-2 py-1.5 min-w-0">
                             <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">Outstanding</span>
                             <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5" title={formatINR(boxMetrics.totalAmount)}>{formatCompact(boxMetrics.totalAmount)}</span>
@@ -577,7 +596,7 @@ export const ReportsView = ({
                             </button>
                         )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Follow-up state">
+                    <div className="flex flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:w-full max-md:-mx-3.5 max-md:px-3.5 max-md:pb-0.5 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>button]:flex-none" role="group" aria-label="Follow-up state">
                         {([
                             ['all', 'All', boxMetrics.totalCount],
                             ['overdue', 'Overdue', boxMetrics.overdueCount],
@@ -595,7 +614,7 @@ export const ReportsView = ({
                                 type="button"
                                 onClick={() => setCategoryFilter(key)}
                                 aria-pressed={categoryFilter === key}
-                                className={`h-8 px-3 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
+                                className={`h-8 max-md:h-10 px-3 max-md:px-3.5 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-colors ${
                                     categoryFilter === key ? 'bg-accent text-on-accent shadow-e1' : 'bg-card text-label-2 border border-separator-strong hover:bg-hover hover:text-label'
                                 }`}
                             >
@@ -604,7 +623,7 @@ export const ReportsView = ({
                         ))}
                     </div>
                 </div>
-                <div className="px-3.5 py-2 border-b border-separator flex flex-wrap items-center gap-1.5 text-xs" role="group" aria-label="Ageing">
+                <div className="px-3.5 py-2 border-b border-separator flex flex-wrap items-center gap-1.5 text-xs max-md:flex-nowrap max-md:overflow-x-auto max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>button]:flex-none max-md:[&>span]:flex-none" role="group" aria-label="Ageing">
                     <span className="text-[11.5px] font-bold text-gray-500 dark:text-gray-400 mr-1">Ageing:</span>
                     {([
                         ['all', 'All ageing', boxMetrics.totalCount, 'bg-gray-900 text-white dark:bg-white dark:text-gray-900', 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200', 'Every account in this report'],
@@ -620,7 +639,7 @@ export const ReportsView = ({
                             onClick={() => setAgeingFilter(key)}
                             aria-pressed={ageingFilter === key}
                             title={title}
-                            className={`h-8 px-3 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-all ${ageingFilter === key ? on : off}`}
+                            className={`h-8 max-md:h-10 px-3 max-md:px-3.5 rounded-full text-[12.5px] font-semibold whitespace-nowrap transition-all ${ageingFilter === key ? on : off}`}
                         >
                             {label} <span className="num opacity-80">({count})</span>
                         </button>
@@ -775,6 +794,7 @@ export const ReportsView = ({
                                             selectable={selectable}
                                             selected={selected.includes(item.id)}
                                             onToggleSelect={() => toggleRow(item.id)}
+                                            canFollowUp={can(currentUser, 'canEditFollowUp')}
                                             extras={activePdcs.length > 0 ? (
                                                 <span
                                                     className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full text-[11.5px] font-bold bg-pos-bg text-pos"

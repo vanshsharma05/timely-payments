@@ -128,7 +128,7 @@ const TemplateModal = ({ templateToEdit, onSave, onClose }: TemplateModalProps) 
                                 type="button"
                                 onClick={() => insertPlaceholder(p.token)}
                                 title={p.label}
-                                className="font-mono text-[12px] bg-card-3 text-label rounded-full px-2.5 h-7 hover:bg-hover transition-colors"
+                                className="font-mono text-[12px] bg-card-3 text-label rounded-full px-2.5 max-md:px-3.5 h-7 max-md:h-10 hover:bg-hover transition-colors"
                             >
                                 {p.token}
                             </button>

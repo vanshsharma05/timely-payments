@@ -103,6 +103,9 @@ const GearGlyph = ({ className }: { className?: string }) => (
     <path d="M19.2 14.8a1.5 1.5 0 0 0 .3 1.65l.06.06a1.83 1.83 0 1 1-2.6 2.6l-.05-.06a1.5 1.5 0 0 0-1.65-.3 1.5 1.5 0 0 0-.91 1.37v.17a1.83 1.83 0 1 1-3.66 0v-.09a1.5 1.5 0 0 0-.98-1.37 1.5 1.5 0 0 0-1.65.3l-.06.06a1.83 1.83 0 1 1-2.6-2.6l.06-.05a1.5 1.5 0 0 0 .3-1.65 1.5 1.5 0 0 0-1.37-.91H4.2a1.83 1.83 0 1 1 0-3.66h.09a1.5 1.5 0 0 0 1.37-.98 1.5 1.5 0 0 0-.3-1.65l-.06-.06a1.83 1.83 0 1 1 2.6-2.6l.05.06a1.5 1.5 0 0 0 1.65.3h.08a1.5 1.5 0 0 0 .91-1.37V4.2a1.83 1.83 0 1 1 3.66 0v.09a1.5 1.5 0 0 0 .91 1.37 1.5 1.5 0 0 0 1.65-.3l.06-.06a1.83 1.83 0 1 1 2.6 2.6l-.06.05a1.5 1.5 0 0 0-.3 1.65v.08a1.5 1.5 0 0 0 1.37.91h.17a1.83 1.83 0 1 1 0 3.66h-.09a1.5 1.5 0 0 0-1.37.91z" />
   </svg>
 );
+const MoreGlyph = ({ className }: { className?: string }) => (
+  <svg {...g(className)}><circle cx="5" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="19" cy="12" r="1.4" fill="currentColor" /></svg>
+);
 const KeyGlyph = ({ className }: { className?: string }) => (
   <svg {...g(className)}><circle cx="8" cy="14" r="4" /><path d="m11 11 8-8M17 5l2 2M14.5 7.5l2 2" /></svg>
 );
@@ -211,6 +214,8 @@ export interface AppShellProps {
   searchPlaceholder?: string;
   /** The placeholder a phone has room for; falls back to "Search customers". */
   searchPlaceholderShort?: string;
+  /** false on the pages the box cannot search — it stays out of a phone's way there. */
+  searchEnabled?: boolean;
 
   onSync?: () => void;
   isSyncing?: boolean;
@@ -248,6 +253,7 @@ export const AppShell = ({
   onSearch,
   searchPlaceholder = 'Search customers, contacts, notes',
   searchPlaceholderShort = 'Search customers',
+  searchEnabled = true,
   onSync,
   isSyncing,
   readOnly,
@@ -344,6 +350,18 @@ export const AppShell = ({
   const primary = groups[0]?.items ?? [];
   const setup = groups.slice(1).flatMap(gr => gr.items);
   const isSetupActive = setup.some(i => i.key === activeKey);
+  /**
+   * A phone fits four labelled tabs and no more: at 360 px "Customers" was
+   * already clipped and at 320 px so was "Live stock". So the bar carries the
+   * four the day is spent in, and everything else — the fifth work page and
+   * the setup pages — is behind "More", which is the sheet that already
+   * existed for setup. Nothing has moved on a laptop.
+   */
+  const PHONE_TABS = 4;
+  const phoneTabs = primary.slice(0, PHONE_TABS);
+  const phoneMoreWork = primary.slice(PHONE_TABS);
+  const phoneMore = [...phoneMoreWork, ...setup];
+  const isMoreActive = phoneMore.some(i => i.key === activeKey);
 
   return (
     <div className={cx(
@@ -352,11 +370,12 @@ export const AppShell = ({
     )}>
       {/* ================= app bar ================= */}
       <header className="sticky top-0 z-40 bg-card/90 backdrop-blur-xl border-b-[3px] border-brand-yellow">
-        <div className="h-16 px-4 sm:px-6 flex items-center gap-3">
+        <div className="h-16 heading-short-bar px-4 sm:px-6 flex items-center gap-3">
           <Wordmark />
 
-          {/* Google-style pill search */}
-          <div className="flex-1 flex justify-center px-2">
+          {/* Google-style pill search. On the setup pages it searches nothing,
+              so a phone keeps the room instead; a laptop has room for both. */}
+          <div className={cx('flex-1 flex justify-center px-2', !searchEnabled && 'max-md:hidden')}>
             <div className="relative w-full max-w-[520px]">
               <SearchGlyph className="w-[18px] h-[18px] absolute left-4 top-1/2 -translate-y-1/2 text-label-3 pointer-events-none" />
               <input
@@ -529,7 +548,7 @@ export const AppShell = ({
         {/* ================= pill tabs ================= */}
         {/* No overflow-x here: it makes overflow-y compute to auto, which clipped
             the Settings dropdown to the height of this bar. Wrap instead. */}
-        <nav className="max-md:hidden px-4 sm:px-6 pb-2.5 flex items-center gap-1.5 flex-wrap" aria-label="Sections">
+        <nav className="max-md:hidden px-4 sm:px-6 pb-2.5 heading-short-tabs flex items-center gap-1.5 flex-wrap" aria-label="Sections">
           {primary.map(item => {
             const active = item.key === activeKey;
             return (
@@ -606,18 +625,28 @@ export const AppShell = ({
 
       {/* ================= page heading (Apple large title) ================= */}
       <div className={cx(
-        'px-4 sm:px-6 pt-8 pb-6 max-md:pt-5 max-md:pb-4',
+        'px-4 sm:px-6 pt-8 pb-6 max-md:pt-3 max-md:pb-3',
+        // A phone turned sideways is 390 px tall and gets the wide layout: the
+        // heading block alone would be the whole screen, so it shrinks (theme.css).
+        'heading-short',
         // A page held to one screen spends its height on content, not on the
         // gap above the title.
         fitViewport && 'lg:pt-4 lg:pb-3',
       )}>
         <div className="flex items-end justify-between gap-6 flex-wrap max-md:gap-3">
           <div className="min-w-0">
-            <h1 className="text-[32px] sm:text-[36px] max-md:text-[27px] font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
+            <h1 className="text-[32px] sm:text-[36px] max-md:text-[24px] heading-short-title font-extrabold text-label tracking-[-0.035em] leading-[1.05]">
               {title}
             </h1>
             {(subtitle || dataAsOf || lastSyncTime || saveStatus) && (
-              <div className="flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3 max-md:mt-2 max-md:text-[13px] max-md:gap-x-2 max-md:gap-y-1">
+              <div className={cx(
+                'flex items-center gap-2.5 flex-wrap mt-3 text-[14px] text-label-3',
+                // Two lines on a phone rather than four: the same words, a
+                // third of the screen back for the work.
+                'max-md:mt-1.5 max-md:text-[12.5px] max-md:gap-x-2 max-md:gap-y-0 max-md:leading-[17px]',
+                'heading-short-meta',
+                'max-md:max-h-[34px] max-md:overflow-hidden',
+              )}>
                 {subtitle}
                 {dataAsOf && (
                   <>
@@ -665,8 +694,8 @@ export const AppShell = ({
         className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-xl border-t border-separator pb-[env(safe-area-inset-bottom)]"
         aria-label="Sections"
       >
-        <div className="grid h-[64px]" style={{ gridTemplateColumns: `repeat(${primary.length + (setup.length ? 1 : 0)}, minmax(0, 1fr))` }}>
-          {primary.map(item => {
+        <div className="grid h-[64px]" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + (phoneMore.length ? 1 : 0)}, minmax(0, 1fr))` }}>
+          {phoneTabs.map(item => {
             const active = item.key === activeKey;
             return (
               <button
@@ -707,7 +736,7 @@ export const AppShell = ({
               </button>
             );
           })}
-          {setup.length > 0 && (
+          {phoneMore.length > 0 && (
             <button
               ref={setupTabRef}
               onClick={() => setSetupOpen(o => !o)}
@@ -715,16 +744,16 @@ export const AppShell = ({
               aria-expanded={setupOpen}
               className={cx(
                 'relative flex flex-col items-center justify-center gap-1 min-w-0 px-1 transition-colors',
-                isSetupActive || setupOpen ? 'text-accent' : 'text-label-3 active:text-label',
+                isMoreActive || setupOpen ? 'text-accent' : 'text-label-3 active:text-label',
               )}
             >
               <span className={cx(
                 'grid place-items-center h-7 w-12 rounded-full transition-colors',
-                (isSetupActive || setupOpen) && 'bg-accent-tint',
+                (isMoreActive || setupOpen) && 'bg-accent-tint',
               )}>
-                <GearGlyph className="w-[22px] h-[22px]" />
+                <MoreGlyph className="w-[22px] h-[22px]" />
               </span>
-              <span className={cx('text-[11px] leading-none', isSetupActive ? 'font-bold' : 'font-medium')}>Settings</span>
+              <span className={cx('text-[11px] leading-none', isMoreActive ? 'font-bold' : 'font-medium')}>More</span>
             </button>
           )}
         </div>
@@ -732,11 +761,11 @@ export const AppShell = ({
 
       {/* The Setup sheet, phone only: rises from the tab bar and lists the
           same pages the desktop dropdown does. */}
-      {setupOpen && setup.length > 0 && (
+      {setupOpen && phoneMore.length > 0 && (
         <div className="md:hidden fixed inset-0 z-50" role="presentation" ref={setupSheetRef}>
           <button
             type="button"
-            aria-label="Close settings"
+            aria-label="Close this menu"
             onClick={() => setSetupOpen(false)}
             className="absolute inset-0 bg-black/40"
           />
@@ -745,7 +774,26 @@ export const AppShell = ({
             className="absolute inset-x-0 bottom-0 bg-card rounded-t-[22px] shadow-e3 pt-2 pb-[calc(12px+env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-4 fade-in duration-150"
           >
             <span className="block mx-auto w-9 h-1 rounded-full bg-separator-strong" aria-hidden="true" />
-            <p className="px-5 pt-3 pb-1 label">Setup</p>
+            {phoneMoreWork.length > 0 && (
+              <>
+                <p className="px-5 pt-3 pb-1 label">Also here</p>
+                {phoneMoreWork.map(item => (
+                  <button
+                    key={item.key}
+                    role="menuitem"
+                    onClick={() => { setSetupOpen(false); onNavigate(item.key); }}
+                    className={cx(
+                      'w-full flex items-center gap-3.5 px-5 min-h-[52px] text-[15.5px] font-medium text-left transition-colors active:bg-press',
+                      item.key === activeKey ? 'text-accent' : 'text-label',
+                    )}
+                  >
+                    <span className="text-label-3 [&>svg]:w-[20px] [&>svg]:h-[20px]">{item.icon}</span>
+                    {item.label}
+                  </button>
+                ))}
+              </>
+            )}
+            {setup.length > 0 && <p className="px-5 pt-3 pb-1 label">Setup</p>}
             {setup.map(item => (
               <button
                 key={item.key}

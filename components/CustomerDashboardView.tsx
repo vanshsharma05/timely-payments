@@ -5,7 +5,7 @@ import StatusBadge from './StatusBadge';
 import { WhatsAppIcon, ChequeIcon, DownloadIcon, TrashIcon, EditIcon } from './icons/Icons';
 import { AgeingBar, AgeingLegend, AGE_BANDS } from './ui/Primitives';
 import { formatCompact, formatINR, formatDate as formatDay, localIsoDate, followUpWhen, startOfToday } from './ui/format';
-import { useIsPhone } from './ui/usePhone';
+import { useIsPhone, PHONE_QUERY } from './ui/usePhone';
 import { PhoneAccountRow } from './ui/PhoneAccountRow';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
@@ -128,11 +128,14 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      * either way the choice is remembered on this device.
      */
     const [overviewOpen, setOverviewOpen] = useState<boolean>(() => {
+        // A phone has room for the accounts or for seven money tiles, not both:
+        // it opens on the accounts and the tiles are one tap away.
+        const onPhone = typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches;
         try {
             const saved = localStorage.getItem('tp.bookOverviewOpen');
-            if (saved === '1' || saved === '0') return saved === '1';
+            if (saved === '1' || saved === '0') return saved === '1' && !onPhone;
         } catch { /* private window */ }
-        return seesWholeBook(currentUser);
+        return seesWholeBook(currentUser) && !onPhone;
     });
     const toggleOverview = () => setOverviewOpen(o => { try { localStorage.setItem('tp.bookOverviewOpen', o ? '0' : '1'); } catch { /* ignore */ } return !o; });
     /**
@@ -142,6 +145,12 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
      */
     const isPhone = useIsPhone();
     const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+    /**
+     * Picking several accounts at once is a desk job. On a phone the tick
+     * boxes sat on every row all day for the once-a-month bulk reassignment,
+     * so they wait behind "Select" instead.
+     */
+    const [phoneSelecting, setPhoneSelecting] = useState(false);
     const today = useMemo(() => startOfToday(), []);
 
     /** How many rows are mounted. Grows as the reader reaches the bottom. */
@@ -559,7 +568,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
     return (
         <div className="w-full space-y-3.5 pb-2">
             {/* Top Header Banner */}
-            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div className="bg-card rounded-[16px] shadow-e1 px-5 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 max-md:hidden">
                 <div>
                     {/* The count and the sheet date are in the page subtitle already; here
                         the one useful thing is the overview toggle. */}
@@ -705,7 +714,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             )}
 
             {/* Compact Filter Controls Card */}
-            <div className="bg-card rounded-[16px] shadow-e1 p-5 space-y-3.5">
+            <div className="bg-card rounded-[16px] shadow-e1 p-5 space-y-3.5 max-md:p-3 max-md:space-y-2.5">
                 {/* Which half of the book. First control on the card, because it
                     decides what every filter under it is narrowing. Settled
                     customers keep every note, cheque and word of their history —
@@ -718,7 +727,7 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 type="button"
                                 onClick={() => setSettlementFilter(key)}
                                 aria-pressed={settlementFilter === key}
-                                className={`h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors max-md:flex-1 max-md:px-1 max-md:h-9 max-md:text-[12.5px] max-md:whitespace-nowrap ${
+                                className={`h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors max-md:flex-1 max-md:px-1 max-md:h-11 max-md:text-[12.5px] max-md:whitespace-nowrap ${
                                     settlementFilter === key
                                         ? 'bg-accent text-on-accent shadow-e1'
                                         : 'text-label-2 hover:bg-hover hover:text-label'
@@ -767,21 +776,44 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                         </div>
                     </div>
 
-                    {/* Phone only: the four selects below fold behind this until asked for. */}
-                    <button
-                        type="button"
-                        onClick={() => setPhoneFiltersOpen(v => !v)}
-                        aria-expanded={phoneFiltersOpen}
-                        className="md:hidden h-10 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2 flex items-center justify-center gap-2"
-                    >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-                        {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
-                        {activeFilterCount > 0 && (
-                            <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
-                                {activeFilterCount}
-                            </span>
+                    {/* Phone only: one row of controls — the four selects fold
+                        behind Filters, and the buttons the desktop banner carries
+                        (add an account, the money tiles, the export) live here so
+                        the list starts within a thumb's reach of the search. */}
+                    <div className="md:hidden flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setPhoneFiltersOpen(v => !v)}
+                            aria-expanded={phoneFiltersOpen}
+                            className="flex-1 h-11 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2 flex items-center justify-center gap-2"
+                        >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                            {phoneFiltersOpen ? 'Hide filters' : 'Filters'}
+                            {activeFilterCount > 0 && (
+                                <span className="num text-[11px] font-bold px-1.5 py-[2px] rounded-full bg-accent text-on-accent">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={toggleOverview}
+                            aria-expanded={overviewOpen}
+                            className="h-11 px-3.5 rounded-xl border border-separator-strong bg-card text-[13.5px] font-semibold text-label-2"
+                        >
+                            {overviewOpen ? 'Hide totals' : 'Totals'}
+                        </button>
+                        {canAddCustomer && (
+                            <button
+                                type="button"
+                                onClick={onAddCustomer}
+                                aria-label="Add customer"
+                                className="h-11 w-11 flex-none grid place-items-center rounded-xl bg-accent text-on-accent text-[22px] font-bold leading-none shadow-e1 active:brightness-95"
+                            >
+                                +
+                            </button>
                         )}
-                    </button>
+                    </div>
 
                     {/* Payment Rank Filter Dropdown */}
                     <div className={`lg:col-span-2 ${phoneFiltersOpen ? '' : 'max-md:hidden'}`}>
@@ -1026,7 +1058,9 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
 
             {/* Bulk Reassign CRM Bar (If selected) */}
             {(canReassignCrm || canEditCustomer) && selectedCustomerIds.length > 0 && (
-                <div className="p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+                /* On a phone the bar follows the list down, so what has been
+                   picked and what can be done to it stay above the tab bar. */
+                <div className="p-2.5 bg-accent-tint rounded-xl border border-separator flex flex-wrap items-center justify-between gap-2 animate-in fade-in max-md:sticky max-md:bottom-[calc(72px+env(safe-area-inset-bottom))] max-md:z-30 max-md:shadow-e2 max-md:[&_select]:min-h-[40px] max-md:[&_button]:min-h-[40px]">
                     <div className="flex items-center gap-2 text-xs font-bold text-label">
                         <span>{selectedCustomerIds.length} selected</span>
                         <button
@@ -1183,21 +1217,40 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
             ) : isPhone ? (
                 /* Phone: one row per account, the whole row opens it. */
                 <div className="bg-card rounded-[16px] shadow-e1 overflow-hidden">
-                    <div className="px-3.5 py-2.5 bg-card-2 border-b border-separator flex items-center justify-between gap-3 text-[12.5px]">
+                    <div className="px-3.5 py-2 bg-card-2 border-b border-separator flex items-center justify-between gap-3 text-[12.5px]">
                         <span className="font-bold text-label">
                             {filteredData.length.toLocaleString('en-IN')} account{filteredData.length === 1 ? '' : 's'}
                         </span>
                         {(canReassignCrm || canEditCustomer) && (
-                            <label className="inline-flex items-center gap-2 font-semibold text-label-2 min-h-[32px]">
-                                <input
-                                    type="checkbox"
-                                    checked={selectedCustomerIds.length === filteredData.length && filteredData.length > 0}
-                                    onChange={e => handleSelectAll(e.target.checked)}
-                                    aria-label="Select all customers in view"
-                                    className="w-5 h-5 rounded text-accent focus:ring-accent"
-                                />
-                                Select all
-                            </label>
+                            phoneSelecting ? (
+                                <span className="flex items-center gap-3">
+                                    <label className="inline-flex items-center gap-2 font-semibold text-label-2 min-h-[40px]">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedCustomerIds.length === filteredData.length && filteredData.length > 0}
+                                            onChange={e => handleSelectAll(e.target.checked)}
+                                            aria-label="Select all customers in view"
+                                            className="w-5 h-5 rounded text-accent focus:ring-accent"
+                                        />
+                                        All
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setPhoneSelecting(false); handleSelectAll(false); }}
+                                        className="min-h-[40px] px-2 font-bold text-accent"
+                                    >
+                                        Done
+                                    </button>
+                                </span>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setPhoneSelecting(true)}
+                                    className="min-h-[40px] px-2 font-semibold text-label-2"
+                                >
+                                    Select
+                                </button>
+                            )
                         )}
                     </div>
                     <div className="divide-y divide-separator">
@@ -1209,9 +1262,10 @@ export const CustomerDashboardView: React.FC<CustomerDashboardViewProps> = ({
                                 ownerName={findOwner(users, item.crmOwnerId)?.name}
                                 onOpen={() => onFollowUp(item)}
                                 onWhatsApp={() => onWhatsApp(item)}
-                                selectable={canReassignCrm || canEditCustomer}
+                                selectable={phoneSelecting && (canReassignCrm || canEditCustomer)}
                                 selected={selectedCustomerIds.includes(item.id)}
                                 onToggleSelect={() => handleToggleRow(item.id)}
+                                canFollowUp={canEditFollowUp}
                             />
                         ))}
                     </div>

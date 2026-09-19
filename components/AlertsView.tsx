@@ -147,7 +147,7 @@ export const AlertsView = ({ canEdit }: { canEdit: boolean }) => {
                                 checked={settings.dailyEmail}
                                 disabled={!canEdit || saving}
                                 onChange={e => save({ ...settings, dailyEmail: e.target.checked })}
-                                className="w-4 h-4 rounded"
+                                className="w-5 h-5 rounded"
                             />
                             <span className="text-[14px] font-semibold text-label">
                                 {settings.dailyEmail ? 'On' : 'Off'}

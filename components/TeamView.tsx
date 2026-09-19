@@ -84,7 +84,7 @@ export const TeamView = ({ users, onAdd, onEdit, onRemove, companyProfile, onSav
                             aria-selected={tab === t.key}
                             onClick={() => setTab(t.key)}
                             className={cx(
-                                'h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors max-md:flex-1 max-md:h-9',
+                                'h-8 px-3.5 rounded-lg text-[13px] font-bold transition-colors max-md:flex-1 max-md:h-11',
                                 tab === t.key ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2 hover:bg-hover hover:text-label'
                             )}
                         >
@@ -190,7 +190,7 @@ export const TeamView = ({ users, onAdd, onEdit, onRemove, companyProfile, onSav
                                                     <button
                                                         type="button"
                                                         onClick={() => onRemove(user.id)}
-                                                        className="w-8 h-8 grid place-items-center text-label-3 hover:text-dang hover:bg-dang-bg rounded-full transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 group-focus-within:opacity-100"
+                                                        className="w-8 h-8 max-md:w-11 max-md:h-11 grid place-items-center text-label-3 hover:text-dang hover:bg-dang-bg rounded-full transition-colors max-md:opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 group-focus-within:opacity-100"
                                                         aria-label={`Remove ${user.name}`}
                                                         title="Remove their access"
                                                     >

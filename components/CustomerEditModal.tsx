@@ -344,7 +344,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 data-autofocus
                                 onChange={e => setCompany(e.target.value)}
                                 placeholder="e.g. SHREE RAM INDUSTRIES PVT LTD"
-                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold focus:ring-2 focus:ring-accent text-gray-900 dark:text-white uppercase"
+                                className="w-full border rounded-xl shadow-2xs bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2.5 max-md:h-12 text-sm font-bold focus:ring-2 focus:ring-accent text-gray-900 dark:text-white uppercase"
                                 required
                             />
                         </div>
@@ -379,7 +379,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={crmOwnerId || 'Unassigned'}
                                     disabled
                                     title="Your role cannot change who owns an account."
-                                    className="w-full border rounded-xl bg-gray-100 dark:bg-gray-800/60 border-gray-300 dark:border-gray-700 p-2.5 text-sm font-bold text-gray-600 dark:text-gray-400 cursor-not-allowed"
+                                    className="w-full border rounded-xl bg-gray-100 dark:bg-gray-800/60 border-gray-300 dark:border-gray-700 p-2.5 max-md:h-12 text-sm font-bold text-gray-600 dark:text-gray-400 cursor-not-allowed"
                                 />
                             )}
                             {canChooseOwner && !crmOwnerId && (
@@ -404,7 +404,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={contactPerson}
                                     onChange={e => setContactPerson(e.target.value)}
                                     placeholder="e.g. Mr. Rajesh Sharma"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-medium text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-medium text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
@@ -414,17 +414,19 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={contactPost}
                                     onChange={e => setContactPost(e.target.value)}
                                     placeholder="e.g. Finance Head / MD"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-medium text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-medium text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
                                 <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">Mobile / Phone Number</label>
                                 <input
-                                    type="text"
+                                    type="tel"
+                                    inputMode="tel"
+                                    autoComplete="tel"
                                     value={contactNumber}
                                     onChange={e => setContactNumber(e.target.value)}
                                     placeholder="e.g. 9876543210"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-medium text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-medium text-gray-900 dark:text-white"
                                 />
                             </div>
                         </div>
@@ -432,10 +434,13 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                             <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">Email Address</label>
                             <input
                                 type="email"
+                                inputMode="email"
+                                autoCapitalize="off"
+                                autoCorrect="off"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
                                 placeholder="e.g. accounts@shreeram.com"
-                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-medium text-gray-900 dark:text-white"
+                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-medium text-gray-900 dark:text-white"
                             />
                         </div>
                     </div>
@@ -451,10 +456,13 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 <label className="block text-[12.5px] font-semibold text-gray-600 dark:text-gray-400 mb-1">GSTIN Number</label>
                                 <input
                                     type="text"
+                                    autoCapitalize="characters"
+                                    autoCorrect="off"
+                                    spellCheck={false}
                                     value={gstin}
                                     onChange={e => setGstin(e.target.value.toUpperCase())}
                                     placeholder="e.g. 24AAACS1234K1Z5"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-mono uppercase text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-mono uppercase text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
@@ -464,7 +472,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={city}
                                     onChange={e => setCity(e.target.value)}
                                     placeholder="e.g. Ahmedabad / Surat"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
@@ -474,7 +482,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={state}
                                     onChange={e => setState(e.target.value)}
                                     placeholder="e.g. Gujarat"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white"
                                 />
                             </div>
                         </div>
@@ -486,7 +494,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={creditLimit !== undefined ? creditLimit : ''}
                                     onChange={e => setCreditLimit(e.target.value ? parseFloat(e.target.value) : undefined)}
                                     placeholder="e.g. 5000000"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-semibold text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
@@ -496,7 +504,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={paymentTermsDays !== undefined ? paymentTermsDays : ''}
                                     onChange={e => setPaymentTermsDays(e.target.value ? parseInt(e.target.value, 10) : undefined)}
                                     placeholder="e.g. 45"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-semibold text-gray-900 dark:text-white"
                                 />
                             </div>
                             <div>
@@ -506,7 +514,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 <select aria-label="Payment Rank (Rating)"
                                     value={paymentRank}
                                     onChange={e => setPaymentRank(e.target.value as any)}
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-bold text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-bold text-gray-900 dark:text-white"
                                 >
                                     <option value="">Auto (from terms &amp; ageing)</option>
                                     <option value="Good">Good — pays to terms</option>
@@ -529,7 +537,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     onChange={e => setCategory(e.target.value)}
                                     onBlur={e => setCategory(normaliseCategory(e.target.value))}
                                     placeholder="e.g. Dealer / Screen Printing"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-semibold text-gray-900 dark:text-white"
                                 />
                                 <datalist id="customer-category-options">
                                     {CUSTOMER_CATEGORIES.map(c => <option key={c} value={c} />)}
@@ -542,7 +550,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                     value={address}
                                     onChange={e => setAddress(e.target.value)}
                                     placeholder="e.g. Plot 12, GIDC"
-                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                    className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white"
                                 />
                             </div>
                         </div>
@@ -584,28 +592,29 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 value={newContactName}
                                 onChange={e => setNewContactName(e.target.value)}
                                 placeholder="Name (e.g. Sunil)"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <input
                                 type="text"
                                 value={newContactPost}
                                 onChange={e => setNewContactPost(e.target.value)}
                                 placeholder="Role (e.g. Purchase)"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <input
-                                type="text"
+                                type="tel"
+                                inputMode="tel"
                                 value={newContactMobile}
                                 onChange={e => setNewContactMobile(e.target.value)}
                                 placeholder="Mobile Number"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <input
                                 type="email"
                                 value={newContactEmail}
                                 onChange={e => setNewContactEmail(e.target.value)}
                                 placeholder="Email (optional)"
-                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
+                                className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white flex-1 min-w-[140px]"
                             />
                             <button
                                 type="button"
@@ -640,13 +649,13 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                         onChange={e => setTotal(parseFloat(e.target.value) || 0)}
                                         disabled={!canEditFinancials}
                                         placeholder="0"
-                                        className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-bold text-gray-900 dark:text-white disabled:bg-gray-100 disabled:text-gray-500"
+                                        className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-bold text-gray-900 dark:text-white disabled:bg-gray-100 disabled:text-gray-500"
                                     />
                                     <select aria-label="Total Outstanding (₹)"
                                         value={totalType}
                                         onChange={e => setTotalType(e.target.value as BalanceType)}
                                         disabled={!canEditFinancials}
-                                        className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-bold text-gray-900 dark:text-white disabled:bg-gray-100"
+                                        className="border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-bold text-gray-900 dark:text-white disabled:bg-gray-100"
                                     >
                                         <option value="Dr">Dr (Due)</option>
                                         <option value="Cr">Cr (Advance)</option>
@@ -722,7 +731,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 type="date"
                                 value={followUpDate}
                                 onChange={e => setFollowUpDate(e.target.value)}
-                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-bold text-gray-900 dark:text-white"
+                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs font-bold text-gray-900 dark:text-white"
                             />
                         </div>
                         <div>
@@ -734,7 +743,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
                                 onChange={e => setInitialNote(e.target.value)}
                                 placeholder="e.g. Spoke with Director. Promised RTGS of 3 Lakhs by Friday."
                                 rows={2}
-                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs text-gray-900 dark:text-white"
+                                className="w-full border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 max-md:h-11 text-xs text-gray-900 dark:text-white"
                             />
                         </div>
                     </div>

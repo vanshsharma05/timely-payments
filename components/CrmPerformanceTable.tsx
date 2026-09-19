@@ -44,10 +44,10 @@ const CrmPerformanceTable = ({ stats, onSelectCrm }: CrmPerformanceTableProps) =
     const ordered = [...stats].sort((a, b) => b.unattended - a.unattended || b.overdue - a.overdue || b.totalAssigned - a.totalAssigned || a.crmName.localeCompare(b.crmName));
     return (
         <div className="bg-card rounded-[16px] shadow-e1 overflow-hidden">
-            <div className="px-5 py-4 border-b border-separator flex items-center justify-between max-md:flex-wrap max-md:gap-2">
+            <div className="px-5 py-4 max-md:px-4 max-md:py-3 border-b border-separator flex items-center justify-between max-md:flex-wrap max-md:gap-2">
                 <div>
                     <h3 className="text-[17px] font-extrabold text-label tracking-[-0.02em]">Team</h3>
-                    <p className="text-[13px] text-label-3 mt-0.5">
+                    <p className="text-[13px] text-label-3 mt-0.5 max-md:hidden">
                         Accounts with dues, what is done and what is waiting, per person — most unattended first.
                         {onSelectCrm ? ' Press a name or a count to see those accounts in Reports.' : ''}
                         {' '}An account handed to a collector counts for both them and its CRM owner.

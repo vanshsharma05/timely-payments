@@ -104,7 +104,7 @@ export const DialogShell = ({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="w-9 h-9 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover text-2xl font-bold leading-none transition-colors"
+                            className="w-9 h-9 max-md:w-11 max-md:h-11 grid place-items-center rounded-full text-label-3 hover:text-label hover:bg-hover text-2xl font-bold leading-none transition-colors"
                             title="Close (Esc)"
                             aria-label="Close"
                         >

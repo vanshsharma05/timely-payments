@@ -432,7 +432,7 @@ const FollowUpModal = ({
                     <span>Owner <strong className="text-label">{findOwner(users, customer.crmOwnerId)?.name || customer.crmOwnerId || 'Unassigned'}</strong></span>
                     {customer.email && customer.email.includes('@') && <span>{customer.email}</span>}
                     {onEditCustomer && (
-                        <button type="button" onClick={() => onEditCustomer(customer)} className="text-accent font-semibold underline underline-offset-2">
+                        <button type="button" onClick={() => onEditCustomer(customer)} className="text-accent font-semibold underline underline-offset-2 max-md:inline-flex max-md:items-center max-md:min-h-[32px]">
                             Edit details
                         </button>
                     )}
@@ -479,9 +479,9 @@ const FollowUpModal = ({
                 <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 max-md:p-4">
                     
                     {/* Financial & Ageing Summary Card */}
-                    <div className="p-3.5 bg-slate-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 text-xs shadow-xs">
-                        <div className="flex justify-between items-baseline mb-2">
-                            <span className="text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider text-[12.5px]">Total Outstanding Balance:</span>
+                    <div className="p-3.5 bg-slate-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 text-xs shadow-xs max-md:p-2.5">
+                        <div className="flex justify-between items-baseline mb-2 max-md:mb-1.5">
+                            <span className="text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider text-[12.5px]"><span className="max-md:hidden">Total Outstanding Balance:</span><span className="md:hidden">Outstanding</span></span>
                             <BalanceAmount
                                 amount={customer.total}
                                 type={customer.totalType || 'Dr'}
@@ -490,8 +490,8 @@ const FollowUpModal = ({
                             />
                         </div>
                         {customer.dueOver45 !== undefined && (
-                            <div className="flex justify-between items-baseline mb-2 text-xs">
-                                <span className="text-amber-700 dark:text-amber-400 font-semibold">Due &gt; 45 Days Overdue:</span>
+                            <div className="flex justify-between items-baseline mb-2 text-xs max-md:mb-1.5">
+                                <span className="text-amber-700 dark:text-amber-400 font-semibold"><span className="max-md:hidden">Due &gt; 45 Days Overdue:</span><span className="md:hidden">Over 45 days</span></span>
                                 <BalanceAmount
                                     amount={customer.dueOver45}
                                     type={customer.dueOver45Type || 'Dr'}
@@ -500,7 +500,7 @@ const FollowUpModal = ({
                                 />
                             </div>
                         )}
-                        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-center">
+                        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-center max-md:gap-1 max-md:pt-1.5 max-md:[&>div]:p-1">
                             <div className="p-1.5 rounded bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800">
                                 <div className="text-[11.5px] font-bold text-gray-400 uppercase">1-45d</div>
                                 <BalanceAmount
@@ -550,23 +550,23 @@ const FollowUpModal = ({
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">What next?</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                            <div className="grid grid-cols-3 gap-2 text-xs max-md:gap-1.5">
+                                <label className={`flex items-center max-md:flex-col max-md:justify-center max-md:text-center max-md:min-h-[54px] max-md:leading-tight p-2.5 max-md:p-2 rounded-xl border cursor-pointer transition-all ${
                                     outcome === 'follow_up' ? 'bg-green-50 dark:bg-green-950/40 border-green-500 font-bold text-green-900 dark:text-green-200 ring-2 ring-green-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                 }`}>
-                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} data-autofocus className="mr-2 text-green-600 dark:text-green-400"/>
+                                    <input type="radio" name="outcome" value="follow_up" checked={outcome === 'follow_up'} onChange={() => setOutcome('follow_up')} data-autofocus className="mr-2 max-md:mr-0 max-md:mb-1 text-green-600 dark:text-green-400"/>
                                     <span>Follow up again</span>
                                 </label>
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                <label className={`flex items-center max-md:flex-col max-md:justify-center max-md:text-center max-md:min-h-[54px] max-md:leading-tight p-2.5 max-md:p-2 rounded-xl border cursor-pointer transition-all ${
                                     outcome === 'collected' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 font-bold text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                 }`}>
-                                    <input type="radio" name="outcome" value="collected" checked={outcome === 'collected'} onChange={() => setOutcome('collected')} className="mr-2 text-emerald-600 dark:text-emerald-400"/>
+                                    <input type="radio" name="outcome" value="collected" checked={outcome === 'collected'} onChange={() => setOutcome('collected')} className="mr-2 max-md:mr-0 max-md:mb-1 text-emerald-600 dark:text-emerald-400"/>
                                     <span>Payment collected</span>
                                 </label>
-                                <label className={`flex items-center p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                <label className={`flex items-center max-md:flex-col max-md:justify-center max-md:text-center max-md:min-h-[54px] max-md:leading-tight p-2.5 max-md:p-2 rounded-xl border cursor-pointer transition-all ${
                                     outcome === 'no_follow_up' ? 'bg-gray-100 dark:bg-gray-800 border-gray-400 font-bold' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                                 }`}>
-                                    <input type="radio" name="outcome" value="no_follow_up" checked={outcome === 'no_follow_up'} onChange={() => setOutcome('no_follow_up')} className="mr-2"/>
+                                    <input type="radio" name="outcome" value="no_follow_up" checked={outcome === 'no_follow_up'} onChange={() => setOutcome('no_follow_up')} className="mr-2 max-md:mr-0 max-md:mb-1"/>
                                     <span>{wasCollected ? 'Keep as collected' : 'No follow-up needed'}</span>
                                 </label>
                             </div>
@@ -589,7 +589,7 @@ const FollowUpModal = ({
                                                 setNextFollowUpDate(e.target.value);
                                                 if (!forecastDate) setForecastDate(e.target.value);
                                             }}
-                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent"
+                                            className="block w-full border rounded-lg shadow-xs bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 p-2 text-xs font-semibold text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-accent max-md:h-12"
                                             required
                                         />
                                     </div>
@@ -601,12 +601,13 @@ const FollowUpModal = ({
                                             <span className="absolute inset-y-0 left-0 pl-3 flex items-center font-bold text-gray-500 text-sm">₹</span>
                                             <input
                                                 type="number"
+                                                inputMode="numeric"
                                                 min="0"
                                                 step="1000"
                                                 value={forecastAmount}
                                                 onChange={e => setForecastAmount(e.target.value)}
                                                 placeholder="e.g. 500000"
-                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-accent shadow-2xs"
+                                                className="w-full pl-8 pr-3 py-2 text-sm font-bold border rounded-lg bg-white dark:bg-gray-800 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 focus:ring-2 focus:ring-accent shadow-2xs max-md:h-12"
                                             />
                                         </div>
                                     </div>
@@ -618,7 +619,7 @@ const FollowUpModal = ({
                                     <button
                                         type="button"
                                         onClick={() => handleSetPresetForecast(customer.total)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
+                                        className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
                                     >
                                         Full Due (₹{formatCurrency(customer.total)})
                                     </button>
@@ -626,7 +627,7 @@ const FollowUpModal = ({
                                         <button
                                             type="button"
                                             onClick={() => handleSetPresetForecast(over90Due)}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 transition-colors"
+                                            className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 transition-colors"
                                             title="Everything past 90 days: the 91-135 and >135 day buckets together"
                                         >
                                             &gt;90d Due (₹{formatCurrency(over90Due)})
@@ -636,7 +637,7 @@ const FollowUpModal = ({
                                         <button
                                             type="button"
                                             onClick={() => handleSetPresetForecast(Math.round(customer.total / 2))}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
+                                            className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 transition-colors"
                                         >
                                             50% Due (₹{formatCurrency(Math.round(customer.total / 2))})
                                         </button>
@@ -644,14 +645,14 @@ const FollowUpModal = ({
                                     <button
                                         type="button"
                                         onClick={() => handleSetPresetForecast(100000)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
+                                        className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
                                     >
                                         ₹1 Lakh
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => handleSetPresetForecast(500000)}
-                                        className="px-2 py-0.5 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
+                                        className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100"
                                     >
                                         ₹5 Lakh
                                     </button>
@@ -659,7 +660,7 @@ const FollowUpModal = ({
                                         <button
                                             type="button"
                                             onClick={() => setForecastAmount('')}
-                                            className="px-2 py-0.5 rounded text-[12.5px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                            className="px-2 max-md:px-3 py-0.5 max-md:h-10 rounded text-[12.5px] font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                         >
                                             Clear
                                         </button>
@@ -670,13 +671,13 @@ const FollowUpModal = ({
 
                         {canAssignCollector && (
                                 <div className="flex items-center pt-1">
-                                    <label htmlFor="isUrgent" className="flex items-center cursor-pointer">
+                                    <label htmlFor="isUrgent" className="flex items-center cursor-pointer max-md:min-h-[44px] max-md:w-full">
                                         <input 
                                             type="checkbox" 
                                             id="isUrgent" 
                                             checked={isUrgent} 
                                             onChange={() => setIsUrgent(!isUrgent)}
-                                            className="rounded text-red-600 dark:text-red-400 focus:ring-dang w-4 h-4 mr-2"
+                                            className="rounded text-red-600 dark:text-red-400 focus:ring-dang w-4 h-4 max-md:w-5 max-md:h-5 mr-2"
                                         />
                                         <span className="text-xs font-bold text-red-600 dark:text-red-400">
                                             Urgent — keep this account at the top

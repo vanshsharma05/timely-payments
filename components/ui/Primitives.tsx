@@ -132,7 +132,9 @@ export const SectionHeader = ({
   <div className={cx('flex items-start justify-between gap-4 flex-wrap', className)}>
     <div className="min-w-0">
       <h2 className="text-[17px] font-bold text-label tracking-[-0.02em]">{title}</h2>
-      {subtitle && <p className="text-[13.5px] text-label-3 mt-1">{subtitle}</p>}
+      {/* The line under a heading explains; on a phone it costs two or three
+          lines of the screen the list needs, and the heading already says it. */}
+      {subtitle && <p className="text-[13.5px] text-label-3 mt-1 max-md:hidden">{subtitle}</p>}
     </div>
     {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
   </div>
@@ -273,7 +275,7 @@ export const Stat = ({
       type={onClick ? 'button' : undefined}
       aria-pressed={onClick ? active : undefined}
       className={cx(
-        'relative text-left bg-card rounded-[16px] px-5 py-4 transition-all duration-150',
+        'relative text-left bg-card rounded-[16px] px-5 py-4 max-md:px-3.5 max-md:py-3 transition-all duration-150',
         onClick && 'cursor-pointer hover:shadow-e2 active:scale-[.99]',
         active ? 'shadow-e2 ring-2 ring-accent' : 'shadow-e1'
       )}
@@ -283,10 +285,10 @@ export const Stat = ({
         <span className="label">{label}</span>
         {icon && <span className="ml-auto text-label-3 flex-none">{icon}</span>}
       </span>
-      <span className="block num text-[30px] font-semibold text-label mt-2.5 leading-none tracking-[-0.03em]">
+      <span className="block num text-[30px] max-md:text-[24px] font-semibold text-label mt-2.5 max-md:mt-1.5 leading-none tracking-[-0.03em]">
         {value}
       </span>
-      {sub && <span className="block text-[13px] text-label-3 mt-2.5 leading-snug">{sub}</span>}
+      {sub && <span className="block text-[13px] max-md:text-[12px] text-label-3 mt-2.5 max-md:mt-1 leading-snug">{sub}</span>}
     </Wrapper>
   );
 };

@@ -574,7 +574,7 @@ export const LiveStockView = ({
                             href={LIVE_STOCK_SHEET_URL}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="h-8 px-3 inline-flex items-center rounded-full text-[12.5px] font-semibold text-accent hover:bg-accent-tint"
+                            className="h-8 max-md:h-10 px-3 max-md:px-3.5 inline-flex items-center rounded-full text-[12.5px] font-semibold text-accent hover:bg-accent-tint"
                         >
                             Open the sheet ↗
                         </a>
@@ -583,7 +583,7 @@ export const LiveStockView = ({
                         type="button"
                         onClick={onRefresh}
                         disabled={loading}
-                        className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover disabled:opacity-50"
+                        className="h-8 max-md:h-10 px-3 max-md:px-3.5 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover disabled:opacity-50"
                     >
                         <SyncIcon className={cx('w-3.5 h-3.5', loading && 'animate-spin')} />
                         {loading ? 'Reading…' : 'Read now'}
@@ -643,7 +643,7 @@ export const LiveStockView = ({
                         </span>
                         {/* On a phone the chevron is the cue; the word would cost the counts their room. */}
                         <span className={cx(
-                            'h-8 px-3 inline-flex items-center rounded-full text-[12.5px] font-semibold flex-none max-md:hidden',
+                            'h-8 max-md:h-10 px-3 max-md:px-3.5 inline-flex items-center rounded-full text-[12.5px] font-semibold flex-none max-md:hidden',
                             overviewOpen ? 'bg-card-2 text-label-2' : 'bg-accent-tint text-accent',
                         )}>
                             {overviewOpen ? 'Hide' : 'Show'}
@@ -840,7 +840,7 @@ export const LiveStockView = ({
                                         onClick={() => setAvailability(k)}
                                         aria-pressed={availability === k}
                                         className={cx(
-                                            'h-8 px-3 rounded-lg text-[12.5px] font-bold transition-colors whitespace-nowrap max-md:flex-1 max-md:px-1',
+                                            'h-8 max-md:h-11 px-3 rounded-lg text-[12.5px] font-bold transition-colors whitespace-nowrap max-md:flex-1 max-md:px-1',
                                             availability === k ? 'bg-accent text-on-accent shadow-e1' : 'text-label-2 hover:bg-hover hover:text-label',
                                         )}
                                     >
@@ -896,7 +896,7 @@ export const LiveStockView = ({
                                     onClick={() => (compareMode ? leaveCompare() : setCompareMode(true))}
                                     aria-pressed={compareMode}
                                     className={cx(
-                                        'h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold border transition-colors',
+                                        'h-8 max-md:h-10 px-3 max-md:px-3.5 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold border transition-colors',
                                         compareMode
                                             ? 'bg-accent text-on-accent border-accent'
                                             : 'bg-card border-separator-strong text-label-2 hover:bg-hover',
@@ -909,7 +909,7 @@ export const LiveStockView = ({
                                     <button
                                         type="button"
                                         onClick={() => exportExcel()}
-                                        className="h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover"
+                                        className="h-8 max-md:h-10 px-3 max-md:px-3.5 inline-flex items-center gap-1.5 rounded-full text-[12.5px] font-semibold bg-card border border-separator-strong text-label-2 hover:bg-hover"
                                     >
                                         <DownloadIcon className="w-3.5 h-3.5" />
                                         Export {filtered.length === items.length ? 'all' : 'these'}

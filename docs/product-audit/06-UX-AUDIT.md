@@ -248,3 +248,54 @@ Scope: the Cheques / PDC page and its dialog only. No cheque rule, date rule, pe
 **Kept, untouched:** the record/edit dialog (batch 7's), the named delete question (`ConfirmDialog`), fifty rows at a time, "Not saved, retrying" on a refused row, loading and empty states, the account link on the name, the roster-aware CRM filter, `sortCheques` and `chequeState()` — no cheque rule, date rule, permission, schema or write changed. `components/ui/RowMenu.tsx` (batch 7 only) removed.
 
 **Visual QA (dev server, every write aborted):** `pdc-qa3.cjs` at 1366×768, 1024×768 and 390×844, on the live register (53 in hand, 100 cleared) and with the register's rows rewritten in the browser so that two are due today, two date-passed, one bounced and one on hold: 0 findings at every size — six tiles none pressed on open, counts summing to the rows, a pressed tile listing exactly its count, the tile again or *Show all* listing everything, the search narrowing the tiles and the list together, in-hand rows Clear/Hold/Bounce, on-hold Clear/Release/Bounce, bounced Clear/Back in hand, cleared Undo only, edit and delete on every row, the bulk bar's six buttons, the delete question naming the cheque with Cancel focused and Esc closing it, the record and edit dialogs opening, Space pressing a focused tile, Today's *Review cheques* landing on Due today, the phone's Filters fold, 0 writes attempted, 0 page errors; dark mode checked at 1366. The a11y sweep at the three sizes: 21 screens each, 0 overflow / 0 low-contrast / 0 unnamed, the cheque dialog keeping focus and closing on Esc. First screen at 1366×768: tiles, filters, list header and four and a half rows (was three in the original). `tsc` clean; **315/315** (`chequeRegister` rewritten to the refined-original model, 29); build clean (the register's chunk 24.2 kB); checks unchanged.
+
+## Phase 4, batch 9 — the mobile pass (2026-09-19, local; NOT deployed — awaiting the owner's visual review)
+
+Scope: every screen and dialog **below `md` (767 px)**, plus two things that help any short window. No business rule, financial calculation, permission, schema, RLS rule, cheque rule or sync rule touched; no desktop information architecture changed. Measured at 320×700, 360×800, 390×844, 412×915, 768×1024 and 1366×768.
+
+**What a phone actually got before (measured, 390×844, real book of 4,029 accounts and 153 cheques):**
+
+- **The page heading took a third of every screen.** Title plus four wrapped lines of metadata = ~290 px before any content, on all thirteen screens.
+- **The customer book showed no customer.** The first account row began at y=791 — below the fold — behind a toolbar card, a sideways strip of seven money tiles and a filter card. And there was **no Follow up button at all**: the row was tappable, but nothing said so.
+- **The cheque register's first card began at y=587**; Reports' first account at **y=1,508** behind two wrapped chip rows (16 chips) and five cards.
+- **Six tab-bar labels did not fit**: "Customers" was clipped at 360 px, "Customers" and "Live stock" at 320 px, where the page also scrolled sideways by 5 px.
+- **Controls under the thumb mark**: 40 small targets across the screens — 13 px radios in the WhatsApp sheet, 16 px tick boxes in Alerts, 20 px row boxes, 28–32 px chips in the template and team dialogs, a 46×20 px "Refresh", 36 px dialog close buttons.
+- **The team page hid its delete behind hover**, which a phone cannot do.
+- Phone numbers, email and GST fields asked for the ordinary keyboard.
+- **First load carried the whole app**: 191 kB of gzipped JavaScript before sign-in, including seven screens and dialogs nobody had opened.
+
+**What changed (phone only unless said otherwise):**
+
+- **The shell.** The heading block is 24 px title + at most two lines of metadata (`max-h`, exact line height) — about 150 px back on every screen. The app-bar search hides on the four pages it cannot search (team, templates, alerts, data source). The book's subtitle says "644 with dues · ₹11.43 Cr"; the stock page drops the book's save line, which is not about stock.
+- **Navigation: four tabs and More.** Today · Customers · Cheques · Reports, then **More** — a sheet holding Live stock and the setup pages, the same sheet that already held setup. Nothing left the app and the laptop's navigation is untouched. Labels fit at 320 px.
+- **The customer book.** The desktop toolbar card is gone below `md`; its buttons live in one phone row under the search (*Filters · Totals · +*). The seven money tiles start folded on a phone (*Totals* opens them). The row now carries **Follow up** and WhatsApp as buttons, drops the contact/city line (it is inside the account), and keeps name, balance, >90d, state chips, last note, the ageing bar, the next date and the owner. Tick boxes wait behind **Select**; the bulk bar follows the list down. **First row at y=417 — two accounts and their actions on the first screen.**
+- **The follow-up sheet** — the workflow this app exists for. The money card is tighter, the three outcomes are one row of three instead of a 200 px stack, the date and amount fields are 48 px. Outcome, next date, amount expected, the presets and **Save** are all on the first screen at 390 and at 320; the footer stays put while a field has focus; the amount asks for the number pad.
+- **The cheque register.** Six tiles in two rows of three, count and amount on one line (164 → 130 px); the first cheque card at y=474; tick boxes behind **Select**; the card's name is a 32 px target. The desktop register is untouched.
+- **Reports.** The CRM owner, the scope and the two export buttons fold behind **Filters** (the search stays out); the ageing bands and both chip rows scroll sideways in one line each; chips are 40 px. **First account at y=882 (was 1,508).**
+- **Today.** Compact stat tiles, section explanations hidden, tighter gaps; the two card buttons wrap instead of overflowing at 320 px.
+- **Touch targets and keyboards.** Every control the sweep found under 40 px is now at least 40: WhatsApp recipient rows and radios, Alerts tick boxes, chips in the template, team and follow-up dialogs, the dialog close button, Live stock's buttons, the login's "Forgot password", the status line's *Refresh* and *Retry now*. The team page's delete is always visible below `md`. Phone fields ask for the right keyboard (`tel`, `email`, no autocorrect on GST/PAN, numeric for money).
+- **Any short window** (a phone turned sideways, a small laptop): under 500 px of height the heading, app bar and tab row shrink (`theme.css`), so content is on screen instead of chrome.
+
+**Performance (production build, 4× CPU throttling, ~1.6 Mbit/s, gzipped — a mid-range Android):**
+
+| | before | after |
+|---|---|---|
+| JavaScript before sign-in | 191 kB | **167 kB** |
+| main chunk | 150.6 kB | **125.9 kB** |
+| First contentful paint | 1,752 ms | **1,536 ms** |
+| Opening Today | 313 ms | **177 ms** |
+| Opening the book | 485 ms | **394 ms** |
+| One keystroke in the book search | 89–122 ms | **50–83 ms** |
+| Scrolling the book 4,000 px | 136 ms | **96 ms** |
+
+The saving is the follow-up sheet, the customer form, the WhatsApp sheet, the cheque form and the team, templates and alerts pages, which now arrive as their own chunks when they are opened; the four a working day opens are fetched quietly once the app is idle, so the first tap waits for nothing. A dialog that is still arriving shows a spinner rather than nothing. **One bug found and fixed on the way:** the customer form sat outside every Suspense boundary, so making it lazy blanked the whole app when it opened — it is inside the dialogs' boundary now.
+
+**QA (dev server for the workflows, the production build for the timings; every write aborted at the network layer, 0 attempted):**
+
+- Phone workflow QA (`m-flow.cjs`) at **320×700, 360×800, 390×844, 412×915**: 0 findings each.
+- Screen-by-screen tour (`m-tour.cjs`) at 390: 22 screens and dialogs, 0 page errors, no sideways scroll anywhere.
+- Sideways-scroll sweep (`m-overflow.cjs`) over all nine pages at 320, 360, **768 (tablet)** and **1366**: 0 (the one 6 px on Team at 768 predates this batch and is unchanged).
+- Stress (`m-stress.cjs`): text at 125 %, landscape 844×390, reduced motion, and the follow-up sheet's focus trap (0/40 tabs escaped, Cancel returns to the list): 0 findings.
+- Accessibility sweep at **320, 390, 412** and **1366**: 21 screens each, 0 overflow / 0 low-contrast / 0 unnamed controls; every dialog keeps focus and closes on Esc.
+- Desktop regression: cheque QA at 1366 (0 findings), CRM workflow QA at 1366 and 390 (0), manager QA at 1366 and 390 (0), data-source QA (0), both interception probes identical in shape to the production records.
+- `tsc` clean; **315/315**; build clean; `check:classes` back to the two known false positives; `check:empty` clean.

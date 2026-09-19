@@ -14,8 +14,14 @@ import { WhatsAppIcon } from '../icons/Icons';
  * first line, who to ring on the second, the balance on the right, and the
  * ageing bar along the bottom, which is the one thing a table did well.
  *
- * The whole row opens the account. The one action worth a button of its own
- * is WhatsApp, because on a phone that is a tap away from the conversation.
+ * The whole row opens the account, and says so: "Follow up" sits on the row
+ * as a button, because the row being tappable is not something a phone can
+ * show. WhatsApp is the second button, a tap from the conversation.
+ *
+ * What the row says is ordered by what a caller needs: the name, the balance,
+ * when it is next due, then the grade and the last note. The contact number
+ * and the city are inside the account, one tap away, and were costing a line
+ * on every row.
  */
 export interface PhoneAccountRowProps {
     item: Outstanding;
@@ -30,6 +36,8 @@ export interface PhoneAccountRowProps {
     onToggleSelect?: () => void;
     /** Extra chips after the state — a cheque in hand, for instance. */
     extras?: React.ReactNode;
+    /** Whether this person may record a follow-up; a Viewer gets the row without the button. */
+    canFollowUp?: boolean;
 }
 
 const RANK_TONE = { Good: 'pos', Late: 'warn', Bad: 'dang' } as const;
@@ -44,6 +52,7 @@ export const PhoneAccountRow = ({
     selected,
     onToggleSelect,
     extras,
+    canFollowUp = true,
 }: PhoneAccountRowProps) => {
     const { a1, a2, a3, a4, over90 } = overdueAgeing(item);
     const rank = getCustomerPaymentRank(item);
@@ -71,8 +80,9 @@ export const PhoneAccountRow = ({
                 </label>
             )}
 
-            {/* The tappable body. A button, so it is reachable without a mouse. */}
-            <button type="button" onClick={onOpen} className="flex-1 min-w-0 text-left">
+            {/* The tappable body, and the row's buttons under it. */}
+            <div className="flex-1 min-w-0">
+                <button type="button" onClick={onOpen} className="w-full min-w-0 text-left">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                         <p className="text-[15px] font-bold text-label leading-snug break-words">
@@ -102,36 +112,45 @@ export const PhoneAccountRow = ({
                     </div>
                 </div>
 
-                <p className="text-[12.5px] text-label-3 mt-1.5 truncate">
-                    {[item.contactPerson, item.contactNumber, item.city, ownerName || item.crmOwnerId]
-                        .map(v => (v || '').trim())
-                        .filter(Boolean)
-                        .join(' · ') || 'No contact on file'}
-                </p>
                 {lastNote && (
-                    <p className="text-[12px] text-label-3 mt-1 truncate" title={lastNote}>
+                    <p className="text-[12px] text-label-3 mt-1.5 truncate" title={lastNote}>
                         {lastNote}
                     </p>
                 )}
 
-                <div className="flex items-center gap-3 mt-2.5">
-                    <AgeingBar parts={{ a1, a2, a3, a4 }} height={5} className="flex-1" />
-                    <span className="text-[11.5px] text-label-3 flex-none num">
+                <div className="flex items-center gap-3 mt-2">
+                    <AgeingBar parts={{ a1, a2, a3, a4 }} height={5} className="flex-1 min-w-0" />
+                    <span className="text-[11.5px] text-label-3 flex-none num truncate max-w-[55%]">
                         {item.followUpDate ? `Next ${formatDateShort(item.followUpDate)}` : 'No date'}
+                        {ownerName ? ` · ${ownerName}` : ''}
                     </span>
                 </div>
-            </button>
-
-            {onWhatsApp && (
-                <button
-                    type="button"
-                    onClick={onWhatsApp}
-                    aria-label={`WhatsApp ${item.company}`}
-                    className="flex-none self-center w-11 h-11 -mr-1 grid place-items-center rounded-full text-pos bg-pos-bg active:brightness-95"
-                >
-                    <WhatsAppIcon className="w-5 h-5" />
                 </button>
-            )}
+
+                {/* The two things done from a list on a phone: open the account
+                    to record what happened, or message them. */}
+                <div className="flex items-center gap-2 mt-2.5">
+                    {canFollowUp && (
+                        <button
+                            type="button"
+                            onClick={onOpen}
+                            className="flex-1 h-10 rounded-xl bg-accent-tint text-accent text-[14px] font-bold active:brightness-95"
+                        >
+                            Follow up
+                        </button>
+                    )}
+                    {onWhatsApp && (
+                        <button
+                            type="button"
+                            onClick={onWhatsApp}
+                            aria-label={`WhatsApp ${item.company}`}
+                            className={cx('h-10 grid place-items-center rounded-xl text-pos bg-pos-bg active:brightness-95', canFollowUp ? 'w-14 flex-none' : 'flex-1')}
+                        >
+                            <WhatsAppIcon className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
+            </div>
         </div>
     );
 };
