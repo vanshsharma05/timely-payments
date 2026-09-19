@@ -116,7 +116,14 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** "3d overdue", "Today", "in 5d · 22 Sept", "No date": what the follow-up column says. */
+/**
+ * When the follow-up is, beside the badge that says where it stands:
+ * "19 Sept", "3d late · 14 Sept", "in 5d · 22 Sept", "No date".
+ *
+ * The badge already carries the state, so this says only *when*. It used to
+ * repeat the badge — an account due today read "Today  Today", and an overdue
+ * one "Overdue  3d overdue · 14 Sept".
+ */
 export const followUpWhen = (item: Outstanding, today: Date): string => {
     if (!item.followUpDate) return 'No date';
     const d = new Date(item.followUpDate);
@@ -126,8 +133,8 @@ export const followUpWhen = (item: Outstanding, today: Date): string => {
     const diff = Math.round((day.getTime() - t.getTime()) / 86_400_000);
     const short = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     if (item.status === FollowUpStatus.Completed) return short;
-    if (diff === 0) return 'Today';
-    if (diff < 0) return `${-diff}d overdue · ${short}`;
+    if (diff === 0) return short;
+    if (diff < 0) return `${-diff}d late · ${short}`;
     if (diff === 1) return `Tomorrow · ${short}`;
     return diff <= 14 ? `in ${diff}d · ${short}` : short;
 };

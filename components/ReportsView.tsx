@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, useCallback, lazy, Suspense } from 'react';
 import { loadXlsx } from '../services/excel';
 import { Outstanding, User, UserRole, FollowUpStatus, PdcCheque, CompanyProfile, getFollowUpCategory, followUpStatusOf, can, seesWholeBook, scopeTo, chequeState, CHEQUE_ACTIVE, DEFAULT_COMPANY_PROFILE, canExportBook, PaymentRank, PAYMENT_RANK_LABELS, SettlementFilter, SETTLEMENT_LABELS, matchesSettlement, hasOutstanding, matchesSearch, overdueAgeing, isBadDebt } from '../types';
 import StatusBadge from './StatusBadge';
@@ -168,6 +168,65 @@ export const ReportsView = ({
         [crmScopedData, settlementFilter],
     );
 
+    /** The search, as one predicate: the counts and the list must read it the same way. */
+    const matchesSearchTerm = useCallback((item: Outstanding) => {
+        if (!searchTerm.trim()) return true;
+        return matchesSearch(
+            [
+                String(item.company || '').toLowerCase(),
+                String(item.contactPerson || '').toLowerCase(),
+                String(item.contactNumber || '').toLowerCase(),
+                String(item.email || '').toLowerCase(),
+                String(item.crmOwnerId || '').toLowerCase(),
+                getUserDisplayName(item.crmOwnerId).toLowerCase(),
+                String(item.id || '').toLowerCase(),
+                String(item.total || ''),
+                (item.notes || []).join(' ').toLowerCase(),
+            ],
+            searchTerm,
+        );
+    }, [searchTerm, getUserDisplayName]);
+
+    /** Does this row fail the state chips? (`overdue`, `today`, … — not the ageing ones.) */
+    const failsCategory = useCallback((item: Outstanding, over90: number, a4: number) => {
+        switch (categoryFilter) {
+            case 'today': return !isTodayFollowUp(item);
+            case 'no_follow_up': return !isNoFollowUp(item);
+            case 'overdue': return !isOverdueFollowUp(item);
+            case 'future': return !isFutureFollowUp(item);
+            case 'completed': return isBadDebt(item) || item.status !== FollowUpStatus.Completed;
+            case 'bad_debt': return !isBadDebt(item);
+            case 'urgent': return isBadDebt(item) || !(item.isUrgent || isOverdueFollowUp(item));
+            case 'unattended': return !(isOverdueFollowUp(item) || isNoFollowUp(item));
+            case 'working': return isBadDebt(item);
+            case 'over90': return over90 <= 0;
+            case 'over135': return a4 <= 0;
+            default: return false;
+        }
+    }, [categoryFilter]);
+
+    /** Does this row fail the ageing chips? */
+    const failsAgeing = useCallback((a1: number, a2: number, a3: number, a4: number, over45: number, over90: number) => {
+        switch (ageingFilter) {
+            case 'over90': return over90 <= 0;
+            case 'over135': return a4 <= 0;
+            case '91-135': return a3 <= 0;
+            case '46-90': return a2 <= 0;
+            case '1-45': return a1 <= 0;
+            case 'dueOver45': return over45 <= 0;
+            default: return false;
+        }
+    }, [ageingFilter]);
+
+    /**
+     * What every tile and chip counts.
+     *
+     * The same rule the customer book uses: a row counts towards a control when
+     * it fails nothing but that control's own filter. So the state chips count
+     * what the ageing chip and the search leave, the ageing chips count what the
+     * state chip and the search leave, and every number is exactly the list you
+     * get by pressing it.
+     */
     const boxMetrics = useMemo(() => {
         let todayCount = 0;
         let todayAmount = 0;
@@ -178,7 +237,10 @@ export const ReportsView = ({
         let futureCount = 0;
         let futureAmount = 0;
         let totalAmount = 0;
-        let totalCount = workScopedData.length;
+        let totalCount = 0;
+        /** The ageing row's own "all": everything the state chip and the search leave. */
+        let ageingAllCount = 0;
+        let ageingAllAmount = 0;
         let dueOver45Total = 0;
         let completedCount = 0;
 
@@ -199,17 +261,30 @@ export const ReportsView = ({
         let urgentCount = 0;
 
         workScopedData.forEach(item => {
-            totalAmount += item.total || 0;
+            // The search narrows everything, tiles and chips included.
+            if (!matchesSearchTerm(item)) return;
             // Receivable ageing only: a credit that happens to be old is not
             // overdue, and an account in credit has nothing overdue at all.
             const { a1, a2, a3, a4, over45: itemDue45, over90: itemOver90 } = overdueAgeing(item);
-            dueOver45Total += itemDue45;
+            const outByCategory = failsCategory(item, itemOver90, a4);
+            const outByAgeing = failsAgeing(a1, a2, a3, a4, itemDue45, itemOver90);
 
-            if (a1 > 0) { ageing1_45Count++; ageing1_45Amount += a1; }
-            if (a2 > 0) { ageing46_90Count++; ageing46_90Amount += a2; }
-            if (a3 > 0) { ageing91_135Count++; ageing91_135Amount += a3; }
-            if (a4 > 0) { over135Count++; over135Amount += a4; }
-            if (itemOver90 > 0) { over90Count++; over90Amount += itemOver90; }
+            // The ageing chips count what the state chip leaves.
+            if (!outByCategory) {
+                ageingAllCount++;
+                ageingAllAmount += item.total || 0;
+                if (a1 > 0) { ageing1_45Count++; ageing1_45Amount += a1; }
+                if (a2 > 0) { ageing46_90Count++; ageing46_90Amount += a2; }
+                if (a3 > 0) { ageing91_135Count++; ageing91_135Amount += a3; }
+                if (a4 > 0) { over135Count++; over135Amount += a4; }
+                if (itemOver90 > 0) { over90Count++; over90Amount += itemOver90; }
+            }
+
+            // The tiles and the state chips count what the ageing chip leaves.
+            if (outByAgeing) return;
+            totalCount++;
+            totalAmount += item.total || 0;
+            dueOver45Total += itemDue45;
 
             // The recovery list: counted, and out of every follow-up list below —
             // Completed included, which is how the team table counts them, so a
@@ -262,6 +337,8 @@ export const ReportsView = ({
             futureAmount,
             totalAmount,
             totalCount,
+            ageingAllCount,
+            ageingAllAmount,
             dueOver45Total,
             completedCount,
             performanceScore,
@@ -280,59 +357,18 @@ export const ReportsView = ({
             badDebtAmount,
             urgentCount,
         };
-    }, [workScopedData, today]);
+    }, [workScopedData, today, matchesSearchTerm, failsCategory, failsAgeing]);
 
     // Filtered Report Table Data (Applying CRM + Category + Search + Ageing)
     const filteredReportData = useMemo(() => {
         return workScopedData.filter(item => {
+            if (!matchesSearchTerm(item)) return false;
             const { a1, a2, a3, a4, over45: itemDue45, over90: itemOver90 } = overdueAgeing(item);
-
-            // Category Filter
-            if (categoryFilter === 'today' && !isTodayFollowUp(item)) return false;
-            if (categoryFilter === 'no_follow_up' && !isNoFollowUp(item)) return false;
-            if (categoryFilter === 'overdue' && !isOverdueFollowUp(item)) return false;
-            if (categoryFilter === 'future' && !isFutureFollowUp(item)) return false;
-            if (categoryFilter === 'completed' && (isBadDebt(item) || item.status !== FollowUpStatus.Completed)) return false;
-            if (categoryFilter === 'bad_debt' && !isBadDebt(item)) return false;
-            // Exactly what the "needs attention" banner counts: flagged urgent,
-            // or the follow-up date has gone by. The banner used to set a filter
-            // that only the personal dashboard rendered, so pressing it on the
-            // company dashboard dismissed the banner and did nothing else.
-            if (categoryFilter === 'urgent' && (isBadDebt(item) || !(item.isUrgent || isOverdueFollowUp(item)))) return false;
-            if (categoryFilter === 'unattended' && !(isOverdueFollowUp(item) || isNoFollowUp(item))) return false;
-            if (categoryFilter === 'working' && isBadDebt(item)) return false;
-            if (categoryFilter === 'over90' && itemOver90 <= 0) return false;
-            if (categoryFilter === 'over135' && a4 <= 0) return false;
-
-            // Ageing Filter
-            if (ageingFilter === 'over90' && itemOver90 <= 0) return false;
-            if (ageingFilter === 'over135' && a4 <= 0) return false;
-            if (ageingFilter === '91-135' && a3 <= 0) return false;
-            if (ageingFilter === '46-90' && a2 <= 0) return false;
-            if (ageingFilter === '1-45' && a1 <= 0) return false;
-            if (ageingFilter === 'dueOver45' && itemDue45 <= 0) return false;
-
-            // Search Term Filter
-            if (searchTerm.trim()) {
-                const crmDisplayName = getUserDisplayName(item.crmOwnerId).toLowerCase();
-                const company = String(item.company || '').toLowerCase();
-                const contactPerson = String(item.contactPerson || '').toLowerCase();
-                const contactPhone = String(item.contactNumber || '').toLowerCase();
-                const email = String(item.email || '').toLowerCase();
-                const crmOwnerId = String(item.crmOwnerId || '').toLowerCase();
-                const id = String(item.id || '').toLowerCase();
-                const total = String(item.total || '');
-                const notes = (item.notes || []).join(' ').toLowerCase();
-
-                if (!matchesSearch(
-                    [company, contactPerson, contactPhone, email, crmOwnerId, crmDisplayName, id, total, notes],
-                    searchTerm,
-                )) return false;
-            }
-
+            if (failsCategory(item, itemOver90, a4)) return false;
+            if (failsAgeing(a1, a2, a3, a4, itemDue45, itemOver90)) return false;
             return true;
         });
-    }, [workScopedData, categoryFilter, ageingFilter, searchTerm, today, users]);
+    }, [workScopedData, matchesSearchTerm, failsCategory, failsAgeing]);
 
     // Export current report view to Excel with full ageing breakdown
     /**
@@ -547,11 +583,11 @@ export const ReportsView = ({
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 mt-2.5 items-start max-md:flex max-md:overflow-x-auto max-md:snap-x max-md:-mx-3 max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>*]:min-w-[124px] max-md:[&>*]:snap-start">
                         <div className="px-2 py-1.5 min-w-0">
                             <span className="block text-[11.5px] font-bold uppercase tracking-wider text-label-3">Outstanding</span>
-                            <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5" title={formatINR(boxMetrics.totalAmount)}>{formatCompact(boxMetrics.totalAmount)}</span>
+                            <span className="num block text-[17px] font-semibold text-label leading-tight mt-0.5" title={formatINR(boxMetrics.ageingAllAmount)}>{formatCompact(boxMetrics.ageingAllAmount)}</span>
                             <span className="block text-[12px] text-label-3 mt-0.5 truncate" title="Share of accounts with dues that are completed, due today or upcoming">
                                 {isPhone
-                                    ? `${boxMetrics.totalCount.toLocaleString('en-IN')} accounts`
-                                    : <>{boxMetrics.totalCount.toLocaleString('en-IN')} accounts · timely score <span className="num font-semibold text-label-2">{boxMetrics.performanceScore}%</span></>}
+                                    ? `${boxMetrics.ageingAllCount.toLocaleString('en-IN')} accounts`
+                                    : <>{boxMetrics.ageingAllCount.toLocaleString('en-IN')} accounts · timely score <span className="num font-semibold text-label-2">{boxMetrics.performanceScore}%</span></>}
                             </span>
                         </div>
                         {([
@@ -576,7 +612,7 @@ export const ReportsView = ({
                                 <span className="block text-[12px] text-label-3 mt-0.5 truncate">
                                     {isPhone
                                         ? `${count} accounts`
-                                        : `${boxMetrics.totalAmount > 0 ? Math.round((amount / boxMetrics.totalAmount) * 100) : 0}% of the book · ${count} accounts`}
+                                        : `${boxMetrics.ageingAllAmount > 0 ? Math.round((amount / boxMetrics.ageingAllAmount) * 100) : 0}% of the book · ${count} accounts`}
                                 </span>
                             </button>
                         ))}
@@ -630,7 +666,7 @@ export const ReportsView = ({
                 <div className="px-3.5 py-2 border-b border-separator flex flex-wrap items-center gap-1.5 text-xs max-md:flex-nowrap max-md:overflow-x-auto max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden max-md:[&>button]:flex-none max-md:[&>span]:flex-none" role="group" aria-label="Ageing">
                     <span className="text-[11.5px] font-bold text-gray-500 dark:text-gray-400 mr-1">Ageing:</span>
                     {([
-                        ['all', 'All ageing', boxMetrics.totalCount, 'bg-gray-900 text-white dark:bg-white dark:text-gray-900', 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200', 'Every account in this report'],
+                        ['all', 'All ageing', boxMetrics.ageingAllCount, 'bg-gray-900 text-white dark:bg-white dark:text-gray-900', 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200', 'Every account in this report'],
                         ['1-45', '1–45d', boxMetrics.ageing1_45Count, 'bg-emerald-600 text-white', 'bg-emerald-50 dark:bg-emerald-950/40 text-pos border border-emerald-200 dark:border-emerald-800', 'Has money 1–45 days overdue'],
                         ['46-90', '46–90d', boxMetrics.ageing46_90Count, 'bg-amber-600 text-white', 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800', 'Has money 46–90 days overdue'],
                         ['91-135', '91–135d', boxMetrics.ageing91_135Count, 'bg-orange-600 text-white', 'bg-orange-50 dark:bg-orange-950/40 text-age-3-ink border border-orange-200 dark:border-orange-800', 'Has money 91–135 days overdue'],

@@ -305,3 +305,16 @@ The saving is the follow-up sheet, the customer form, the WhatsApp sheet, the ch
 - Accessibility sweep at **320, 360, 390, 412, 768 and 1366**: 21 screens each, 0 overflow / 0 low-contrast / 0 unnamed controls; every dialog keeps focus and closes on Esc.
 - Desktop regression: cheque QA at 1366 (0 findings), CRM workflow QA at 1366 and 390 (0), manager QA at 1366 and 390 (0), data-source QA (0), both interception probes identical in shape to the production records.
 - `tsc` clean; **315/315**; build clean; `check:classes` back to the two known false positives; `check:empty` clean.
+
+## Phase 4, batch 10 — two things the owner spotted in Reports (2026-09-19)
+
+**1. The follow-up column repeated itself.** Beside a badge that already said where the follow-up stood, the date line said it again: an account due today read "**Today**  Today", an overdue one "**Overdue**  3d overdue · 14 Sept". `followUpWhen()` now says only *when* — "19 Sept", "3d late · 14 Sept", "in 5d · 22 Sept", "Tomorrow · 20 Sept", "No date" — and the badge keeps the state. Both tables (the book and Reports) read better for it; the words are otherwise the app's own.
+
+**2. Reports' filters did not count like the customer book's.** The chips and tiles counted the CRM and settlement scope only, so with "1–45d (302)" pressed the state chips still read "All (644) · Due today (144)" over a list of 302 — and pressing "Due today" then showed fewer than 144. The book's rule is *a row counts towards a control when it fails nothing but that control's own filter*; Reports uses that rule now:
+
+- the state chips and the four tiles count what the ageing chip and the search leave;
+- the ageing chips (and the strip they head) count what the state chip and the search leave;
+- the search narrows every count, as it does in the book;
+- the list and the counts read one shared predicate each, so they cannot drift apart again.
+
+**Checked on the live book (644 accounts), at 1366 and 390:** every one of the eight state chips listed exactly its own number; with ">135d" pressed the state chips re-counted (All 366, Due today 81, Upcoming 228, No follow-up 1, Bad debt 56) and each still listed what it said; with "Due today" pressed the ageing row re-counted (All ageing 144 · 1–45d 68 · 46–90d 58 · 91–135d 44 · >135d 81 · >90d 104) and the strip followed; the follow-up column never repeats its badge. Three new tests pin all of it (318 total). `tsc` clean; build clean; checks clean; the a11y sweep at 390 and 1366 and the workflow QA at both sizes: 0 findings.

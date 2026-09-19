@@ -126,17 +126,17 @@ describe('Disclosure', () => {
     });
 });
 
-describe('the book says when a follow-up is due, in plain words', () => {
+describe('the book says when a follow-up is due, without repeating the badge beside it', () => {
     const today = new Date('2026-09-17T09:00:00');
     const at = (d: number) => { const x = new Date(today); x.setDate(x.getDate() + d); return x; };
     const row = (over: Partial<Outstanding>): Outstanding => ({ ...mixedAccount(), ...over });
     it.each([
         ['no date', row({ followUpDate: undefined }), 'No date'],
-        ['today', row({ followUpDate: at(0) }), 'Today'],
+        ['today', row({ followUpDate: at(0) }), '17 Sept'],          // the badge already says Today
         ['tomorrow', row({ followUpDate: at(1) }), 'Tomorrow · 18 Sept'],
         ['in a week', row({ followUpDate: at(7) }), 'in 7d · 24 Sept'],
         ['far ahead', row({ followUpDate: at(40) }), '27 Oct'],
-        ['overdue', row({ followUpDate: at(-3) }), '3d overdue · 14 Sept'],
+        ['overdue', row({ followUpDate: at(-3) }), '3d late · 14 Sept'],   // the badge already says Overdue
         ['collected', row({ followUpDate: at(-3), status: FollowUpStatus.Completed }), '14 Sept'],
     ])('%s', (_name, item, expected) => {
         expect(followUpWhen(item, today)).toBe(expected);

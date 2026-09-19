@@ -61,14 +61,18 @@ describe('Reports speaks the book\'s words', () => {
         expect(screen.getAllByRole('button', { name: /^Follow up$/ }).length).toBe(8);
     });
 
-    it('says when each follow-up is due the way the book does', () => {
+    it('says when each follow-up is due the way the book does, without repeating the badge', () => {
         openReports();
         const text = document.body.textContent!;
-        expect(text).toMatch(/3d overdue · /);
-        expect(text).toMatch(/Today/);
+        expect(text).toMatch(/3d late · /);
         expect(text).toMatch(/in 4d · /);
         expect(text).toMatch(/No date/);
         expect(text).toMatch(/5,000 expected/);
+        // The badge carries the state; the line beside it carries only the date,
+        // so an account due today no longer reads "Today Today".
+        expect(screen.getAllByText('Today').length).toBeGreaterThan(0);
+        expect(text).not.toMatch(/TodayToday/);
+        expect(text).not.toMatch(/overdue · /);
     });
 
     it('counts every state once, and Unattended is overdue plus no follow-up, never a defaulter', () => {
@@ -83,6 +87,55 @@ describe('Reports speaks the book\'s words', () => {
         fireEvent.click(chip(/^Unattended/));
         expect(listCount()).toBe('4');
         expect(rows().map(r => r.textContent)).not.toContain(expect.stringMatching(/DEFAULTER/));
+    });
+});
+
+describe('every count is the list it opens, as in the customer book', () => {
+    /** A chip's own number, e.g. chipCount(/^Due today/) -> 1. */
+    const countIn = (group: string, name: RegExp) => {
+        const g = screen.getByRole('group', { name: group });
+        const b = within(g).getAllByRole('button', { name })[0];
+        return Number(b.textContent!.match(/\((\d[\d,]*)\)/)![1].replace(/,/g, ''));
+    };
+    const ageingChip = (name: RegExp) => within(screen.getByRole('group', { name: 'Ageing' })).getAllByRole('button', { name })[0];
+
+    it('a state chip counts what the ageing chip and the search leave — and opens exactly that many', () => {
+        openReports();
+        expect(countIn('Follow-up state', /^All/)).toBe(8);
+        expect(countIn('Follow-up state', /^Overdue/)).toBe(3);
+
+        // Narrow by ageing: every fixture has money in 91–135, none over 135.
+        fireEvent.click(ageingChip(/^>135d/));
+        expect(listCount()).toBe('0');
+        expect(countIn('Follow-up state', /^All/)).toBe(0);          // was 8 while the chip listed 0
+        expect(countIn('Follow-up state', /^Overdue/)).toBe(0);
+        fireEvent.click(ageingChip(/^91–135d/));
+        expect(listCount()).toBe('8');
+        expect(countIn('Follow-up state', /^All/)).toBe(8);
+        expect(countIn('Follow-up state', /^Overdue/)).toBe(3);
+
+        // And the number a chip shows is the number pressing it lists.
+        fireEvent.click(chip(/^Overdue/));
+        expect(listCount()).toBe('3');
+    });
+
+    it('an ageing chip counts what the state chip and the search leave', () => {
+        openReports();
+        expect(countIn('Ageing', /^All ageing/)).toBe(8);
+        fireEvent.click(chip(/^Overdue/));
+        expect(listCount()).toBe('3');
+        expect(countIn('Ageing', /^All ageing/)).toBe(3);            // was 8 while the list held 3
+        expect(countIn('Ageing', /^91–135d/)).toBe(3);
+    });
+
+    it('the search narrows the tiles and the chips with the list', () => {
+        // Reports reads the app's one search term, so it arrives as a prop.
+        openReports({ globalSearch: 'DUE TODAY' });
+        expect(listCount()).toBe('1');
+        expect(countIn('Follow-up state', /^All/)).toBe(1);
+        expect(countIn('Follow-up state', /^Due today/)).toBe(1);
+        expect(countIn('Follow-up state', /^Overdue/)).toBe(0);
+        expect(countIn('Ageing', /^All ageing/)).toBe(1);
     });
 });
 
